@@ -13,19 +13,13 @@
 
 ### 主题画廊
 
-浅色示例：
+真实运行界面：
 
-![主题画廊浅色示例](assets/screenshots/theme-gallery-blush-light.png)
-
-深色示例：
-
-![主题画廊深色示例](assets/screenshots/theme-gallery-blush-dark.png)
+![主题画廊真实界面](assets/screenshots/theme-gallery-real.png)
 
 ### 对话回合刻度
 
-悬停时会显示对应回合摘要，点击刻度可跳转：
-
-![对话回合刻度示例](assets/screenshots/turn-scrubber.png)
+悬停时会显示对应回合摘要，点击刻度可跳转。当前版本需要在已有多回合会话中查看真实刻度。
 
 ## 仓库结构
 

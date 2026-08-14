@@ -4,9 +4,7 @@ A fast, curated Client Cordis theme gallery for the DeepSeek Harness Web GUI.
 
 ## Preview
 
-![Theme gallery light preview](../../assets/screenshots/theme-gallery-blush-light.png)
-
-![Theme gallery dark preview](../../assets/screenshots/theme-gallery-blush-dark.png)
+![Theme gallery real preview](../../assets/screenshots/theme-gallery-real.png)
 
 ## Themes
 
