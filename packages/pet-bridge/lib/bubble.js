@@ -34,7 +34,9 @@ function buildPayload(kind, toolName, toolInput) {
  * @returns {void} 立即返回，不 await 结果
  */
 function push(port, kind, toolName, toolInput, logger) {
-  const debug = (logger && typeof logger.debug === 'function' ? logger.debug : () => {})
+  // cordis 的 ctx.logger 是可调用服务，.debug 是依赖 this 的方法；拎出来存会丢绑定
+  // 用闭包包装保持调用点绑定（logger.debug(...) 而非把 debug 存成裸函数）
+  const debug = (...args) => (logger && typeof logger.debug === 'function' ? logger.debug(...args) : undefined)
   const url = `http://127.0.0.1:${port}/bubble`
   const payload = JSON.stringify(buildPayload(kind, toolName, toolInput))
 
