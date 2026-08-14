@@ -11,7 +11,17 @@ import type { Context as CordisContext } from 'cordis'
 /** One entry in `sessions.list.byId` — a host session's metadata summary. */
 export interface SessionSummary {
   id: string
-  /** Raw stored title (matches the row's `.title` text for non-blank sessions). */
+  /**
+   * Raw stored title. Present only for sessions that actually carry a title
+   * (the runtime spreads `title` conditionally in projectList). Prefer
+   * `title ?? displayTitle` when you need the visible/chosen label.
+   */
+  title?: string
+  /**
+   * Derived display title, present on every session: `title` } cwd-derived } id
+   * (displayTitleOf in dsh-client-runtime). For a titled session it equals the
+   * raw `title`; it is the value the official session row renders.
+   */
   displayTitle: string
   /** Working directory label; used to locate the session dir on the host. */
   cwd: string

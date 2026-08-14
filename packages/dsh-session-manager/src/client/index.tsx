@@ -13,11 +13,11 @@
  * Cordis access discipline: every service read is covered by `export const
  * inject` (sessions/workspaces/slots). No bare read of an un-declared service.
  */
-import { createElement } from 'react'
+import { createElement, Component, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Context } from './context-types.ts'
 import { pendingDeletes } from './pendingDeletes.ts'
-import { createDeleteController, reconcileFromDom, SESSIONS_LIST_SEL } from './DeleteButton.tsx'
+import { createDeleteController } from './DeleteButton.tsx'
 import { UndoRail } from './UndoRail.tsx'
 import { ArchiveEntry } from './ArchiveEntry.tsx'
 import { ArchiveView } from './ArchiveView.tsx'
@@ -27,6 +27,45 @@ export const inject = ['sessions', 'workspaces', 'slots']
 
 /** The footer action list-cell id (PLAN §9.3: additive, unique). */
 const FOOTER_ACTION_ID = 'dsh-session-manager'
+
+/**
+ * Error boundary over the fixed overlays. A render crash (e.g. an archive-view
+ * subscription/field mismatch) must NOT silently do nothing — it logs the
+ * stack and shows a dismissible strip instead of blanking the undo rail.
+ */
+class OverlayBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null as string | null }
+
+  static getDerivedStateFromError(error: unknown): { error: string } {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+
+  componentDidCatch(error: Error, info: unknown): void {
+    console.error('[dsh-session-manager] overlay render crash:', error, info)
+  }
+
+  render(): ReactNode {
+    if (this.state.error !== null) {
+      return createElement(
+        'div',
+        {
+          style: {
+            position: 'absolute', left: 12, bottom: 110, zIndex: 2147483000, padding: '8px 12px',
+            borderRadius: 10, background: 'rgba(120,20,20,.94)', color: '#ffd9d9',
+            font: '12px/1.5 ui-monospace,Menlo,monospace', pointerEvents: 'auto', maxWidth: 340,
+          },
+        },
+        `dsh-session-manager UI 异常：${this.state.error}`,
+        createElement(
+          'button',
+          { type: 'button', onClick: () => this.setState({ error: null }), style: { marginLeft: 8, border: 'none', background: 'none', color: '#ffd9d9', cursor: 'pointer' } },
+          '重试',
+        ),
+      )
+    }
+    return this.props.children
+  }
+}
 
 export function apply(ctx: Context): void {
   // ---- Archive entry in the sidebar footer (slots.register into a list slot). ---
@@ -49,9 +88,10 @@ export function apply(ctx: Context): void {
     },
   )
 
-  /** Hide/restore rows whose ids are parked vs active in the park table. The
-   *  DOM is reconciled fresh so a row re-created after a group collapse stays
-   *  hidden for its remaining window. */
+  /** Hide/restore rows whose ids are parked vs active in the park table.
+   *  `rowById` is maintained by the injection controller (each injected button
+   *  records the row keyed by session id), so a row re-created after a group
+   *  re-render is re-injected — and therefore re-hidden — on the next sync. */
   const reconcileVisibility = (): void => {
     for (const [id, row] of controller.rowById.entries()) {
       if (!row.isConnected) continue
@@ -62,16 +102,6 @@ export function apply(ctx: Context): void {
       const current = row.style.display
       if (hide && current !== 'none') row.style.display = 'none'
       if (!hide && current === 'none') row.style.display = ''
-    }
-    // Catch rows created after a collapse/re-expand that are not in rowById yet.
-    const container = document.querySelector<HTMLElement>(SESSIONS_LIST_SEL)
-    if (container) {
-      reconcileFromDom(container, ctx.sessions.list.getSnapshot().byId, (row, action) => {
-        const entry = pendingDeletes.get(action.id)
-        const shouldHide = entry?.state === 'pending'
-        if (shouldHide && row.style.display !== 'none') row.style.display = 'none'
-        if (!shouldHide && row.style.display === 'none') row.style.display = ''
-      })
     }
   }
 
@@ -104,8 +134,10 @@ export function apply(ctx: Context): void {
   const overlays: Root = createRoot(mount)
   overlays.render(
     createElement('div', { style: { pointerEvents: 'none' } },
-      createElement(UndoRail),
-      createElement(ArchiveView, { ctx, sessionsFeed: ctx.sessions.list, workspacesFeed: ctx.workspaces.list }),
+      createElement(OverlayBoundary, null,
+        createElement(UndoRail),
+        createElement(ArchiveView, { ctx, sessionsFeed: ctx.sessions.list, workspacesFeed: ctx.workspaces.list }),
+      ),
     ),
   )
 

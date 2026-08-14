@@ -144,6 +144,9 @@ export default [
       // The client deferred-delete state machine (pure, no browser globals) —
       // built to node ESM so the node unit test can drive it with a fake clock.
       'pending-deletes-core': 'src/client/pendingDeletesCore.ts',
+      // The client row→session title-matching core (pure, no DOM/react) —
+      // built to node ESM so the node unit test can drive it.
+      'session-row-match': 'src/client/sessionRowMatch.ts',
     },
     outDir: 'lib',
     format: 'esm',

@@ -227,60 +227,76 @@ window.__ModuleLoader__.load({
 			onChange: () => {}
 		});
 		//#endregion
-		//#region src/client/DeleteButton.tsx
-		const SESSIONS_LIST_SEL = "div[role=\"tree\"][aria-label=\"sessions\"]";
-		/** Resolve the session id a tree row maps to (title reverse-lookup + blank). */
-		function resolveRowSession(row, byId) {
-			if (row.querySelector(":scope > .projectText") !== null) return null;
-			const titleEl = row.querySelector(":scope > .title");
-			if (!titleEl || !titleEl.textContent) return null;
-			const titleText = titleEl.textContent.trim();
+		//#region src/client/sessionRowMatch.ts
+		/** Resolve one session id from a single row-actions aria-label. */
+		function matchSessionFromLabel(label, byId) {
+			let best = null;
+			let bestId;
+			let bestRunning = false;
+			let bestCwd = "";
 			for (const id of Object.keys(byId)) {
 				const s = byId[id];
-				if (!s) continue;
-				if (s.blank) continue;
-				if (s.displayTitle === titleText) return {
-					id,
-					cwd: String(s.cwd ?? ""),
-					title: titleText,
-					running: s.running === true
-				};
+				if (!s || s.blank) continue;
+				const candidate = s.title ?? s.displayTitle ?? "";
+				if (!candidate) continue;
+				if (candidate.length === 0 || candidate.length > 256) continue;
+				if (!label.includes(candidate)) continue;
+				if (best === null || candidate.length > best.length) {
+					best = candidate;
+					bestId = id;
+					bestRunning = s.running === true;
+					bestCwd = String(s.cwd ?? "");
+				}
 			}
-			return null;
+			if (best === null || bestId === void 0) return null;
+			return {
+				id: bestId,
+				cwd: bestCwd,
+				title: best,
+				running: bestRunning
+			};
 		}
-		/** Whether a `[role=treeitem]` row belongs to a deletable (non-blank) session. */
-		function isDeletableRow(row) {
-			return row.querySelector(":scope > .rowActions") !== null;
-		}
+		//#endregion
+		//#region src/client/DeleteButton.tsx
+		/** Any tree role (the sidebar session list); we scan all present to be safe.
+		*  No aria-label — that attribute is a localized label, not a stable marker. */
+		const SESSIONS_LIST_SEL = "[role=\"tree\"]";
+		/** Global hover rule injected once; targets official rows by role, not hashed classes. */
+		const HOVER_CSS = `[role="treeitem"]:hover > [data-dsh-sm-delete] { display: inline-flex !important; }`;
 		/**
-		* Enumerate the deletable session rows currently in the tree container, with
-		* their resolved session identity. Used by the visibility reconciler so a fresh
-		* row created after a group collapse/re-expand is matched and hidden correctly
-		* within the 10s window.
+		* Resolve the row→session id via the DOM. A SESSION row has exactly ONE button
+		* with an aria-label — the ⋮ actions menu `t("actions.session.aria", {name:
+		* title})`, whose text contains the title. PROJECT rows carry TWO labeled
+		* buttons (workspace menu + new-session) and blank (New Session) rows carry
+		* none, so both are skipped by requiring exactly one — a locale-independent
+		* discriminator that also keeps us off the hashed class names.
 		*/
-		function reconcileFromDom(container, byId, fn) {
-			for (const row of container.querySelectorAll("[role=\"treeitem\"]")) {
-				if (row.querySelector(":scope > .rowActions") === null) continue;
-				const action = resolveRowSession(row, byId);
-				if (action) fn(row, action);
-			}
+		function resolveRowSession(row, byId) {
+			const buttons = row.querySelectorAll("button[aria-label]");
+			if (buttons.length !== 1) return null;
+			const label = buttons[0].getAttribute("aria-label");
+			if (!label || label.trim().length === 0) return null;
+			return matchSessionFromLabel(label, byId);
 		}
 		/**
 		* Build the injection controller bound to one client `apply(ctx)`.
-		* @param getById - snapshot of `sessions.list.byId` (re-read on each sync).
+		* @param getContext - provides the client context (sessions list snapshot).
 		* @param onDelete - called when a delete button is clicked; the caller hides
 		*   the row and parks the deferred deletion.
 		*/
 		function createDeleteController(getContext, onDelete) {
 			const rowById = /* @__PURE__ */ new Map();
+			if (!document.head.querySelector("#dsh-session-manager-delete-hover")) {
+				const style = document.createElement("style");
+				style.id = "dsh-session-manager-delete-hover";
+				style.textContent = HOVER_CSS;
+				document.head.appendChild(style);
+			}
 			const injectIntoRow = (row) => {
-				if (!isDeletableRow(row)) return;
+				if (row.querySelector("[data-dsh-sm-delete]") !== null) return;
 				const byId = getContext().sessions.list.getSnapshot().byId;
 				const action = resolveRowSession(row, byId);
 				if (!action) return;
-				const actions = row.querySelector(":scope > .rowActions");
-				if (!(actions instanceof HTMLElement)) return;
-				if (actions.querySelector("[data-dsh-sm-delete]") !== null) return;
 				rowById.set(action.id, row);
 				const btn = document.createElement("button");
 				btn.type = "button";
@@ -288,6 +304,7 @@ window.__ModuleLoader__.load({
 				btn.title = action.running ? "请先结束运行中的会话" : "删除会话";
 				btn.setAttribute("aria-label", `删除会话 ${action.title}`);
 				btn.textContent = "🗑";
+				btn.style.display = "none";
 				btn.addEventListener("click", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -296,15 +313,16 @@ window.__ModuleLoader__.load({
 						window.alert("请先结束运行中的会话，再进行删除");
 						return;
 					}
-					onDelete(fresh, row);
+					onDelete({
+						...fresh,
+						cwd: fresh.cwd
+					}, row);
 				});
-				actions.appendChild(btn);
+				row.appendChild(btn);
 			};
 			const sync = () => {
-				const container = document.querySelector(SESSIONS_LIST_SEL);
-				if (!container) return;
 				for (const [id, el] of Array.from(rowById.entries())) if (!el.isConnected) rowById.delete(id);
-				for (const row of container.querySelectorAll(":scope [role=\"treeitem\"]")) injectIntoRow(row);
+				for (const container of document.querySelectorAll(SESSIONS_LIST_SEL)) for (const row of container.querySelectorAll(":scope [role=\"treeitem\"]")) injectIntoRow(row);
 			};
 			return {
 				sync,
@@ -324,32 +342,32 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"entryButton": "FPsCja_entryButton",
-			"danger": "FPsCja_danger",
-			"undo": "FPsCja_undo",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"overlay": "FPsCja_overlay",
-			"close": "FPsCja_close",
-			"countdown": "FPsCja_countdown",
+			"item": "FPsCja_item",
 			"rail-in": "FPsCja_rail-in",
+			"divider": "FPsCja_divider",
+			"undo": "FPsCja_undo",
+			"countdown": "FPsCja_countdown",
+			"list": "FPsCja_list",
+			"trashBar": "FPsCja_trashBar",
 			"label": "FPsCja_label",
-			"head": "FPsCja_head",
-			"action": "FPsCja_action",
+			"row": "FPsCja_row",
+			"rowTitle": "FPsCja_rowTitle",
+			"trashButton": "FPsCja_trashButton",
 			"failed": "FPsCja_failed",
+			"title": "FPsCja_title",
+			"entryButton": "FPsCja_entryButton",
+			"overlay": "FPsCja_overlay",
+			"head": "FPsCja_head",
+			"close": "FPsCja_close",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"action": "FPsCja_action",
+			"danger": "FPsCja_danger",
 			"add": "FPsCja_add",
 			"dismiss": "FPsCja_dismiss",
-			"item": "FPsCja_item",
-			"list": "FPsCja_list",
+			"empty": "FPsCja_empty",
 			"errorBanner": "FPsCja_errorBanner",
-			"divider": "FPsCja_divider",
-			"trashBar": "FPsCja_trashBar",
-			"trashButton": "FPsCja_trashButton",
-			"rail": "FPsCja_rail",
 			"trashCount": "FPsCja_trashCount",
-			"rowTitle": "FPsCja_rowTitle",
-			"title": "FPsCja_title",
-			"row": "FPsCja_row",
-			"empty": "FPsCja_empty"
+			"rail": "FPsCja_rail"
 		};
 		//#endregion
 		//#region src/client/UndoRail.tsx
@@ -536,7 +554,7 @@ window.__ModuleLoader__.load({
 			else body = (0, react.createElement)("div", { className: rail_module_css_default.list }, rows.map((row) => (0, react.createElement)("div", {
 				key: row.id,
 				className: rail_module_css_default.row
-			}, (0, react.createElement)("div", { className: rail_module_css_default.rowTitle }, row.displayTitle), (0, react.createElement)("button", {
+			}, (0, react.createElement)("div", { className: rail_module_css_default.rowTitle }, row.title ?? row.displayTitle), (0, react.createElement)("button", {
 				type: "button",
 				className: rail_module_css_default.action,
 				onClick: () => void unarchive(ctx, row.id)
@@ -580,7 +598,8 @@ window.__ModuleLoader__.load({
 		}
 		/** Park a deferred delete for an archived session (host two-step on fire). */
 		function requestArchivedDelete(_ctx, row) {
-			pendingDeletes.requestDelete(row.id, row.cwd, row.displayTitle);
+			const label = row.title ?? row.displayTitle;
+			pendingDeletes.requestDelete(row.id, row.cwd, label);
 		}
 		//#endregion
 		//#region src/client/index.tsx
@@ -607,6 +626,46 @@ window.__ModuleLoader__.load({
 		];
 		/** The footer action list-cell id (PLAN §9.3: additive, unique). */
 		const FOOTER_ACTION_ID = "dsh-session-manager";
+		/**
+		* Error boundary over the fixed overlays. A render crash (e.g. an archive-view
+		* subscription/field mismatch) must NOT silently do nothing — it logs the
+		* stack and shows a dismissible strip instead of blanking the undo rail.
+		*/
+		var OverlayBoundary = class extends react.Component {
+			state = { error: null };
+			static getDerivedStateFromError(error) {
+				return { error: error instanceof Error ? error.message : String(error) };
+			}
+			componentDidCatch(error, info) {
+				console.error("[dsh-session-manager] overlay render crash:", error, info);
+			}
+			render() {
+				if (this.state.error !== null) return (0, react.createElement)("div", { style: {
+					position: "absolute",
+					left: 12,
+					bottom: 110,
+					zIndex: 2147483e3,
+					padding: "8px 12px",
+					borderRadius: 10,
+					background: "rgba(120,20,20,.94)",
+					color: "#ffd9d9",
+					font: "12px/1.5 ui-monospace,Menlo,monospace",
+					pointerEvents: "auto",
+					maxWidth: 340
+				} }, `dsh-session-manager UI 异常：${this.state.error}`, (0, react.createElement)("button", {
+					type: "button",
+					onClick: () => this.setState({ error: null }),
+					style: {
+						marginLeft: 8,
+						border: "none",
+						background: "none",
+						color: "#ffd9d9",
+						cursor: "pointer"
+					}
+				}, "重试"));
+				return this.props.children;
+			}
+		};
 		function apply(ctx) {
 			const disposeSlot = ctx.slots.register({
 				name: "sidebar.footer.action",
@@ -619,9 +678,10 @@ window.__ModuleLoader__.load({
 			const controller = createDeleteController(() => ctx, (action, row) => {
 				pendingDeletes.requestDelete(action.id, action.cwd, action.title);
 			});
-			/** Hide/restore rows whose ids are parked vs active in the park table. The
-			*  DOM is reconciled fresh so a row re-created after a group collapse stays
-			*  hidden for its remaining window. */
+			/** Hide/restore rows whose ids are parked vs active in the park table.
+			*  `rowById` is maintained by the injection controller (each injected button
+			*  records the row keyed by session id), so a row re-created after a group
+			*  re-render is re-injected — and therefore re-hidden — on the next sync. */
 			const reconcileVisibility = () => {
 				for (const [id, row] of controller.rowById.entries()) {
 					if (!row.isConnected) continue;
@@ -630,12 +690,6 @@ window.__ModuleLoader__.load({
 					if (hide && current !== "none") row.style.display = "none";
 					if (!hide && current === "none") row.style.display = "";
 				}
-				const container = document.querySelector(SESSIONS_LIST_SEL);
-				if (container) reconcileFromDom(container, ctx.sessions.list.getSnapshot().byId, (row, action) => {
-					const shouldHide = pendingDeletes.get(action.id)?.state === "pending";
-					if (shouldHide && row.style.display !== "none") row.style.display = "none";
-					if (!shouldHide && row.style.display === "none") row.style.display = "";
-				});
 			};
 			/** Clear selection if the deleted session was the current one (A-5). */
 			const reconcileSelection = () => {
@@ -662,11 +716,11 @@ window.__ModuleLoader__.load({
 			mount.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:2147483000";
 			document.body.appendChild(mount);
 			const overlays = (0, react_dom_client.createRoot)(mount);
-			overlays.render((0, react.createElement)("div", { style: { pointerEvents: "none" } }, (0, react.createElement)(UndoRail), (0, react.createElement)(ArchiveView, {
+			overlays.render((0, react.createElement)("div", { style: { pointerEvents: "none" } }, (0, react.createElement)(OverlayBoundary, null, (0, react.createElement)(UndoRail), (0, react.createElement)(ArchiveView, {
 				ctx,
 				sessionsFeed: ctx.sessions.list,
 				workspacesFeed: ctx.workspaces.list
-			})));
+			}))));
 			sync();
 			ctx.effect(() => () => {
 				disposeSlot();

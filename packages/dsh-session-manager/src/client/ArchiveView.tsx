@@ -115,7 +115,7 @@ export function ArchiveView({
         createElement(
           'div',
           { key: row.id, className: css.row },
-          createElement('div', { className: css.rowTitle }, row.displayTitle),
+          createElement('div', { className: css.rowTitle }, row.title ?? row.displayTitle),
           createElement(
             'button',
             { type: 'button', className: css.action, onClick: () => void unarchive(ctx, row.id) },
@@ -199,5 +199,6 @@ async function unarchive(ctx: Context, id: string): Promise<void> {
 
 /** Park a deferred delete for an archived session (host two-step on fire). */
 function requestArchivedDelete(_ctx: Context, row: ArchivedRow): void {
-  pendingDeletes.requestDelete(row.id, row.cwd, row.displayTitle)
+  const label = row.title ?? row.displayTitle
+  pendingDeletes.requestDelete(row.id, row.cwd, label)
 }
