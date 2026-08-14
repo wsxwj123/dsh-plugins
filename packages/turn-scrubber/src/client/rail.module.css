@@ -1,0 +1,101 @@
+.rail {
+  position: absolute;
+  right: 6px;
+  width: 18px;
+  z-index: 45;
+  /* The full message-area strip is the hover surface: vertical scrubbing
+     anywhere on it drives the wave, and the pointer must actually leave the
+     strip (or park on the tooltip) before the wave collapses. A few px off
+     the window edge keeps the cluster from touching the boundary. */
+  pointer-events: auto;
+}
+
+.group {
+  position: absolute;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* Wider hit area than the 2px bars: horizontal slack so the pointer can
+     scrub across lines without falling out (magnified overflow is covered
+     by the delayed hover collapse in TurnRail). */
+  padding: 0 0 0 14px;
+  pointer-events: auto;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.bar {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+  /* Short transform transition: the wave follows the pointer with a hint of
+     lag instead of jittering; color/opacity ease at their own pace. */
+  transition:
+    transform 0.09s ease-out,
+    background-color 0.16s ease,
+    opacity 0.16s ease;
+  transform-origin: center right;
+  will-change: transform;
+}
+
+.tip {
+  position: absolute;
+  transform: translateY(-50%);
+  max-width: 280px;
+  width: max-content;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-alias-bg-overlay, rgba(24, 24, 28, 0.94));
+  box-shadow: var(--dsw-shadow-lv2, 0 4px 16px rgba(0, 0, 0, 0.35));
+  /* Interactive: parking the pointer on the tooltip keeps the wave alive. */
+  pointer-events: auto;
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  font-family: var(--dsw-font-body, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: tip-in 0.14s ease-out;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.tipTitle {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.6));
+  margin-bottom: 2px;
+}
+
+.tipText {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+@media (max-width: 767px) {
+  .rail {
+    display: none;
+  }
+}
