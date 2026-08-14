@@ -1,0 +1,31 @@
+✔ 事件 -> kind 映射：turn/start→user、tool/call→pre、tool/result→post、turn/end→stop、assistant/message 不推 (16.884458ms)
+✔ 位置游标：seq 乱序（seq2 排在 seq1 前）仍按 append 序外发 (16.314625ms)
+✔ 位置游标：无新增事件不重放（游标只增） (35.450208ms)
+✔ session.events 缺失（undefined）时该 tick 跳过不崩 (15.052792ms)
+✔ dispose 后不再推送（timer 已停、dead 置位） (21.343834ms)
+✔ finalStop（agent/disposed）：补发一条 stop（幂等）并彻底停用 (20.962834ms)
+✔ enabled=false 的 watcher：完全不轮询不推送 (16.282542ms)
+✔ buildPayload 恒为契约五字段：tool_input 恒 null、agent_source 恒 dsh、caller_pid=process.pid (1.329833ms)
+✔ push 正常路径：POST /bubble、收到 2xx、payload 正确 (11.172417ms)
+✔ ECONNREFUSED（无人监听）：不抛异常、不重试（无请求发出） (152.640125ms)
+✔ 非 2xx：请求发出、不重试、不抛异常 (107.049334ms)
+✔ 多 agent 各自独立：watch 两个 agent，事件按发生序各自外发，不串扰不重放 (48.295083ms)
+✔ watch 同一 agent 幂等：不建第二个 watcher，不重复推送 (10.576875ms)
+✔ unwatch（agent/disposed）：补发一条 stop 并彻底停用该 agent (16.334ms)
+✔ dispose 全停：不再推送任何 agent 的事件 (16.410292ms)
+✔ 读取类：read/grep/glob/list/search 前缀 + 词边界结尾 search (0.750709ms)
+✔ 写入类：write/edit/apply_patch/insert 前缀 (0.100125ms)
+✔ 命令类：bash/exec/run/command/shell 前缀 (0.0895ms)
+✔ 联网类：web_search/http/fetch/request/curl 前缀 (0.079ms)
+✔ 编排类：subagent/agent/workflow/skill 前缀 (0.071ms)
+✔ 意外 part-match 不得命中任何非兜底类 (0.040333ms)
+✔ 非字符串输入（undefined/null/数字/空串）一律兜底，恒非空 (0.0645ms)
+✔ 规则表顺序固定（首命中即返回）且恒有兜底 (0.046917ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 341.387
