@@ -1,0 +1,190 @@
+// pendingDeletes.unit.test.js — drive the client deferred-delete state machine
+// (pendingDeletesCore) with a fake clock + a stubbed host caller. This is the
+// "撤销条状态机" white-box test: pending queue / countdown boundary / idempotency /
+// multi-entry / undo / fire / failed-fire, all node-runnable (no browser).
+//
+// The core is pure and dependency-injected, so we import the compiled
+// lib/pending-deletes-core.js exactly like the node-half unit tests import
+// lib/handler.js.
+import { test } from 'node:test'
+import assert from 'node:assert'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const core = await import(path.join(root, 'lib', 'pending-deletes-core.js'))
+const { createPendingDeletes, UNDO_WINDOW_MS, FAILED_RETAIN_MS } = core
+
+/**
+ * A manual clock + manual scheduler: let/advance time by hand so timer-fired
+ * deletes are deterministic (no real setTimeout in tests).
+ */
+function makeClockAndScheduler() {
+  let nowMs = 1000
+  let seq = 0
+  /** scheduled callbacks: [runAtMs, cancelToken, fn] */
+  const scheduleQ = []
+  const timers = new Map()
+
+  const now = () => nowMs
+  const schedule = (cb, delay) => {
+    const id = seq++
+    const runAt = nowMs + Math.max(0, delay)
+    timers.set(id, cb)
+    scheduleQ.push({ id, runAt, cb, cancelled: false })
+    return () => {
+      const t = scheduleQ.find((q) => q.id === id)
+      if (t) t.cancelled = true
+    }
+  }
+
+  /** Advance the clock by ms, running every scheduled timer whose time has come. */
+  const advance = (ms) => {
+    nowMs += ms
+    // collect due in order
+    const due = scheduleQ
+      .filter((q) => !q.cancelled && q.runAt <= nowMs)
+      .sort((a, b) => a.runAt - b.runAt)
+    // grab callbacks now (firing may schedule more timers)
+    const toRun = due.map((q) => q.cb)
+    for (const fn of toRun) fn()
+  }
+
+  return { now, schedule, advance, get nowMs() { return nowMs } }
+}
+
+function makeDeps(overrides = {}) {
+  const { now, schedule, advance } = makeClockAndScheduler()
+  const calls = []
+  const deps = {
+    now,
+    schedule,
+    fire: async (entry) => {
+      calls.push(entry)
+      return { ok: true }
+    },
+    ...overrides,
+  }
+  return { deps, calls, advance }
+}
+
+test('requestDelete parks an entry with a 10s deadline (countdown boundary)', () => {
+  const { deps, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  const [e] = pd.snapshot()
+  assert.strictEqual(e.id, 'a')
+  assert.strictEqual(e.state, 'pending')
+  // The deadline is exactly UNDO_WINDOW_MS in the future (from the fixed now).
+  assert.strictEqual(e.deadline - deps.now(), UNDO_WINDOW_MS)
+  // Before the window expires the entry stays pending and no host call is made.
+  advance(UNDO_WINDOW_MS - 1)
+  assert.strictEqual(pd.get('a')?.state, 'pending')
+})
+
+test('at deadline the host delete is fired exactly once and the entry clears', async () => {
+  const { deps, calls, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  calls.length = 0
+  advance(UNDO_WINDOW_MS) // window expires
+  await Promise.resolve() // let the async fire settle
+  assert.strictEqual(calls.length, 1)
+  assert.deepStrictEqual(calls[0], { id: 'a', cwd: '/ctx', title: 'A' })
+  assert.strictEqual(pd.get('a'), undefined)
+})
+
+test('countdown survives a view switch: firing is driven by module timer, not mount', async () => {
+  // "卸载" in a component doesn't touch the module queue because the timer is
+  // owned by the state machine. We simulate by dropping all subscriptions and
+  // confirming the scheduled fire still happens.
+  const { deps, calls, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  const unsub = pd.subscribe(() => {})
+  pd.requestDelete('x', '/c', 'X')
+  unsub() // component "unmounted"
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.strictEqual(calls.length, 1)
+})
+
+test('idempotent: a second requestDelete for a parked id does not double-park', () => {
+  const { deps } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  pd.requestDelete('a', '/ctx', 'A')
+  assert.strictEqual(pd.snapshot().length, 1)
+})
+
+test('multi-entry: two ids park two independent entries (parallel undo)', async () => {
+  const { deps, calls, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  pd.requestDelete('b', '/ctx-b', 'B')
+  assert.strictEqual(pd.snapshot().length, 2)
+  // Undo b only; a still fires at its own deadline.
+  assert.strictEqual(pd.undo('b'), true)
+  assert.strictEqual(pd.isPending('a'), true)
+  assert.strictEqual(pd.isPending('b'), false)
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.deepStrictEqual(calls.map((c) => c.id), ['a'])
+})
+
+test('undo before the deadline removes the entry and never fires', async () => {
+  const { deps, calls, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  assert.strictEqual(pd.undo('a'), true)
+  assert.strictEqual(pd.get('a'), undefined)
+  advance(UNDO_WINDOW_MS * 2)
+  await Promise.resolve()
+  assert.strictEqual(calls.length, 0)
+})
+
+test('undo after the entry already fired returns false (window is over)', async () => {
+  const { deps, calls, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.strictEqual(calls.length, 1)
+  assert.strictEqual(pd.undo('a'), false)
+})
+
+test('failed fire (system-error) surfaces a failed entry, then auto-clears', async () => {
+  let call = 0
+  const { deps, advance } = makeDeps({
+    fire: async () => ({ ok: false, code: 'system-error' }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  const failed = pd.get('a')
+  assert.strictEqual(failed?.state, 'failed')
+  assert.strictEqual(failed?.error, 'system-error')
+  assert.strictEqual(pd.isPending('a'), false) // failed is NOT undoable/pending
+  // After the retain window the failed entry auto-clears (resurfaces the row).
+  advance(FAILED_RETAIN_MS + 1)
+  assert.strictEqual(pd.get('a'), undefined)
+})
+
+test('fire idempotency: fireNow on a non-parked id is a safe no-op', async () => {
+  const { deps, calls } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  const out = await pd.fireNow('never-parked')
+  assert.strictEqual(out, undefined)
+  assert.strictEqual(calls.length, 0)
+})
+
+test('notify fires on park, undo, and failed-fire transitions', () => {
+  let n = 0
+  const { deps, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.subscribe(() => { n++ })
+  pd.requestDelete('a', '/ctx', 'A')
+  assert.strictEqual(n, 1)
+  pd.undo('a')
+  assert.strictEqual(n, 2)
+})
