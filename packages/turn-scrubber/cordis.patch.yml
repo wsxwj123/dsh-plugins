@@ -1,0 +1,7 @@
+# dsh-turn-scrubber bundle patch
+#
+# Declared via package.json `dsh.bundle.patch`: `dsh plugin --profile web add`
+# reconciles the profile's bundle stack and mounts this plugin row.
+- insert:
+    - id: turn-scrubber
+      name: 'dsh-turn-scrubber'
