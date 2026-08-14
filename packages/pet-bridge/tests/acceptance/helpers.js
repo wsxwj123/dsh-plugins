@@ -30,6 +30,63 @@ function makeCtx() {
   }
 }
 
+// —— 严格 ctx 替身：模拟 cordis 的"未注入服务不可裸访问"硬约束 ——
+// 真实 cordis 实证行为：
+//   - ctx.logger  核心属性，可安全裸访问（不抛）→ 放行名单
+//   - ctx.base    同上，核心属性           → 放行名单
+//   - ctx.get('agents')  可选读返回 undefined，不抛
+//   - ctx.agents  未注入的服务属性，裸访问抛
+//                 `cannot get property "agents" without inject`
+// 用途：抓"插件绕过 get() 裸读未注入服务属性"的真实环境崩溃。默认替身不启用此约束，
+// 需要时用 makeStrictCtx()。
+// 放行名单：核心属性（logger/base/emit）+ 契约方法（on/get/has）+ 测试驱动成员（_ 前缀）
+const CORE_PROPS = new Set(['logger', 'base', 'emit'])
+function makeStrictCtx() {
+  const buckets = new Map() // event -> Set<handler>
+  const emit = (event, payload) => {
+    const set = buckets.get(event)
+    if (!set) return
+    for (const h of [...set]) if (typeof h === 'function') h(payload)
+  }
+  const obj = {
+    // 契约允许的方法
+    on(event, handler) {
+      if (!buckets.has(event)) buckets.set(event, new Set())
+      buckets.get(event).add(handler)
+      return () => buckets.get(event).delete(handler)
+    },
+    // 可选读服务：未注入 → 返回 undefined（不抛）
+    get(name) {
+      return undefined
+    },
+    // 可选查服务是否存在：未注入 → false
+    has(name) {
+      return false
+    },
+    // —— 测试驱动成员（与 makeCtx 对齐，非真实 cordis ctx 成员） ——
+    _handlers: buckets,
+    _emit: emit,
+    _emitAgentCreated(agent) {
+      emit('agent/created', { agent })
+    },
+  }
+  return new Proxy(obj, {
+    get(t, prop) {
+      // 放行 1：契约方法 + 测试驱动成员（对象自有属性）
+      if (prop in t) return t[prop]
+      // 放行 2：核心属性（logger/base/emit）——可安全裸访问，同真实 cordis
+      if (CORE_PROPS.has(String(prop))) return t[prop] // 未实现时 undefined，不抛
+      // 放行 3：测试驱动内部成员（下划线前缀）
+      if (typeof prop === 'string' && prop.startsWith('_')) return t[prop]
+      // 其余（未注入的服务属性，如 agents）裸访问 → 抛错，同真实 cordis
+      throw new Error(`cannot get property "${String(prop)}" without inject`)
+    },
+    has(t, prop) {
+      return prop in t || (typeof prop === 'string' && (prop.startsWith('_') || CORE_PROPS.has(prop)))
+    },
+  })
+}
+
 // —— agent 替身：session.events 是数组，push 模拟 dsh 追加事件 ——
 // 事件形如 { seq, type, data }
 function makeAgent(initialEvents) {
@@ -136,6 +193,7 @@ function serverReceived(pet, count) {
 module.exports = {
   plugin,
   makeCtx,
+  makeStrictCtx,
   makeAgent,
   evt,
   toolCall,
