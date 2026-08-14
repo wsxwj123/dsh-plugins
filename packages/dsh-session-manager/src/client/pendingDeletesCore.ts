@@ -37,7 +37,7 @@ export const UNDO_WINDOW_MS = 5_000
 export const FAILED_RETAIN_MS = 6_000
 
 /** Lifecycle of one parked deletion. */
-export type PendingState = 'pending' | 'failed'
+export type PendingState = 'pending' | 'failed' | 'cleanup'
 
 export interface PendingEntry {
   id: string
@@ -50,7 +50,7 @@ export interface PendingEntry {
   /** Epoch ms at which the pending window expires (rail counts down to it). */
   deadline: number
   state: PendingState
-  /** Set only for a `failed` entry: the host error code/message. */
+  /** Set only for a `failed`/`cleanup` entry: the host error code/message. */
   error?: string
   /**
    * True when the user confirmed, at CLICK time, that a RUNNING session should
@@ -59,12 +59,27 @@ export interface PendingEntry {
    * leave this undefined and fire without force.
    */
   force?: boolean
+  /**
+   * True while a `cleanup` entry has a retry in flight (rail shows 重试中 and
+   * rejects a second concurrent retry).
+   */
+  retrying?: boolean
 }
 
 /** Outcome of a fire() call, as returned to the state machine. */
 export interface FireOutcome {
   ok: boolean
   code?: string
+  /**
+   * Partial failure signal (review I-3, INTERFACE §2.4): when a delete response
+   * is `!ok` AND `moved: true`, the host moved the session dir (or found it
+   * already moved) but the archive-set cleanup failed. The file is GONE from
+   * its source, so the UI must keep the row hidden and offer a retry to
+   * complete the cleanup — never the "删除失败，已恢复" restore path. Absent
+   * (`undefined`/`false`) on a `!ok` response means a pure move failure:
+   * nothing happened, the row can be re-shown.
+   */
+  moved?: boolean
 }
 
 /** Injectable seams so unit tests run with a fake timer and a stubbed host. */
@@ -118,6 +133,14 @@ export interface PendingDeletes {
   isDeleted(id: string): boolean
   /** Fire the parked entry immediately (test/edge hook, bypasses the countdown). */
   fireNow(id: string): Promise<FireOutcome | undefined>
+  /**
+   * Retry the archive cleanup of a `cleanup`-state entry (the file is already
+   * moved; re-invoking the host delete completes the set cleanup idempotently —
+   * INTERFACE §2.4 / review I-3). Only an `ok` outcome resolves the entry; any
+   * failure keeps it retryable and the row hidden. Returns `undefined` when the
+   * id is not retryable (not cleanup, or a retry is already in flight).
+   */
+  retry(id: string): Promise<FireOutcome | undefined>
 }
 
 export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
@@ -194,7 +217,9 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     // Idempotency + undo race guard: only a currently-parked entry fires.
     if (!map.has(id)) return undefined
     const entry = map.get(id)!
-    if (entry.state === 'failed') return undefined
+    // A failed entry is terminal (auto-cleared by its own timer) and a cleanup
+    // entry resolves only through an explicit retry — neither fires again.
+    if (entry.state === 'failed' || entry.state === 'cleanup') return undefined
     // The window is over: drop the undoable entry before awaiting the host so
     // an in-flight fire cannot be undone mid-request.
     drop(id)
@@ -206,27 +231,42 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     const outcome = await callFire(base, entry.force ? { force: true } : undefined)
 
     if (!outcome.ok) {
-      // Real/failed delete (system-error, http-error, …): keep the entry visible
-      // as a failure so the UI can re-show the session and surface the reason.
-      // Auto-clear after a retain window.
-      const failed: PendingEntry = {
-        id: entry.id,
-        cwd: entry.cwd,
-        title: entry.title,
-        deadline: entry.deadline,
-        state: 'failed',
-        error: outcome.code,
-      }
-      map.set(failed.id, failed)
-      invalidateCache() // direct map mutation must also drop the snapshot cache
-      const cancel = schedule(() => {
-        if (map.get(failed.id)?.state === 'failed') {
-          drop(failed.id)
-          notify()
+      if (outcome.moved === true) {
+        // Partial failure (review I-3, INTERFACE §2.4): the host moved the dir
+        // (or found it already moved) but the archive-set cleanup did not
+        // complete. The file is no longer at its source, so the row must STAY
+        // hidden — the id enters deletedIds exactly like a confirmed delete —
+        // and the entry becomes `cleanup` so the rail can offer a retry that
+        // re-invokes /sm/delete and finishes the cleanup idempotently. Never
+        // show "删除失败，已恢复" for this state.
+        deletedIds.add(entry.id)
+        persistDeleted()
+        map.set(entry.id, { ...entry, state: 'cleanup', error: outcome.code })
+        invalidateCache() // direct map mutation must also drop the snapshot cache
+        notify()
+      } else {
+        // Real/failed delete (pure move failure — nothing happened on the host):
+        // keep the entry visible as a failure so the UI can re-show the session
+        // and surface the reason. Auto-clear after a retain window.
+        const failed: PendingEntry = {
+          id: entry.id,
+          cwd: entry.cwd,
+          title: entry.title,
+          deadline: entry.deadline,
+          state: 'failed',
+          error: outcome.code,
         }
-      }, FAILED_RETAIN_MS)
-      timers.set(failed.id, cancel)
-      notify()
+        map.set(failed.id, failed)
+        invalidateCache() // direct map mutation must also drop the snapshot cache
+        const cancel = schedule(() => {
+          if (map.get(failed.id)?.state === 'failed') {
+            drop(failed.id)
+            notify()
+          }
+        }, FAILED_RETAIN_MS)
+        timers.set(failed.id, cancel)
+        notify()
+      }
     } else {
       // SUCCESS: the host confirmed the delete (directory moved to the
       // recycle bin). Record the id as DELETED so its UI row stays hidden even
@@ -234,6 +274,36 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       // later re-pull). Persist so a refresh keeps the row hidden.
       deletedIds.add(entry.id)
       persistDeleted()
+      notify()
+    }
+    return outcome
+  }
+
+  /** Retry the archive cleanup of a `cleanup`-state entry. The file is already
+   *  moved, so ANY retry outcome keeps the row hidden (the id stays in
+   *  deletedIds); only `ok` drops the rail entry. A non-`ok` outcome keeps the
+   *  entry retryable. Returns undefined when nothing is retryable (no cleanup
+   *  entry / a retry is already in flight) so the UI treats it as a no-op. */
+  async function retry(id: string): Promise<FireOutcome | undefined> {
+    const entry = map.get(id)
+    if (!entry || entry.state !== 'cleanup' || entry.retrying === true) return undefined
+    map.set(id, { ...entry, retrying: true })
+    invalidateCache()
+    notify()
+    const base = { id: entry.id, cwd: entry.cwd, title: entry.title }
+    const outcome = await callFire(base, entry.force ? { force: true } : undefined)
+    const cur = map.get(id)
+    // Resolved while in flight (a concurrent retry completed it): no-op.
+    if (!cur || cur.state !== 'cleanup') return outcome
+    if (outcome.ok) {
+      // Cleanup complete: drop the rail entry. The id stays in deletedIds, so
+      // the row remains hidden (the dir is in the recycle bin).
+      drop(id)
+      notify()
+    } else {
+      // Still incomplete — stay in `cleanup` so the user can retry again.
+      map.set(id, { ...cur, retrying: false, error: outcome.code })
+      invalidateCache()
       notify()
     }
     return outcome
@@ -289,6 +359,7 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     isPending: (id) => map.get(id)?.state === 'pending',
     isDeleted: (id) => deletedIds.has(id),
     fireNow,
+    retry,
   }
 }
 

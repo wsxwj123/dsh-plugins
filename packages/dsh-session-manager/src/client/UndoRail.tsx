@@ -7,11 +7,14 @@
  * same module state the countdown timers live in — switching panels neither
  * resets nor drops a countdown (INTERFACE §1.2 step 3).
  *
- * Two entry kinds:
+ * Three entry kinds:
  *   - pending (undoable): title + seconds remaining, with an Undo button.
  *   - failed (retain window): an error readout; the session is already
  *     re-shown. Failed entries are auto-cleared by the state machine after
  *     a short window, so no manual dismissal is needed here.
+ *   - cleanup (partial failure, review I-3): the file was moved but archive
+ *     cleanup is incomplete — the row stays hidden and a Retry button
+ *     re-invokes the host delete to complete it (INTERFACE §2.4).
  */
 import { createElement, type CSSProperties, type ReactNode } from 'react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
@@ -37,6 +40,35 @@ function EntryRow({ entry, now }: { entry: PendingEntry; now: number }): ReactNo
           title: entry.error ? `删除失败：${entry.error}` : '删除失败',
         },
         `「${entry.title}」删除失败，已恢复`,
+      ),
+    )
+  }
+  if (entry.state === 'cleanup') {
+    // Partial failure (review I-3): the file was moved but the archive-set
+    // cleanup is incomplete. The row stays hidden; the retry re-invokes the
+    // host delete, which completes the cleanup idempotently (INTERFACE §2.4).
+    return createElement(
+      'div',
+      { className: css.item },
+      createElement(
+        'span',
+        {
+          className: css.failed,
+          title: entry.error ? `清理未完成：${entry.error}` : '清理未完成',
+        },
+        `「${entry.title}」清理未完成，可重试补齐`,
+      ),
+      createElement(
+        'button',
+        {
+          type: 'button',
+          className: css.undo,
+          disabled: entry.retrying === true,
+          onClick: () => {
+            void pendingDeletes.retry(entry.id)
+          },
+        },
+        entry.retrying === true ? '重试中…' : '重试',
       ),
     )
   }

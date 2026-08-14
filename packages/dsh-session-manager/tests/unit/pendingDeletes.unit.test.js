@@ -332,3 +332,155 @@ test('force: requestDelete(..., false) also fires with no force (false is not fo
   assert.strictEqual(calls.length, 1)
   assert.deepStrictEqual(calls[0], undefined, 'explicit false is the same as omitted')
 })
+
+// ---- I-3c: partial-failure (moved:true) — row stays hidden, retry completes cleanup ----
+
+test('I-3c: moved:true keeps the row hidden and parks a cleanup entry (never 删除失败，已恢复)', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'system-error', moved: true }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  // File already moved -> id flagged deleted exactly like a confirmed delete,
+  // so the row stays hidden.
+  assert.strictEqual(pd.isDeleted('a'), true, 'moved file -> row stays hidden')
+  const e = pd.get('a')
+  assert.strictEqual(e?.state, 'cleanup', 'a partial failure is NOT the failed/re-show state')
+  assert.strictEqual(e?.error, 'system-error')
+  assert.strictEqual(pd.isPending('a'), false, 'cleanup is not undoable/pending')
+  // Unlike failed entries, cleanup is not auto-cleared: it stays retryable.
+  advance(FAILED_RETAIN_MS + 1)
+  assert.strictEqual(pd.get('a')?.state, 'cleanup', 'cleanup entry persists until retried')
+  assert.strictEqual(pd.isDeleted('a'), true)
+})
+
+test('I-3c: a moved:true failure can never be undone (the file is already gone)', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'system-error', moved: true }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.undo('a'), false, 'a moved file has no undo window')
+  assert.strictEqual(pd.get('a')?.state, 'cleanup')
+})
+
+test('I-3c: a pure move failure (no moved flag) still uses the failed/re-show path', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'system-error' }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'failed', 'no moved flag -> move failed -> row re-shown')
+  assert.strictEqual(pd.isDeleted('a'), false, 'nothing was moved -> not flagged deleted')
+})
+
+test('I-3c: retry completes the archive cleanup when the host returns ok', async () => {
+  let call = 0
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => {
+      call += 1
+      return call === 1 ? { ok: false, code: 'system-error', moved: true } : { ok: true }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'cleanup')
+  const out = await pd.retry('a')
+  assert.strictEqual(out?.ok, true)
+  assert.strictEqual(call, 2, 'retry re-invokes the host delete (idempotent completion)')
+  assert.strictEqual(pd.get('a'), undefined, 'cleanup complete -> rail entry dropped')
+  assert.strictEqual(pd.isDeleted('a'), true, 'row stays hidden after cleanup (dir is in trash)')
+})
+
+test('I-3c: retry with another moved:true failure keeps the entry retryable', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'system-error', moved: true }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  const out = await pd.retry('a')
+  assert.strictEqual(out?.ok, false)
+  const e = pd.get('a')
+  assert.strictEqual(e?.state, 'cleanup', 'a failed retry stays retryable')
+  assert.strictEqual(e?.retrying, false, 'the retry flag resets for another attempt')
+  assert.strictEqual(pd.isDeleted('a'), true, 'row never re-shown')
+})
+
+test('I-3c: a non-moved failure DURING retry also keeps the row hidden (file is already moved)', async () => {
+  let call = 0
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => {
+      call += 1
+      return call === 1
+        ? { ok: false, code: 'system-error', moved: true }
+        : { ok: false, code: 'network-error' }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  const out = await pd.retry('a')
+  assert.strictEqual(out?.ok, false)
+  assert.strictEqual(pd.get('a')?.state, 'cleanup', 'a network error on retry does NOT re-show the row')
+  assert.strictEqual(pd.get('a')?.error, 'network-error')
+  assert.strictEqual(pd.isDeleted('a'), true)
+})
+
+test('I-3c: retry while a retry is in flight is a no-op (single host call)', async () => {
+  let call = 0
+  let resolveFire
+  const gate = new Promise((r) => { resolveFire = r })
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => {
+      call += 1
+      if (call === 1) return { ok: false, code: 'system-error', moved: true }
+      await gate
+      return { ok: true }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  const p1 = pd.retry('a')
+  const p2 = pd.retry('a')
+  assert.strictEqual(await p2, undefined, 'the in-flight guard resolves to a no-op')
+  resolveFire()
+  await p1
+  await flush()
+  assert.strictEqual(call, 2, 'exactly one retry reached the host')
+  assert.strictEqual(pd.get('a'), undefined, 'the in-flight retry resolved the entry')
+})
+
+test('I-3c: retry on a non-cleanup entry is a safe no-op', async () => {
+  const { deps } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  assert.strictEqual(await pd.retry('a'), undefined, 'a pending entry is not retryable')
+  assert.strictEqual(await pd.retry('never-parked'), undefined)
+})

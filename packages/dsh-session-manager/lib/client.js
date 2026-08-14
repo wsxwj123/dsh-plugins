@@ -163,7 +163,7 @@ window.__ModuleLoader__.load({
 			async function fire(id) {
 				if (!map.has(id)) return void 0;
 				const entry = map.get(id);
-				if (entry.state === "failed") return void 0;
+				if (entry.state === "failed" || entry.state === "cleanup") return void 0;
 				drop(id);
 				const outcome = await callFire({
 					id: entry.id,
@@ -171,27 +171,74 @@ window.__ModuleLoader__.load({
 					title: entry.title
 				}, entry.force ? { force: true } : void 0);
 				if (!outcome.ok) {
-					const failed = {
-						id: entry.id,
-						cwd: entry.cwd,
-						title: entry.title,
-						deadline: entry.deadline,
-						state: "failed",
-						error: outcome.code
-					};
-					map.set(failed.id, failed);
-					invalidateCache();
-					const cancel = schedule(() => {
-						if (map.get(failed.id)?.state === "failed") {
-							drop(failed.id);
-							notify();
-						}
-					}, FAILED_RETAIN_MS);
-					timers.set(failed.id, cancel);
-					notify();
+					if (outcome.moved === true) {
+						deletedIds.add(entry.id);
+						persistDeleted();
+						map.set(entry.id, {
+							...entry,
+							state: "cleanup",
+							error: outcome.code
+						});
+						invalidateCache();
+						notify();
+					} else {
+						const failed = {
+							id: entry.id,
+							cwd: entry.cwd,
+							title: entry.title,
+							deadline: entry.deadline,
+							state: "failed",
+							error: outcome.code
+						};
+						map.set(failed.id, failed);
+						invalidateCache();
+						const cancel = schedule(() => {
+							if (map.get(failed.id)?.state === "failed") {
+								drop(failed.id);
+								notify();
+							}
+						}, FAILED_RETAIN_MS);
+						timers.set(failed.id, cancel);
+						notify();
+					}
 				} else {
 					deletedIds.add(entry.id);
 					persistDeleted();
+					notify();
+				}
+				return outcome;
+			}
+			/** Retry the archive cleanup of a `cleanup`-state entry. The file is already
+			*  moved, so ANY retry outcome keeps the row hidden (the id stays in
+			*  deletedIds); only `ok` drops the rail entry. A non-`ok` outcome keeps the
+			*  entry retryable. Returns undefined when nothing is retryable (no cleanup
+			*  entry / a retry is already in flight) so the UI treats it as a no-op. */
+			async function retry(id) {
+				const entry = map.get(id);
+				if (!entry || entry.state !== "cleanup" || entry.retrying === true) return void 0;
+				map.set(id, {
+					...entry,
+					retrying: true
+				});
+				invalidateCache();
+				notify();
+				const outcome = await callFire({
+					id: entry.id,
+					cwd: entry.cwd,
+					title: entry.title
+				}, entry.force ? { force: true } : void 0);
+				const cur = map.get(id);
+				if (!cur || cur.state !== "cleanup") return outcome;
+				if (outcome.ok) {
+					drop(id);
+					notify();
+				} else {
+					map.set(id, {
+						...cur,
+						retrying: false,
+						error: outcome.code
+					});
+					invalidateCache();
 					notify();
 				}
 				return outcome;
@@ -247,7 +294,8 @@ window.__ModuleLoader__.load({
 				get: (id) => map.get(id),
 				isPending: (id) => map.get(id)?.state === "pending",
 				isDeleted: (id) => deletedIds.has(id),
-				fireNow
+				fireNow,
+				retry
 			};
 		}
 		//#endregion
@@ -341,33 +389,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"rowTitle": "FPsCja_rowTitle",
-			"empty": "FPsCja_empty",
-			"rail-in": "FPsCja_rail-in",
-			"item": "FPsCja_item",
-			"entryButton": "FPsCja_entryButton",
-			"label": "FPsCja_label",
+			"trashCount": "FPsCja_trashCount",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"rail": "FPsCja_rail",
+			"title": "FPsCja_title",
+			"add": "FPsCja_add",
+			"backdrop": "FPsCja_backdrop",
+			"head": "FPsCja_head",
 			"close": "FPsCja_close",
 			"danger": "FPsCja_danger",
-			"backdrop": "FPsCja_backdrop",
-			"trashBar": "FPsCja_trashBar",
-			"undo": "FPsCja_undo",
-			"head": "FPsCja_head",
-			"divider": "FPsCja_divider",
-			"countdown": "FPsCja_countdown",
-			"rail": "FPsCja_rail",
-			"errorBanner": "FPsCja_errorBanner",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"title": "FPsCja_title",
-			"failed": "FPsCja_failed",
 			"overlay": "FPsCja_overlay",
+			"rail-in": "FPsCja_rail-in",
 			"list": "FPsCja_list",
-			"dismiss": "FPsCja_dismiss",
 			"row": "FPsCja_row",
 			"action": "FPsCja_action",
-			"trashCount": "FPsCja_trashCount",
-			"add": "FPsCja_add",
-			"trashButton": "FPsCja_trashButton"
+			"errorBanner": "FPsCja_errorBanner",
+			"trashBar": "FPsCja_trashBar",
+			"failed": "FPsCja_failed",
+			"undo": "FPsCja_undo",
+			"trashButton": "FPsCja_trashButton",
+			"dismiss": "FPsCja_dismiss",
+			"countdown": "FPsCja_countdown",
+			"divider": "FPsCja_divider",
+			"entryButton": "FPsCja_entryButton",
+			"item": "FPsCja_item",
+			"label": "FPsCja_label",
+			"rowTitle": "FPsCja_rowTitle",
+			"empty": "FPsCja_empty"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -462,11 +510,14 @@ window.__ModuleLoader__.load({
 		* same module state the countdown timers live in — switching panels neither
 		* resets nor drops a countdown (INTERFACE §1.2 step 3).
 		*
-		* Two entry kinds:
+		* Three entry kinds:
 		*   - pending (undoable): title + seconds remaining, with an Undo button.
 		*   - failed (retain window): an error readout; the session is already
 		*     re-shown. Failed entries are auto-cleared by the state machine after
 		*     a short window, so no manual dismissal is needed here.
+		*   - cleanup (partial failure, review I-3): the file was moved but archive
+		*     cleanup is incomplete — the row stays hidden and a Retry button
+		*     re-invokes the host delete to complete it (INTERFACE §2.4).
 		*/
 		const getSnapshot = () => pendingDeletes.snapshot();
 		const subscribe = (listener) => pendingDeletes.subscribe(listener);
@@ -478,6 +529,17 @@ window.__ModuleLoader__.load({
 				className: rail_module_css_default.failed,
 				title: entry.error ? `删除失败：${entry.error}` : "删除失败"
 			}, `「${entry.title}」删除失败，已恢复`));
+			if (entry.state === "cleanup") return (0, react.createElement)("div", { className: rail_module_css_default.item }, (0, react.createElement)("span", {
+				className: rail_module_css_default.failed,
+				title: entry.error ? `清理未完成：${entry.error}` : "清理未完成"
+			}, `「${entry.title}」清理未完成，可重试补齐`), (0, react.createElement)("button", {
+				type: "button",
+				className: rail_module_css_default.undo,
+				disabled: entry.retrying === true,
+				onClick: () => {
+					pendingDeletes.retry(entry.id);
+				}
+			}, entry.retrying === true ? "重试中…" : "重试"));
 			const remaining = Math.max(0, Math.ceil((entry.deadline - now) / 1e3));
 			return (0, react.createElement)("div", {
 				className: rail_module_css_default.item,

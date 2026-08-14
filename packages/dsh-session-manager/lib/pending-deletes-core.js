@@ -92,7 +92,7 @@ function createPendingDeletes(deps) {
 	async function fire(id) {
 		if (!map.has(id)) return void 0;
 		const entry = map.get(id);
-		if (entry.state === "failed") return void 0;
+		if (entry.state === "failed" || entry.state === "cleanup") return void 0;
 		drop(id);
 		const outcome = await callFire({
 			id: entry.id,
@@ -100,27 +100,74 @@ function createPendingDeletes(deps) {
 			title: entry.title
 		}, entry.force ? { force: true } : void 0);
 		if (!outcome.ok) {
-			const failed = {
-				id: entry.id,
-				cwd: entry.cwd,
-				title: entry.title,
-				deadline: entry.deadline,
-				state: "failed",
-				error: outcome.code
-			};
-			map.set(failed.id, failed);
-			invalidateCache();
-			const cancel = schedule(() => {
-				if (map.get(failed.id)?.state === "failed") {
-					drop(failed.id);
-					notify();
-				}
-			}, FAILED_RETAIN_MS);
-			timers.set(failed.id, cancel);
-			notify();
+			if (outcome.moved === true) {
+				deletedIds.add(entry.id);
+				persistDeleted();
+				map.set(entry.id, {
+					...entry,
+					state: "cleanup",
+					error: outcome.code
+				});
+				invalidateCache();
+				notify();
+			} else {
+				const failed = {
+					id: entry.id,
+					cwd: entry.cwd,
+					title: entry.title,
+					deadline: entry.deadline,
+					state: "failed",
+					error: outcome.code
+				};
+				map.set(failed.id, failed);
+				invalidateCache();
+				const cancel = schedule(() => {
+					if (map.get(failed.id)?.state === "failed") {
+						drop(failed.id);
+						notify();
+					}
+				}, FAILED_RETAIN_MS);
+				timers.set(failed.id, cancel);
+				notify();
+			}
 		} else {
 			deletedIds.add(entry.id);
 			persistDeleted();
+			notify();
+		}
+		return outcome;
+	}
+	/** Retry the archive cleanup of a `cleanup`-state entry. The file is already
+	*  moved, so ANY retry outcome keeps the row hidden (the id stays in
+	*  deletedIds); only `ok` drops the rail entry. A non-`ok` outcome keeps the
+	*  entry retryable. Returns undefined when nothing is retryable (no cleanup
+	*  entry / a retry is already in flight) so the UI treats it as a no-op. */
+	async function retry(id) {
+		const entry = map.get(id);
+		if (!entry || entry.state !== "cleanup" || entry.retrying === true) return void 0;
+		map.set(id, {
+			...entry,
+			retrying: true
+		});
+		invalidateCache();
+		notify();
+		const outcome = await callFire({
+			id: entry.id,
+			cwd: entry.cwd,
+			title: entry.title
+		}, entry.force ? { force: true } : void 0);
+		const cur = map.get(id);
+		if (!cur || cur.state !== "cleanup") return outcome;
+		if (outcome.ok) {
+			drop(id);
+			notify();
+		} else {
+			map.set(id, {
+				...cur,
+				retrying: false,
+				error: outcome.code
+			});
+			invalidateCache();
 			notify();
 		}
 		return outcome;
@@ -176,7 +223,8 @@ function createPendingDeletes(deps) {
 		get: (id) => map.get(id),
 		isPending: (id) => map.get(id)?.state === "pending",
 		isDeleted: (id) => deletedIds.has(id),
-		fireNow
+		fireNow,
+		retry
 	};
 }
 /** In-memory storage adapter (tests, and a no-op fallback for non-web runs). */
