@@ -96,7 +96,7 @@
 ### 2.6 node 半的注册与打开方式（双端桥接，节 2.1 已述）
 
 - `cordis.patch.yml` 机制（来自 turn-scrubber / better-sidebar）：包内声明 `- insert: - id: <pkg>, name: '<pkg>'`，配合 `package.json` `dsh.bundle.patch`；`dsh plugin --profile web add` 把它收进 profile 的 bundle stack，`cordis.yml` 组成加载。node 半是包 `main`（`lib/index.js`）的 Cordis 插件（`apply(ctx)`），client 半是 `lib/client.js` bundle（`__ModuleLoader__.load`）。
-- host 半注入 `["connection","storageDomain"]` 等服务（源码：`dsh-workspace` `static inject = ["storageDomain","sessionPersistence"]`；`dsh-storage-domain` provide `storageDomain`；`dsh-client-connection` provide `connection`（其 `rpc.handle` 自动套用 `isTrustedApiRequest` fence，见 §2.1））。host 亦需 `["sessions"]`（node 侧 `ctx.sessions.get(id)` 判运行中会话，见 §5.2 风险6）。
+- host 半注入 `["connection","storageDomain","sessions"]`（权威清单与每个访问方式、是否必注入见 **§9.1** cordis 兼容表）。源码：`dsh-workspace` `static inject = ["storageDomain","sessionPersistence"]`；`dsh-storage-domain` provide `storageDomain`；`dsh-client-connection` provide `connection`（其 `rpc.handle` 自动套用 `isTrustedApiRequest` fence，见 §2.1）；`dsh-session` 提供 node 侧 `sessions`（`ctx.sessions.get(id)` 判运行中会话，见 §5.2 风险6）。
 - 存储后端：`dsh-storage-json`（backend `json`，root=`~/.dsh/storages/`，单位文件 `<name>.json`）。`workspace.json` 的 global（含 `archivedSessionIds`）读写经 `storageDomain`。
 
 ---
@@ -215,7 +215,7 @@ packages/dsh-session-manager/
 - **与 claude-gui 的差异**：
   - claude-gui 后端是它自己的 `rm -r`（服务端即时删），撤销窗口在"前端 pending + 服务端已删"之间；DSH 用回收站 `mv`，**撤销窗口 = node 端暂不真正落盘，10 秒后 host 端才把目录移入回收站**，撤销拦在文件移动前，更安全。
   - claude-gui 用 `fetch('/api/files/read')` 之类后端 REST；DSH 用 `ctx.connection.rpc.handle('/sm', ...)` 注册的 RPC channel + 浏览器同源 `fetch`，路由自带官方信任 fence（§2.1）。
-  - DSH 的 host 是 Cordis：逻辑放 `apply(ctx)` 的 fiber，路由注册用 `ctx.effect` 做 dispose（卸载自动注销路由与定时清理）。
+  - DSH 的 host 是 Cordis：node 半 `apply(ctx)` 在插件 fiber 运行；`/sm` 路由经 `ctx.connection.rpc.handle(...)` 注册（route 挂到 connection 服务自身 ctx 的 `owner.effect`，随连接服务生命周期存活而非随插件卸载——见 §9 cordis 清单）。回收站定时清理等自建副作用用 `ctx.effect` 做 fiber dispose。
 
 ### 5.6 关键技术决策 B——「归档视图」UI 方案
 - 入口：`sidebar.footer.action`（官方 list 槽）注册一个「归档」按钮（icon + 文案），点击展开/收起 overlay。
@@ -259,3 +259,54 @@ packages/dsh-session-manager/
 | A-5 | 删除当前选中会话 UI 态契约缺失 | **已修** | INTERFACE §1.4 补行：删除当前会话 → UI 回 no-session（或自动选中相邻）；撤销恢复后回到"未选中/重新打开"态 |
 
 > 修订不引入新"未验证假设"：本次新增的关键机制（`connection.rpc.handle` 信任 fence、`ctx.sessions.get` 运行中判定、`encodeSegment` 净化、`workspaces.refresh` 的 `installArchived`）均已逐一读源码核实存在后写入。
+
+---
+
+## 9. cordis 兼容性与冲突避让（BRIEF §4.5 硬约束）
+
+> 目标：不因 cordis 服务访问方式/命名/slot 占用导致 dsh web 启动崩溃或功能冲突。**每项访问方式均已读源码核实**；除标"待实机确认"外，不引入未验证假设。
+
+### 9.1 node 半每个 ctx 服务访问清单（审定）
+
+cordis 代理解析规则（`@deepseek-ai/cordis/lib/index.js` ~660-680）：`ctx.<name>` 从注入作用域 `fiber.store` 解析；未在作用域内会抛 **`cannot get property "<name>" without inject`**——这正是 pet-bridge 崩溃根因（LRN-20260814-01/02）。正确访问 = 声明 `static inject` / `apply({ inject })` / 插件 fiber 内 `ctx.get("<name>")`（`ctx.get` 走 `reflect.get`，无需注入、未提供返回 undefined）。
+
+| 服务 | 访问方式（本插件） | 依据（源码位置） | 备注 |
+|---|---|---|---|
+| `ctx.logger` | **核心成员，裸访问安全** `ctx.logger.info(...)` | `cordis/lib/types/context.d.ts` 行27；`lib/index.js` 688 构造给 `this.logger` | 非服务属性 |
+| `ctx.effect` | **核心成员，裸访问安全** | 同上 context.d.ts 行42 | 自建副作用/定时器用 |
+| `ctx.get(...)` | **核心成员，裸访问安全** | `cordis/lib/types/reflect.d.ts`："read a service from the store without the inject requirement" | 全局可选读入口 |
+| `ctx.connection` | **注入声明** `inject:["connection"]`；访问 `ctx.connection.rpc.handle(...)` | `dsh-client-connection/lib/index.js` 215（`super(ctx,"connection")`）、588 exports；`connection.rpc` 在 219-227。**route 挂到 connection 自身 ctx**（`owner.effect(owner.webServer.register(...))` 行257），非插件 fiber | 必须注入才在 scope |
+| `ctx.storageDomain` | **注入声明** `inject:["storageDomain"]`；访问 `ctx.storageDomain.get("workspace")` → `.global` | `dsh-storage-domain/lib/index.js` 300、430（`provide("storageDomain", facility)`）；`get(name)` 行381 返回已开 live `DomainImpl` | 必须注入；拿到 live 句柄（spike 验证写介质） |
+| `ctx.sessionPersistence` | **不直接访问**（文件移动用 `fs/promises`，路径由 `projectKey/encodeSegment` 重算），故不 inject | `dsh-session-persistence-jsonl` exports | 只读其路径编码函数常量即可，不注入服务 |
+| `ctx.sessions`（node，运行中判定） | **注入声明** `inject:["sessions"]`；仅 `ctx.sessions.get(id)` 判 live | `dsh-session/lib/index.js` 1580（`SessionStore extends Service`, `super(ctx,"sessions")`）、1816（`get(id)` 返回 `store.get(id)?.session`） | **必须注入，不得裸 `ctx.sessions`**——这是 pet-bridge 同类崩点 |
+| `ctx.webServer` | **不在插件里直接访问**：`/sm` 交由 `connection.rpc.handle`（内部经 `owner.webServer`）。故本插件 node 半**不 inject `webServer`**，避免多余依赖面 | `dsh-host-webserver/lib/index.js` Config host 仅 `127.0.0.1|0.0.0.0`；`connection` 已封装 | 降低启动耦合 |
+| `ctx.workspaceRegistry` | **不访问**（不碰 registry 实例，只经 storageDomain 改域 global） | `dsh-workspace/lib/index.js` 290（registry 已 open workspace 域） | 不注入此服务 |
+
+> **node 半 `inject` 终版**：`["connection","storageDomain","sessions"]`（均为服务必注入）。`apply(ctx, config)` 内全部经注入 scope 访问，绝不裸访问未声明服务。
+
+> **client 半同样适用注入规则**：client `apply(ctx: ClientContext)` 访问 `ctx.sessions` / `ctx.workspaces` / `ctx.slots`，均须通过 `export const inject = ['sessions','workspaces','slots']` 声明（同 turn-scrubber 的 `export const inject = ['sessions']` 模式），由 dsh-client-runtime 的 slots/runtime 提供注入作用域；不得在未声明时裸 `ctx.<服务>`。归档视图数据读 `ctx.sessions.list`/`ctx.workspaces.list`、槽注册走 `ctx.slots.register`，全部在注入 scope 内。
+
+### 9.2 命名与路由避让清单（已核对已装插件，无冲突）
+
+| 项 | 本插件取值 | 冲突检查结论 |
+|---|---|---|
+| 包名 / cordis 插件 id | `dsh-session-manager` | 已装 `dsh-{better-sidebar,genui,at-file,automation,theme-gallery,turn-scrubber,find-plugin,plugin-manager}`、`@linxin666/dsh-{ssh,task-board,aionui-panel,...}`、`modlens` **均无同名**（BRIEF §4.5 第3条） |
+| cordis 服务注册名 | **不注册任何服务**（不用 `ctx.provide`，无全局服务名） | 不占用官方 sessions/workspaces/connection/webServer/storageDomain 等任一名字 |
+| RPC 路由前缀 | `/sm`（channel） | 官方 `/api`；已装插件：`/dsh-automation`、`/aionui-panel(+/events)`、`/git(+/events)`、`/m`、`/sidebar/*`——**无 `/sm`**（§2.1 已核实）。`connection.rpc.handle` 对重复 channel 抛错（`assertChannel`），`/sm` 空闲故安全 |
+
+### 9.3 slot 占用检查（client 半）
+
+- **本插件使用槽位**：仅 `sidebar.footer.action`（`list` 槽，additive，多 occupant 并列渲染；`dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts`）。
+- **占用者检查（已核实）**：当前**只有 `remote-web-ui`** 注册 `sidebar.footer.action`（`id:'remote-web-ui'`）；`task-board/ssh/aionui-panel/git-graph/live-stats` 均用 DOM overlay/面板路由（`/aionui-panel`、`/git`、`/m`），**不占用**该槽；无插件占用 `sidebar.workspaces`/`sidebar.settings`（本插件也不用它们）。
+- **冲突处理策略**：因为 `list` 槽天然并列，即使未来别家也注册 `sidebar.footer.action`，只是按钮并列、不互相覆盖。**兜底**：若实机发现该槽不可注入（RARE），归档入口与归档视图**整体退化为 DOM 注入**（与删除按钮同款 DOM overlay，锚定侧栏脚部 `[role=navigation]`/折叠区），不影响功能。
+- **slot `id` 唯一性**：本插件注册 `id: 'dsh-session-manager'`，与 remote-web-ui 等不冲突。
+
+### 9.4 启动不崩溃验证（开发阶段必做步骤）
+
+- **验证点放哪**：并入 **T6 联调**为第一硬性前置步骤（置于任何 UI/功能验收之前），且作为**发布 gate**。即"装进 web profile 后 dsh web 正常启动"通过，才继续 T4/T5 手测。
+- **怎么验**：
+  1. `dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"` 装本插件（**不物理复制**官方 `@deepseek-ai/*`，遵守 AGENTS.md 的 783 陷阱）+重启 dsh web。
+  2. 启动 Console 无 `cannot get property "<X>" without inject`/`Cannot read properties of undefined` 报错；侧栏正常渲染。
+  3. 逐项点读：`/sm/trash` 返回 200、回收站目录创建正常、无插件崩溃。
+  4. **测试替身约束（BRIEF §4.5 第5条）**：node 半单测的 ctx 替身必须模拟 cordis——未注入属性抛错、`ctx.get` 可选读（返回 undefined），否则单测全绿也拦不住真实崩溃。
+- **回滚手段**：装完若崩溃，`dsh plugin --profile web remove dsh-session-manager` + 重启即回到原态（不改官方源码、不落磁盘副作用）。
