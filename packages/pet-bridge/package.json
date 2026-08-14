@@ -1,0 +1,23 @@
+{
+  "name": "dsh-pet-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH server plugin: push dsh session status to the cc-pet desktop pet bubble in real time.",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0"
+  }
+}
