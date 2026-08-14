@@ -37,8 +37,8 @@ function apply(ctx, config) {
     if (payload && payload.agent) collector.unwatch(payload.agent)
   }
 
-  // 对已存在 agent 逐个建观察（不依赖 ctx.get，直接遍历 ctx.agents 若有）
-  const existing = (ctx && ctx.agents) || null
+  // 对已存在 agent 逐个建观察（用 ctx.get 可选读：agents 未注入/未注册时返回 undefined，不抛）
+  const existing = (ctx && typeof ctx.get === 'function' ? ctx.get('agents') : null) || null
   if (existing && typeof existing === 'object') {
     const values = existing.store && existing.store.values ? existing.store.values() : null
     if (values) {
