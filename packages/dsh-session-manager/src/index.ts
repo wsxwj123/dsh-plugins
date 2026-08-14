@@ -6,15 +6,18 @@
  *     loopback trust fence, with recycle-bin file operations
  *     (delete/restore/emptyTrash/trash) and the workspace archive-set write
  *     (delete-archived step-2 / unarchive).
- *  2. Use ONLY core ctx members (logger/get/effect/on/emit) plus exactly the
- *     injected services `connection`, `storageDomain`, `sessions`; the HTTP
- *     server is reached via `ctx.get('webServer')` (optional, never bare).
+ *  2. Use ONLY core ctx members (logger/get/effect/on/emit). Every service
+ *     (storageDomain / sessions / webServer) is read through `ctx.get` (never
+ *     bare), so a missing service degrades to a logged no-op instead of
+ *     blocking plugin activation.
  *
  * Cordis access discipline (the dsh-pet-bridge crash lesson): we never touch a
- * non-injected service property bare — `ctx.<service>` outside the inject list
- * throws "cannot get property without inject". Every service is either in the
- * inject list or read through `ctx.get` (which returns undefined rather than
- * throwing).
+ * service property bare — `ctx.<service>` outside the inject list throws
+ * "cannot get property without inject". And this plugin deliberately keeps its
+ * `inject` EMPTY so it never becomes a hard activation dependency: cordis waits
+ * on injected services, so injecting one that a headless profile lacks leaves
+ * the plugin `pending` forever and fails the whole profile load (the e2e
+ * startup crash). Everything is an optional `ctx.get`, presence-gated.
  */
 
 import path from 'node:path'
@@ -22,7 +25,7 @@ import os from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { TrashStore } from './trash.js'
-import { createSmHandler, archiveFromGlobal, type ArchiveDomain, type SmHandlerDeps } from './handler.js'
+import { createSmHandler, archiveFromGlobal, type SmHandlerDeps } from './handler.js'
 import { isTrustedSmRequest } from './trust-fence.js'
 
 /** Minimal web-server service surface we depend on (via optional ctx.get). */
@@ -34,27 +37,27 @@ interface WebServerService {
   }): () => void
 }
 
-/**
- * The host services this plugin injects. Typed here (not on `Context`) because
- * cordis injects them into the fiber scope at runtime; the bare `ctx.<name>`
- * reads below are legal precisely because they are declared in `inject`.
- */
-interface InjectedServices {
-  connection: unknown
-  storageDomain: { get(name: string): ArchiveDomain | null | undefined }
-  sessions: { get(id: string): unknown }
+/** storage-domain facility shape read via ctx.get (optional). */
+interface StorageDomainService {
+  get(name: string): { global: { get(): unknown; set(value: unknown): unknown } } | null | undefined
 }
-type InjectedCtx = Context & InjectedServices
+
+/** node SessionStore shape read via ctx.get (optional). */
+interface SessionsService {
+  get(id: string): unknown
+}
 
 export const name = 'dsh-session-manager'
 
 /**
- * Inject the three host services the handler needs. `webServer` is deliberately
- * NOT injected (PLAN §9.1): it is read optionally via ctx.get so registration
- * degrades to a logged no-op when the server is unavailable instead of
- * crashing startup.
+ * Deliberately empty. Cordis treats inject entries as hard activation
+ * dependencies (absent service → plugin `.pending` forever → whole profile load
+ * fails). To survive headless profiles that lack storageDomain/sessions, every
+ * service is read optionally via ctx.get instead. Presence is checked at
+ * apply() time; a missing service degrades the affected endpoints (documented
+ * on each) without crashing or hanging activation.
  */
-export const inject = ['connection', 'storageDomain', 'sessions']
+export const inject: readonly string[] = []
 
 export interface SessionManagerConfig {
   /** Sessions root; defaults to `~/.dsh/sessions`. */
@@ -85,7 +88,7 @@ export function makeHandler(
   return createSmHandler(deps)
 }
 
-export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void {
+export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
   const { sessionsRoot, trashRoot } = resolveRoots(config)
   // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
   // sit inside the sessions root, or the host session scan would re-discover
@@ -97,11 +100,30 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
     return
   }
 
+  // All services are optional reads. Each degrades independently:
+  //   storageDomain missing -> unarchive => workspace-domain-unavailable,
+  //                             delete-archived step-2 => system-error (partial)
+  //   sessions     missing -> delete running-session guard skipped
+  //   webServer    missing -> /sm routes not mounted (logged)
+  const storageDomain = ctx.get('storageDomain') as StorageDomainService | undefined
+  const sessions = ctx.get('sessions') as SessionsService | undefined
+
+  if (!storageDomain) {
+    ctx.logger.warn(
+      '[session-manager] storageDomain service unavailable; archive write (unarchive / delete-of-archived) will degrade to workspace-domain-unavailable / system-error',
+    )
+  }
+  if (!sessions) {
+    ctx.logger.warn(
+      '[session-manager] sessions service unavailable; running-session guard is skipped and deletes proceed',
+    )
+  }
+
   const trash = new TrashStore(trashRoot)
 
-  const storageDomain = ctx.storageDomain // injected
-  /** Read the current workspace global object; null when the domain is absent. */
+  /** Read the current workspace global object; {} when the domain is absent. */
   const readGlobal = (): Record<string, unknown> => {
+    if (!storageDomain) return {}
     const domain = storageDomain.get('workspace')
     if (!domain || typeof domain.global?.get !== 'function') return {}
     try {
@@ -115,8 +137,8 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
   const deps: SmHandlerDeps = {
     sessionsRoot,
     trash,
-    sessions: ctx.sessions, // injected
-    storageDomain, // injected
+    sessions, // optional; handler degrades running-guard when undefined
+    storageDomain, // optional; handler degrades archive paths when undefined
     readArchived: () => archiveFromGlobal(readGlobal()),
     readWorkspaceGlobal: readGlobal,
     log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) },

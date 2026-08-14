@@ -36,13 +36,22 @@ export interface SmHandlerDeps {
   sessionsRoot: string
   /** The recycle-bin store (its root must be OUTSIDE sessionsRoot). */
   trash: TrashStore
-  /** Node SessionStore: truthy when the id is currently running / live. */
-  sessions: { get(id: string): unknown | null | undefined }
   /**
-   * storage-domain facility: `get('workspace')` returns the live, already-open
-   * workspace DomainImpl (null/undefined → domain unavailable).
+   * Optional Node SessionStore: truthy when the id is currently running /
+   * live. When absent (headless profiles without a session service), the
+   * running-session guard is skipped and delete proceeds — the guard is a
+   * safety enhancement, not a functional requirement (INTERFACE §4), so we
+   * degrade to "run without it" rather than refuse to delete.
    */
-  storageDomain: { get(name: string): ArchiveDomain | null | undefined }
+  sessions?: { get(id: string): unknown | null | undefined }
+  /**
+   * Optional storage-domain facility: `get('workspace')` returns the live,
+   * already-open workspace DomainImpl. When the facility itself is absent the
+   * write path degrades: unarchive → workspace-domain-unavailable, delete
+   * step-2 → system-error (partial failure, retryable). Absent storageDomain
+   * never crashes or hangs the plugin.
+   */
+  storageDomain?: { get(name: string): ArchiveDomain | null | undefined }
   /** Read the current archivedSessionIds set (never touches the write domain). */
   readArchived(): string[]
   /** Read the current workspace global object `{initialized, workspaceIds, archivedSessionIds}`. */
@@ -139,8 +148,11 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return fail('path-out-of-bounds', 'target outside sessions root')
     }
 
-    // Running-session guard (host-side, not only the client).
-    if (deps.sessions.get(id as string)) return fail('session-running', 'session is running')
+    // Running-session guard (host-side, not only the client). Optional at the
+    // handler level: when no session service is supplied we cannot know if the
+    // target is live, so the guard is skipped (delete proceeds) rather than
+    // crashing — the guard is a safety enhancement, not a hard gate.
+    if (deps.sessions?.get(id as string)) return fail('session-running', 'session is running')
 
     // Source missing: if already in the trash → idempotent-complete, run the
     // archive step-2; else a genuine not-found.
@@ -171,7 +183,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
   function doArchivedCleanup(id: string): SmResponse {
     if (!deps.readArchived().includes(id)) return ok()
 
-    const domain = deps.storageDomain.get('workspace')
+    const domain = deps.storageDomain?.get('workspace')
     if (domain === null || domain === undefined) {
       log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
       return fail('system-error', 'archive cleanup failed; file already moved, retry to complete')
@@ -235,8 +247,10 @@ export function createSmHandler(deps: SmHandlerDeps): {
     const { id } = body as { id?: unknown }
     if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
 
-    // Domain availability is checked FIRST, before reading the set.
-    const domain = deps.storageDomain.get('workspace')
+    // Domain availability is checked FIRST, before reading the set. An absent
+    // storageDomain read via ?. yields undefined, so the degradation is the
+    // same "workspace-domain-unavailable" as when get('workspace') returns null.
+    const domain = deps.storageDomain?.get('workspace')
     if (domain === null || domain === undefined) {
       return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
     }

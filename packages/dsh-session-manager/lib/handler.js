@@ -84,7 +84,7 @@ function createSmHandler(deps) {
 		if (!isStableSegment(id)) return fail("path-out-of-bounds", "id escapes segment encoding");
 		const targetDir = sessionSegment(proj.projectDir, id);
 		if (!isInsideOrEqual(deps.sessionsRoot, targetDir)) return fail("path-out-of-bounds", "target outside sessions root");
-		if (deps.sessions.get(id)) return fail("session-running", "session is running");
+		if (deps.sessions?.get(id)) return fail("session-running", "session is running");
 		if (!fs.existsSync(targetDir)) {
 			if (deps.trash.hasItem(id)) return doArchivedCleanup(id);
 			return fail("session-dir-not-found", "session dir not found");
@@ -103,7 +103,7 @@ function createSmHandler(deps) {
 	}
 	function doArchivedCleanup(id) {
 		if (!deps.readArchived().includes(id)) return ok();
-		const domain = deps.storageDomain.get("workspace");
+		const domain = deps.storageDomain?.get("workspace");
 		if (domain === null || domain === void 0) {
 			log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`);
 			return fail("system-error", "archive cleanup failed; file already moved, retry to complete");
@@ -153,7 +153,7 @@ function createSmHandler(deps) {
 		if (!bodyIsObject(body)) return bad("bad-request", "body must be an object");
 		const { id } = body;
 		if (!assertValidId(id)) return bad("invalid-id", "invalid id");
-		const domain = deps.storageDomain.get("workspace");
+		const domain = deps.storageDomain?.get("workspace");
 		if (domain === null || domain === void 0) return fail("workspace-domain-unavailable", "workspace storage domain unavailable");
 		const archived = deps.readArchived();
 		if (!archived.includes(id)) return ok();
