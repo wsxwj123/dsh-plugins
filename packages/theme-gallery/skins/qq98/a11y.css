@@ -1,0 +1,22 @@
+/*
+ * qq98 — QQ2008 怀旧版 — 可访问性修正
+ * 作用域：body[data-dsh-retro]（暗色变体 body[data-dsh-retro][data-ds-dark-theme]）。
+ * 原则：只提升对比度，不删/不改皮肤素材、不改布局尺寸动画。仅覆盖「实测不达标」项。
+ * 方法：与皮肤内置 CSS 同优先级、后定义者胜（本层在 a11y 阶段后注入），关键声明用
+ * !important 保险。
+ *
+ * 修正项（对比度经脚本核算，目标 AA ≥ 4.5:1，普通文字）：
+ *  1) 亮态主按钮（brand button）白字 vs 填充 #2b7cd9 = 4.21、hover #3f8ee6 = 3.37，
+ *     未达 AA → 在本作用域重定义 fill 至 #2770c3（对白字对比 5.03）、hover 至 #3373ba
+ *     （4.88）。
+ *  2) 暗态主按钮 hover 消费 #2b7cd9 对白字 = 4.21 <4.5 → 重定义暗态 hover 至 #2770c3
+ *     （5.03）。暗态 fill #1e63b8 = 5.95 已达标不改。
+ *  半透明面板/代码块：本皮肤各载字面板均不透明，正文/气泡/代码对比已达标，无修正。
+ */
+body[data-dsh-retro] {
+  --dsw-alias-button-primary-fill: #2770c3;
+  --dsw-alias-button-primary-hover: #3373ba;
+}
+body[data-dsh-retro][data-ds-dark-theme] {
+  --dsw-alias-button-primary-hover: #2770c3;
+}

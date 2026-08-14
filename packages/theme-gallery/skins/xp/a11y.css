@@ -1,0 +1,11 @@
+/*
+ * xp — Windows XP (Luna) — 可访问性修正
+ * 作用域：body[data-dsh-xp]（暗色变体带 [data-ds-dark-theme]）。
+ * 审计结论：亮态主按钮白字 fill #316ac5 = 5.25 / hover 6.91 已达标；暗态 fill 5.25 达标，
+ * 但暗态 hover （#3d7ad8）对白字 = 4.22 < 4.5 → 重定义仅暗态 hover 至 #376ec2（5.04）。
+ * 代码块正文、普通正文亮/暗两态均已 ≥ 4.5，无需 override。
+ */
+body[data-dsh-xp][data-ds-dark-theme] {
+  --dsw-alias-button-primary-hover: #376ec2;
+}
+
