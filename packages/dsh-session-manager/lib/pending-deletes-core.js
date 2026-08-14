@@ -127,7 +127,8 @@ function createPendingDeletes(deps) {
 	}
 	return {
 		requestDelete(id, cwd, title) {
-			if (map.has(id)) return;
+			if (map.has(id)) return false;
+			for (const e of map.values()) if (e.state === "pending") return false;
 			park({
 				id,
 				cwd,
@@ -136,6 +137,7 @@ function createPendingDeletes(deps) {
 				state: "pending"
 			});
 			notify();
+			return true;
 		},
 		undo(id) {
 			const entry = map.get(id);

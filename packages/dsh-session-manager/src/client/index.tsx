@@ -83,8 +83,13 @@ export function apply(ctx: Context): void {
     () => ctx,
     (action, row) => {
       // Park the deferred deletion; the pendingDeletes subscription below hides
-      // the row and handles the countdown/undo.
-      pendingDeletes.requestDelete(action.id, action.cwd, action.title)
+      // the row and handles the countdown/undo. At most one is allowed at a
+      // time (P4): a rejected request surfaces the "busy" message to the user.
+      const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title)
+      if (!parked) {
+        window.alert('已有待撤销的删除，请先处理后再删除')
+        return
+      }
     },
   )
 

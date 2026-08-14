@@ -108,27 +108,41 @@ test('countdown survives a view switch: firing is driven by module timer, not mo
   assert.strictEqual(calls.length, 1)
 })
 
-test('idempotent: a second requestDelete for a parked id does not double-park', () => {
+test('idempotent: a second requestDelete for a parked id is rejected (no double-park)', () => {
   const { deps } = makeDeps()
   const pd = createPendingDeletes(deps)
-  pd.requestDelete('a', '/ctx', 'A')
-  pd.requestDelete('a', '/ctx', 'A')
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), true)
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), false, 'same id while pending is rejected')
   assert.strictEqual(pd.snapshot().length, 1)
 })
 
-test('multi-entry: two ids park two independent entries (parallel undo)', async () => {
-  const { deps, calls, advance } = makeDeps()
+test('P4: a second, different-pending request is rejected while one is active', () => {
+  const { deps } = makeDeps()
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
-  pd.requestDelete('b', '/ctx-b', 'B')
-  assert.strictEqual(pd.snapshot().length, 2)
-  // Undo b only; a still fires at its own deadline.
-  assert.strictEqual(pd.undo('b'), true)
-  assert.strictEqual(pd.isPending('a'), true)
-  assert.strictEqual(pd.isPending('b'), false)
+  // Another session delete while one is mid-countdown -> rejected.
+  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), false)
+  assert.strictEqual(pd.snapshot().length, 1)
+  assert.strictEqual(pd.get('b'), undefined)
+})
+
+test('P4: after undo, a new (different) delete can be parked', () => {
+  const { deps } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  assert.strictEqual(pd.undo('a'), true)
+  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), true, 'slot is free after undo')
+  assert.strictEqual(pd.snapshot().length, 1)
+})
+
+test('P4: after the window fires, a new delete can be parked', async () => {
+  const { deps, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
   advance(UNDO_WINDOW_MS)
   await Promise.resolve()
-  assert.deepStrictEqual(calls.map((c) => c.id), ['a'])
+  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), true, 'slot is free after a fire')
+  assert.strictEqual(pd.snapshot().length, 1)
 })
 
 test('undo before the deadline removes the entry and never fires', async () => {
@@ -200,18 +214,25 @@ test('snapshot returns the SAME reference while the map is unchanged (React #185
   const s1again = pd.snapshot()
   assert.strictEqual(s1, s1again, 'consecutive reads while unchanged must share a reference')
 
-  // A mutation replaces the reference (new state observable).
-  pd.requestDelete('b', '/ctx-b', 'B')
+  // Mutations replace the reference: waste a slot then repark a DIFFERENT id
+  // (P4 keeps at most one live). Each transition must yield a new array ref.
+  pd.undo('a')
   const s2 = pd.snapshot()
   assert.notStrictEqual(s2, s1)
-  assert.strictEqual(s2.length, 2)
-  // And it stays stable again after the first read post-mutation.
+  assert.strictEqual(s2.length, 0)
+  // Stable again immediately.
   assert.strictEqual(pd.snapshot(), s2)
 
-  // Undo replaces the reference again.
-  pd.undo('a')
+  pd.requestDelete('b', '/ctx-b', 'B')
   const s3 = pd.snapshot()
   assert.notStrictEqual(s3, s2)
   assert.strictEqual(s3.length, 1)
   assert.strictEqual(pd.snapshot(), s3)
+
+  // Undo replaces the reference once more.
+  pd.undo('b')
+  const s4 = pd.snapshot()
+  assert.notStrictEqual(s4, s3)
+  assert.strictEqual(s4.length, 0)
+  assert.strictEqual(pd.snapshot(), s4)
 })

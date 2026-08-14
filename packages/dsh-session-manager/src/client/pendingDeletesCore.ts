@@ -71,8 +71,13 @@ export interface PendingDeleteDeps {
 }
 
 export interface PendingDeletes {
-  /** Park a deletion. Idempotent: a parked id is not parked twice. */
-  requestDelete(id: string, cwd: string, title: string): void
+  /**
+   * Park a deletion. At most ONE undoable entry is allowed at a time (P4): the
+   * call returns `true` when the entry is parked, and `false` when it is
+   * rejected — because the id is already parked, or because another session is
+   * already mid-countdown. The caller surfaces the rejection to the user.
+   */
+  requestDelete(id: string, cwd: string, title: string): boolean
   /**
    * Cancel a still-waiting deletion (before its deadline). Only pending
    * entries are undoable; a fired/failing/dead entry returns false.
@@ -191,9 +196,17 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
 
   return {
     requestDelete(id, cwd, title) {
-      if (map.has(id)) return // idempotent: never double-park
+      // Same id already parked -> reject (idempotent no-op, caller surfaces it).
+      if (map.has(id)) return false
+      // At most one undoable window (P4): reject a new park while any pending
+      // entry is live. Failed entries (auto-clearing retain window) are not
+      // undoable, so they don't block.
+      for (const e of map.values()) {
+        if (e.state === 'pending') return false
+      }
       park({ id, cwd, title, deadline: now() + UNDO_WINDOW_MS, state: 'pending' })
       notify()
+      return true
     },
     undo(id) {
       const entry = map.get(id)
