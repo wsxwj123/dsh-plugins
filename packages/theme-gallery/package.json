@@ -1,7 +1,7 @@
 {
   "name": "dsh-theme-gallery",
-  "version": "0.6.0",
-  "description": "A curated DSH theme-family gallery that follows the native light, dark, and system appearance modes.",
+  "version": "0.7.0",
+  "description": "A curated DSH theme-family gallery that follows the native light, dark, and system appearance modes, plus a lazy skin track with nine complete dsh-web-ui skin replicas.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -13,6 +13,7 @@
   "files": [
     "lib",
     "src",
+    "skins",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
@@ -21,7 +22,8 @@
   ],
   "scripts": {
     "build": "node build.mjs",
-    "check": "node build.mjs --check"
+    "check": "node build.mjs --check",
+    "test": "node --test --test-force-exit \"tests/unit/*.test.mjs\""
   },
   "dsh": {
     "bundle": {

@@ -61,14 +61,50 @@ After installation, restart the existing `dsh web` process and refresh its curre
 
 1. Open **Settings**.
 2. Open **General**.
-3. Find **精选主题 / Curated themes**.
-4. Search for a theme family and click its card.
-5. Use DSH's built-in **Appearance** control to choose Light, Dark, or Follow system.
+3. Two tracks are shown side by side under **精选外观 / Curated appearance**:
+   - **主题 / Themes** — the 15 curated source-neutral token families described above.
+   - **皮肤 / Skins** — 9 complete dsh-web-ui skin replicas (see below).
+4. Use DSH's built-in **Appearance** control to choose Light, Dark, or Follow system.
+
+The theme and skin tracks are mutually exclusive: activating one clears the other. Skins are
+**session-level try-on** (a refresh returns to the default look); for a persistent skin keep using
+the official skin center (`dsh-skin use`). No official `skin-center` configuration is modified.
+
+## Skins
+
+Nine complete client bundles from [`@linxin666/dsh-skins`](https://github.com/zhu1090093659/dsh-web-ui)
+are embedded at build time and executed lazily on demand (no external/dynamic URL). Each skin is a
+full replica of the upstream `apply()` — body attribute, injected CSS and chrome DOM — wrapped by a
+thin engine that guarantees load → apply → mutual exclusion → full teardown on switch or plugin stop.
+A per-skin **accessibility layer** (`skins/<id>/a11y.css`) applies only contrast fixes (WCAG AA) on
+top of the skin styles: primary-button text on light/hover fills, and semi-transparent code blocks
+entity-ized for stable text contrast. The accessibility layer never deletes upstream skin material.
+
+| id | 中文名 | author (skin.json) | accent |
+|---|---|---|---|
+| qq98 | QQ2008 怀旧版 | dsh-web-ui | #2b7cd9 |
+| ths | 同花顺风格 | dsh-web-ui | #e60012 |
+| xp | Windows XP (Luna) | dsh-web-ui | #316ac5 |
+| blue-fantasy | 蓝色幻想 | powerdog996（DreamSkin 社区）· dsh-web-ui 适配 | #4a5fa8 |
+| dragon-heir | 龙的传人 | dsh-web-ui | #c3272b |
+| minecraft | Minecraft 方块世界 | dsh-web-ui | #7cbd4b |
+| whale-song | 鲸吟 | dsh-web-ui | #4d8fd4 |
+| trading | 交易终端 | dsh-web-ui | #f23645 |
+| miku | 初音未来 · 电子歌姬 | 涂山苏苏 | #2e9bff |
 
 ## Attribution
 
-The package contains compact palette adaptations for a conversational interface, not editor syntax definitions. Theme family names, IDs, UI labels, package metadata, and generated runtime output are source-neutral. The adaptation code and DSH integration are MIT licensed.
+The 15 source-neutral theme families described at the top are MIT-licensed original palette
+adaptations with no upstream syntax definitions to credit.
+
+The 9 skin assets are third-party BSD-3-Clause works from the upstream repository
+`github.com/zhu1090093659/dsh-web-ui` (aggregate `@linxin666/dsh-skins`), Copyright (c) 2026,
+zhu1090093659. Per-skin authorship follows each `skin.json` `author` field:
+`dsh-web-ui` (the aggregate), `powerdog996` (blue-fantasy, DreamSkin community) and `涂山苏苏`
+(miku). Full per-skin license text lives in `skins/<id>/LICENSE` and the consolidated listing in
+`skins/NOTICE.md`.
 
 ## License
 
-MIT
+The package glue (theme engine, skin engine, accessibility layer, UI, build) is **MIT**. The bundled
+skin assets are **BSD 3-Clause** — see `skins/NOTICE.md` and each `skins/<id>/LICENSE`.
