@@ -30,6 +30,8 @@
  */
 import type { Context } from './context-types.ts'
 import { matchSessionFromLabel } from './sessionRowMatch.ts'
+import { TRASH_SVG } from './icons.ts'
+import css from './rail.module.css'
 
 export type { MatchedSession } from './sessionRowMatch.ts'
 
@@ -101,9 +103,11 @@ export function createDeleteController(
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.dataset.dshSmDelete = 'true'
+    btn.className = css.deleteBtn
     btn.title = action.running ? '请先结束运行中的会话' : '删除会话'
     btn.setAttribute('aria-label', `删除会话 ${action.title}`)
-    btn.textContent = '🗑'
+    // Static, trusted SVG (no user input) — do not concatenate anything here.
+    btn.innerHTML = TRASH_SVG
     // Hidden until the official row is hovered (deep-linked visibility via the
     // injected [role=treeitem]:hover rule above).
     btn.style.display = 'none'

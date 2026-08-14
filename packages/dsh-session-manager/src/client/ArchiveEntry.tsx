@@ -9,15 +9,16 @@ import { createElement, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import type { Context } from './context-types.ts'
 import { getArchiveOpen, setArchiveOpen, subscribeArchive } from './archiveState.ts'
+import { ARCHIVE_SVG } from './icons.ts'
 import css from './rail.module.css'
 
 const getOpen = (): boolean => getArchiveOpen()
 const sub = (l: () => void): (() => void) => subscribeArchive(l)
 
 /**
- * Close the overlay via the injected workspaces/sessions ambient context (kept
- * a parameter so the component stays purely presentational). The host already
- * broadcasts changes; this is only the local toggle entry point.
+ * Toggle the archive overlay. The icon is a static, trusted inline SVG (no user
+ * input concatenated), tinted via currentColor so it matches the footer action
+ * palette.
  */
 export function ArchiveEntry({ ctx, wide }: { ctx: Context; wide: boolean }): ReactNode {
   const open = useSyncExternalStore(sub, getOpen, getOpen)
@@ -31,7 +32,7 @@ export function ArchiveEntry({ ctx, wide }: { ctx: Context; wide: boolean }): Re
       onClick: () => setArchiveOpen(!open),
       title: '归档',
     },
-    createElement('span', { 'aria-hidden': true }, '🗂'),
+    createElement('span', { 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ARCHIVE_SVG } }),
     wide ? createElement('span', null, '归档') : null,
   )
 }

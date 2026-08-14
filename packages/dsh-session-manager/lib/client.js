@@ -271,6 +271,58 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
+		//#region src/client/icons.ts
+		/**
+		* icons — inline 16x16 stroke SVGs (Lucide-style) used instead of emoji, so the
+		* delete and archive buttons match DSH's official icon footprint. `currentColor`
+		* lets the button's CSS `color` drive the tint (official palette: label-tertiary
+		* resting, label-primary on hover). Zero dependencies, no @deepseek-ai imports,
+		* so the client-bundle purity gate is unaffected.
+		*/
+		/** Trashcan (delete). */
+		const TRASH_SVG = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M3 6h18\"/><path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\"/><path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"/><line x1=\"10\" y1=\"11\" x2=\"10\" y2=\"17\"/><line x1=\"14\" y1=\"11\" x2=\"14\" y2=\"17\"/></svg>";
+		/** Archive box. */
+		const ARCHIVE_SVG = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\"/><path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\"/><path d=\"M10 12h4\"/></svg>";
+		//#endregion
+		//#region \0dsh-css:src/client/rail.module.css.mjs
+		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;bottom:18px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary,#c8c8d299);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_deleteBtn svg{width:16px;height:16px;display:block}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}.FPsCja_trashBar{border-top:1px solid var(--dsw-alias-border-l2,#80808038);align-items:center;gap:10px;padding:8px 12px;display:flex}.FPsCja_trashButton{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:4px 11px;font-family:inherit;font-size:12px}.FPsCja_trashButton:disabled{cursor:default;opacity:.45;color:var(--dsw-alias-label-tertiary,#c8c8d299)}.FPsCja_trashCount{color:var(--dsw-alias-label-tertiary,#c8c8d29e);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:12px;overflow:hidden}";
+		const tagId = "dsh-session-manager/rail.module.css";
+		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
+			const tag = document.createElement("style");
+			tag.dataset.plugin = "dsh-session-manager";
+			tag.dataset.pluginCss = tagId;
+			tag.textContent = css;
+			document.head.appendChild(tag);
+		}
+		var rail_module_css_default = {
+			"rail-in": "FPsCja_rail-in",
+			"divider": "FPsCja_divider",
+			"undo": "FPsCja_undo",
+			"list": "FPsCja_list",
+			"row": "FPsCja_row",
+			"rowTitle": "FPsCja_rowTitle",
+			"label": "FPsCja_label",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"trashBar": "FPsCja_trashBar",
+			"head": "FPsCja_head",
+			"empty": "FPsCja_empty",
+			"rail": "FPsCja_rail",
+			"trashButton": "FPsCja_trashButton",
+			"item": "FPsCja_item",
+			"dismiss": "FPsCja_dismiss",
+			"close": "FPsCja_close",
+			"action": "FPsCja_action",
+			"add": "FPsCja_add",
+			"danger": "FPsCja_danger",
+			"errorBanner": "FPsCja_errorBanner",
+			"trashCount": "FPsCja_trashCount",
+			"title": "FPsCja_title",
+			"entryButton": "FPsCja_entryButton",
+			"overlay": "FPsCja_overlay",
+			"failed": "FPsCja_failed",
+			"countdown": "FPsCja_countdown"
+		};
+		//#endregion
 		//#region src/client/DeleteButton.tsx
 		/** Any tree role (the sidebar session list); we scan all present to be safe.
 		*  No aria-label — that attribute is a localized label, not a stable marker. */
@@ -315,9 +367,10 @@ window.__ModuleLoader__.load({
 				const btn = document.createElement("button");
 				btn.type = "button";
 				btn.dataset.dshSmDelete = "true";
+				btn.className = rail_module_css_default.deleteBtn;
 				btn.title = action.running ? "请先结束运行中的会话" : "删除会话";
 				btn.setAttribute("aria-label", `删除会话 ${action.title}`);
-				btn.textContent = "🗑";
+				btn.innerHTML = TRASH_SVG;
 				btn.style.display = "none";
 				btn.addEventListener("click", (e) => {
 					e.preventDefault();
@@ -344,45 +397,6 @@ window.__ModuleLoader__.load({
 				dispose: () => {}
 			};
 		}
-		//#endregion
-		//#region \0dsh-css:src/client/rail.module.css.mjs
-		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;bottom:18px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-state-error-primary,#ff6b6b);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;font-size:12px;line-height:1;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-state-error-primary,#ff6b6b);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}.FPsCja_trashBar{border-top:1px solid var(--dsw-alias-border-l2,#80808038);align-items:center;gap:10px;padding:8px 12px;display:flex}.FPsCja_trashButton{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:4px 11px;font-family:inherit;font-size:12px}.FPsCja_trashButton:disabled{cursor:default;opacity:.45;color:var(--dsw-alias-label-tertiary,#c8c8d299)}.FPsCja_trashCount{color:var(--dsw-alias-label-tertiary,#c8c8d29e);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:12px;overflow:hidden}";
-		const tagId = "dsh-session-manager/rail.module.css";
-		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
-			const tag = document.createElement("style");
-			tag.dataset.plugin = "dsh-session-manager";
-			tag.dataset.pluginCss = tagId;
-			tag.textContent = css;
-			document.head.appendChild(tag);
-		}
-		var rail_module_css_default = {
-			"title": "FPsCja_title",
-			"countdown": "FPsCja_countdown",
-			"rail-in": "FPsCja_rail-in",
-			"errorBanner": "FPsCja_errorBanner",
-			"add": "FPsCja_add",
-			"entryButton": "FPsCja_entryButton",
-			"trashBar": "FPsCja_trashBar",
-			"trashButton": "FPsCja_trashButton",
-			"failed": "FPsCja_failed",
-			"row": "FPsCja_row",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"danger": "FPsCja_danger",
-			"close": "FPsCja_close",
-			"item": "FPsCja_item",
-			"trashCount": "FPsCja_trashCount",
-			"rail": "FPsCja_rail",
-			"dismiss": "FPsCja_dismiss",
-			"divider": "FPsCja_divider",
-			"head": "FPsCja_head",
-			"list": "FPsCja_list",
-			"action": "FPsCja_action",
-			"undo": "FPsCja_undo",
-			"label": "FPsCja_label",
-			"empty": "FPsCja_empty",
-			"rowTitle": "FPsCja_rowTitle",
-			"overlay": "FPsCja_overlay"
-		};
 		//#endregion
 		//#region src/client/UndoRail.tsx
 		/**
@@ -482,9 +496,9 @@ window.__ModuleLoader__.load({
 		const getOpen = () => getArchiveOpen();
 		const sub = (l) => subscribeArchive(l);
 		/**
-		* Close the overlay via the injected workspaces/sessions ambient context (kept
-		* a parameter so the component stays purely presentational). The host already
-		* broadcasts changes; this is only the local toggle entry point.
+		* Toggle the archive overlay. The icon is a static, trusted inline SVG (no user
+		* input concatenated), tinted via currentColor so it matches the footer action
+		* palette.
 		*/
 		function ArchiveEntry({ ctx, wide }) {
 			const open = (0, react.useSyncExternalStore)(sub, getOpen, getOpen);
@@ -495,7 +509,10 @@ window.__ModuleLoader__.load({
 				"aria-label": "归档",
 				onClick: () => setArchiveOpen(!open),
 				title: "归档"
-			}, (0, react.createElement)("span", { "aria-hidden": true }, "🗂"), wide ? (0, react.createElement)("span", null, "归档") : null);
+			}, (0, react.createElement)("span", {
+				"aria-hidden": true,
+				dangerouslySetInnerHTML: { __html: ARCHIVE_SVG }
+			}), wide ? (0, react.createElement)("span", null, "归档") : null);
 		}
 		//#endregion
 		//#region src/client/ArchiveView.tsx
