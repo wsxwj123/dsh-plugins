@@ -21,6 +21,13 @@
  *     session's title is contained in that label (longest match wins) to
  *     recover the (otherwise absent) session id.
  *
+ * Row→id binding is resolved per CONTAINER, not per row (review I-6): the
+ * official list renders rows in `sessions.list.ids` order, so when several rows
+ * share a title (DSH does not guarantee unique titles) the k-th such row binds
+ * the k-th same-title id. This keeps every row on its OWN session — a tie must
+ * never leave both rows' delete buttons bound to the first matching id
+ * (删错目录 prevention, F3).
+ *
  * Rows with no such actions button — blank (New Session) rows and project rows —
  * simply fail title resolution and are skipped, so we never inject there.
  *
@@ -29,7 +36,7 @@
  * selector to piggyback on reliably across versions).
  */
 import type { Context } from './context-types.ts'
-import { matchSessionFromLabel } from './sessionRowMatch.ts'
+import { resolveRows, type MatchedSession } from './sessionRowMatch.ts'
 import { TRASH_SVG } from './icons.ts'
 import css from './rail.module.css'
 
@@ -42,25 +49,23 @@ export const SESSIONS_LIST_SEL = '[role="tree"]'
 /** Global hover rule injected once; targets official rows by role, not hashed classes. */
 const HOVER_CSS = `[role="treeitem"]:hover > [data-dsh-sm-delete] { display: inline-flex !important; }`
 
+/** The injected delete button's attribute (also its skip/injection marker). */
+const DELETE_BTN_SEL = '[data-dsh-sm-delete]'
+
 /**
- * Resolve the row→session id via the DOM. A SESSION row has exactly ONE button
- * with an aria-label — the ⋮ actions menu `t("actions.session.aria", {name:
- * title})`, whose text contains the title. PROJECT rows carry TWO labeled
- * buttons (workspace menu + new-session) and blank (New Session) rows carry
- * none, so both are skipped by requiring exactly one — a locale-independent
- * discriminator that also keeps us off the hashed class names.
+ * The row's official ⋮-menu aria-label: the ONE labelled button that is NOT
+ * our injected delete control. Project rows carry TWO other labelled buttons
+ * (workspace menu + new-session) and blank (New Session) rows carry none, so
+ * both return null and are skipped — a locale-independent discriminator that
+ * also keeps us off the hashed class names. Excluding `[data-dsh-sm-delete]`
+ * keeps re-syncs (React node reuse) resolvable.
  */
-export function resolveRowSession(
-  row: Element,
-  byId: Record<string, { title?: string; displayTitle?: string; running?: boolean; blank?: boolean; cwd?: string } | undefined>,
-): { id: string; cwd: string | undefined; title: string; running: boolean } | null {
-  const buttons = row.querySelectorAll<HTMLElement>('button[aria-label]')
-  // A session row exposes exactly one labeled action button (the ⋮ menu);
-  // project rows expose two (workspace menu + new-session) — skip those.
+function rowLabel(row: HTMLElement): string | null {
+  const buttons = Array.from(row.querySelectorAll<HTMLElement>('button[aria-label]'))
+    .filter((b) => !b.hasAttribute('data-dsh-sm-delete'))
   if (buttons.length !== 1) return null
   const label = buttons[0].getAttribute('aria-label')
-  if (!label || label.trim().length === 0) return null
-  return matchSessionFromLabel(label, byId)
+  return label && label.trim().length > 0 ? label : null
 }
 
 export interface DeleteController {
@@ -91,26 +96,9 @@ export function createDeleteController(
     document.head.appendChild(style)
   }
 
-  const injectIntoRow = (row: HTMLElement): void => {
+  const injectIntoRow = (row: HTMLElement, action: MatchedSession): void => {
     // Skip rows already carrying our button (React may reuse a row DOM node).
-    if (row.querySelector('[data-dsh-sm-delete]') !== null) return
-    const ctx = getContext()
-    const byId = ctx.sessions.list.getSnapshot().byId
-    const action = resolveRowSession(row, byId)
-    if (!action) {
-      // Diagnostic for the "ungrouped not deletable" report: a row that IS a
-      // session row (exactly one aria-labelled button) but failed title
-      // resolution. Logs what would have been needed so the cause is visible in
-      // Console without a browser-side debugger.
-      const ariaButtons = row.querySelectorAll<HTMLElement>('button[aria-label]')
-      if (ariaButtons.length === 1) {
-        const lbl = ariaButtons[0].getAttribute('aria-label') ?? ''
-        console.debug('[dsh-session-manager] session row not resolvable:',
-          { ariaLabel: lbl, byIdCount: Object.keys(byId).length, byIdTitles: Object.keys(byId).map((i) => byId[i]?.title ?? byId[i]?.displayTitle) })
-      }
-      return
-    }
-
+    if (row.querySelector(DELETE_BTN_SEL) !== null) return
     rowById.set(action.id, row)
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -126,12 +114,15 @@ export function createDeleteController(
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      // Re-resolve against the LIVE byId so a rename between injection and
-      // click yields current metadata. The `running` flag travels with the
-      // action; the caller (index.tsx) decides whether to confirm-then-force
-      // (running) or delete plainly (idle).
-      const fresh = resolveRowSession(row, getContext().sessions.list.getSnapshot().byId) ?? action
-      onDelete({ ...fresh, cwd: fresh.cwd }, row)
+      // The id bound at injection time is authoritative: a per-row re-resolve
+      // at click time could not see the container tie-context that produced it
+      // (and our own aria-labelled button would break the "exactly one" rule).
+      // Only the volatile metadata (running/cwd) is refreshed from the LIVE
+      // snapshot for the SAME id, so a rename/start between injection and
+      // click still yields current state while the binding stays correct.
+      const s = getContext().sessions.list.getSnapshot().byId[action.id]
+      const running = s ? s.running === true : action.running
+      onDelete({ id: action.id, cwd: s?.cwd ?? action.cwd, title: action.title, running }, row)
     })
     // Append as a direct child of the row so the :hover > child rule applies.
     row.appendChild(btn)
@@ -142,12 +133,36 @@ export function createDeleteController(
     for (const [id, el] of Array.from(rowById.entries())) {
       if (!el.isConnected) rowById.delete(id)
     }
+    const snapshot = getContext().sessions.list.getSnapshot()
+    const byId = snapshot.byId
+    // Row order = `ids` order in the official renderer, which is exactly the
+    // tie-alignment the matcher needs (review I-6).
+    const ids = snapshot.ids
     for (const container of document.querySelectorAll<HTMLElement>(SESSIONS_LIST_SEL)) {
-      for (const row of container.querySelectorAll<HTMLElement>(':scope [role="treeitem"]')) {
-        injectIntoRow(row)
-      }
+      const rows = Array.from(container.querySelectorAll<HTMLElement>(':scope [role="treeitem"]'))
+      const labels = rows.map(rowLabel)
+      const actions = resolveRows(labels, byId, ids)
+      rows.forEach((row, i) => {
+        const action = actions[i]
+        if (!action) {
+          // Diagnostic for the "ungrouped not deletable" report: a row that IS
+          // a session row (single non-ours labelled button) but failed title
+          // resolution. Logs what would have been needed so the cause is
+          // visible in Console without a browser-side debugger.
+          if (labels[i] !== null) {
+            console.debug('[dsh-session-manager] session row not resolvable:',
+              { ariaLabel: labels[i], byIdCount: Object.keys(byId).length, byIdTitles: Object.keys(byId).map((k) => byId[k]?.title ?? byId[k]?.displayTitle) })
+          }
+          return
+        }
+        injectIntoRow(row, action)
+      })
     }
   }
 
-  return { sync, rowById, dispose: () => {} }
+  // dispose 的真实清理（移除注入按钮 + hover 样式）在 I-7 提交中实现；
+  // 此处保持与改动前一致的空实现，保证本提交（I-6 绑定修复）逻辑单一。
+  const dispose = (): void => {}
+
+  return { sync, rowById, dispose }
 }

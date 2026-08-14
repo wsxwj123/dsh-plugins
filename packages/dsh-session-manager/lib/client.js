@@ -376,33 +376,69 @@ window.__ModuleLoader__.load({
 		});
 		//#endregion
 		//#region src/client/sessionRowMatch.ts
-		/** Resolve one session id from a single row-actions aria-label. */
-		function matchSessionFromLabel(label, byId) {
+		/** Max title length a candidate may match (mirrors the host's 256 limit). */
+		const MAX_TITLE_LEN = 256;
+		/** The longest non-blank title contained in the label (per-row primitive). */
+		function bestTitleIn(label, byId) {
 			let best = null;
-			let bestId;
-			let bestRunning = false;
-			let bestCwd;
 			for (const id of Object.keys(byId)) {
 				const s = byId[id];
 				if (!s || s.blank) continue;
 				const candidate = s.title ?? s.displayTitle ?? "";
 				if (!candidate) continue;
-				if (candidate.length === 0 || candidate.length > 256) continue;
+				if (candidate.length === 0 || candidate.length > MAX_TITLE_LEN) continue;
 				if (!label.includes(candidate)) continue;
-				if (best === null || candidate.length > best.length) {
-					best = candidate;
-					bestId = id;
-					bestRunning = s.running === true;
-					bestCwd = s.cwd;
-				}
+				if (best === null || candidate.length > best.length) best = candidate;
 			}
-			if (best === null || bestId === void 0) return null;
-			return {
-				id: bestId,
-				cwd: bestCwd,
-				title: best,
-				running: bestRunning
-			};
+			return best;
+		}
+		/**
+		* Resolve ids for a WHOLE container's rows in DOM order, disambiguating
+		* same-title ties by aligning row order with the ordered id list (review I-6).
+		*
+		* For each row this finds the longest title contained in its label (identical
+		* to `matchSessionFromLabel`). When SEVERAL rows share a title, per-row
+		* matching is ambiguous; the official list renders rows in `ids` order, so the
+		* k-th such row (in DOM order) binds the k-th same-title id (in `ids` order).
+		* This guarantees every row binds a DISTINCT id — a row's delete button can
+		* never point at another row's session, and `rowById` keys never collide.
+		*
+		* @param labels - one aria-label per row, in DOM order (null → unmatchable row).
+		* @param byId - session summary map.
+		* @param ids - ordered session id list (the tie-order source of truth).
+		* @returns one MatchedSession per row; null when the row cannot be matched
+		*   (no title / blank / overflow beyond the same-title id group).
+		*/
+		function resolveRows(labels, byId, ids) {
+			const rowTitle = labels.map((label) => label === null ? null : bestTitleIn(label, byId));
+			const idsByTitle = /* @__PURE__ */ new Map();
+			for (const id of ids) {
+				const s = byId[id];
+				if (!s || s.blank) continue;
+				const title = s.title ?? s.displayTitle ?? "";
+				if (!title || title.length === 0 || title.length > MAX_TITLE_LEN) continue;
+				const group = idsByTitle.get(title);
+				if (group) group.push(id);
+				else idsByTitle.set(title, [id]);
+			}
+			const consumed = /* @__PURE__ */ new Map();
+			return rowTitle.map((title) => {
+				if (title === null) return null;
+				const group = idsByTitle.get(title);
+				if (!group) return null;
+				const index = consumed.get(title) ?? 0;
+				consumed.set(title, index + 1);
+				const id = group[index];
+				if (id === void 0) return null;
+				const s = byId[id];
+				if (!s) return null;
+				return {
+					id,
+					cwd: s.cwd,
+					title,
+					running: s.running === true
+				};
+			});
 		}
 		//#endregion
 		//#region src/client/icons.ts
@@ -429,33 +465,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"rail-in": "FPsCja_rail-in",
-			"divider": "FPsCja_divider",
-			"rail": "FPsCja_rail",
-			"undo": "FPsCja_undo",
-			"overlay": "FPsCja_overlay",
-			"failed": "FPsCja_failed",
-			"backdrop": "FPsCja_backdrop",
-			"add": "FPsCja_add",
-			"head": "FPsCja_head",
-			"item": "FPsCja_item",
-			"close": "FPsCja_close",
-			"list": "FPsCja_list",
-			"rowTitle": "FPsCja_rowTitle",
-			"empty": "FPsCja_empty",
 			"trashCount": "FPsCja_trashCount",
-			"countdown": "FPsCja_countdown",
-			"errorBanner": "FPsCja_errorBanner",
-			"danger": "FPsCja_danger",
-			"dismiss": "FPsCja_dismiss",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"label": "FPsCja_label",
-			"row": "FPsCja_row",
 			"trashBar": "FPsCja_trashBar",
-			"action": "FPsCja_action",
-			"entryButton": "FPsCja_entryButton",
+			"dismiss": "FPsCja_dismiss",
+			"undo": "FPsCja_undo",
+			"danger": "FPsCja_danger",
+			"failed": "FPsCja_failed",
+			"rail-in": "FPsCja_rail-in",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"countdown": "FPsCja_countdown",
 			"title": "FPsCja_title",
-			"trashButton": "FPsCja_trashButton"
+			"overlay": "FPsCja_overlay",
+			"trashButton": "FPsCja_trashButton",
+			"item": "FPsCja_item",
+			"add": "FPsCja_add",
+			"row": "FPsCja_row",
+			"rail": "FPsCja_rail",
+			"divider": "FPsCja_divider",
+			"list": "FPsCja_list",
+			"entryButton": "FPsCja_entryButton",
+			"action": "FPsCja_action",
+			"label": "FPsCja_label",
+			"backdrop": "FPsCja_backdrop",
+			"empty": "FPsCja_empty",
+			"close": "FPsCja_close",
+			"head": "FPsCja_head",
+			"rowTitle": "FPsCja_rowTitle",
+			"errorBanner": "FPsCja_errorBanner"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -464,20 +500,21 @@ window.__ModuleLoader__.load({
 		const SESSIONS_LIST_SEL = "[role=\"tree\"]";
 		/** Global hover rule injected once; targets official rows by role, not hashed classes. */
 		const HOVER_CSS = `[role="treeitem"]:hover > [data-dsh-sm-delete] { display: inline-flex !important; }`;
+		/** The injected delete button's attribute (also its skip/injection marker). */
+		const DELETE_BTN_SEL = "[data-dsh-sm-delete]";
 		/**
-		* Resolve the row→session id via the DOM. A SESSION row has exactly ONE button
-		* with an aria-label — the ⋮ actions menu `t("actions.session.aria", {name:
-		* title})`, whose text contains the title. PROJECT rows carry TWO labeled
-		* buttons (workspace menu + new-session) and blank (New Session) rows carry
-		* none, so both are skipped by requiring exactly one — a locale-independent
-		* discriminator that also keeps us off the hashed class names.
+		* The row's official ⋮-menu aria-label: the ONE labelled button that is NOT
+		* our injected delete control. Project rows carry TWO other labelled buttons
+		* (workspace menu + new-session) and blank (New Session) rows carry none, so
+		* both return null and are skipped — a locale-independent discriminator that
+		* also keeps us off the hashed class names. Excluding `[data-dsh-sm-delete]`
+		* keeps re-syncs (React node reuse) resolvable.
 		*/
-		function resolveRowSession(row, byId) {
-			const buttons = row.querySelectorAll("button[aria-label]");
+		function rowLabel(row) {
+			const buttons = Array.from(row.querySelectorAll("button[aria-label]")).filter((b) => !b.hasAttribute("data-dsh-sm-delete"));
 			if (buttons.length !== 1) return null;
 			const label = buttons[0].getAttribute("aria-label");
-			if (!label || label.trim().length === 0) return null;
-			return matchSessionFromLabel(label, byId);
+			return label && label.trim().length > 0 ? label : null;
 		}
 		/**
 		* Build the injection controller bound to one client `apply(ctx)`.
@@ -493,22 +530,8 @@ window.__ModuleLoader__.load({
 				style.textContent = HOVER_CSS;
 				document.head.appendChild(style);
 			}
-			const injectIntoRow = (row) => {
-				if (row.querySelector("[data-dsh-sm-delete]") !== null) return;
-				const byId = getContext().sessions.list.getSnapshot().byId;
-				const action = resolveRowSession(row, byId);
-				if (!action) {
-					const ariaButtons = row.querySelectorAll("button[aria-label]");
-					if (ariaButtons.length === 1) {
-						const lbl = ariaButtons[0].getAttribute("aria-label") ?? "";
-						console.debug("[dsh-session-manager] session row not resolvable:", {
-							ariaLabel: lbl,
-							byIdCount: Object.keys(byId).length,
-							byIdTitles: Object.keys(byId).map((i) => byId[i]?.title ?? byId[i]?.displayTitle)
-						});
-					}
-					return;
-				}
+			const injectIntoRow = (row, action) => {
+				if (row.querySelector(DELETE_BTN_SEL) !== null) return;
 				rowById.set(action.id, row);
 				const btn = document.createElement("button");
 				btn.type = "button";
@@ -521,22 +544,45 @@ window.__ModuleLoader__.load({
 				btn.addEventListener("click", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					const fresh = resolveRowSession(row, getContext().sessions.list.getSnapshot().byId) ?? action;
+					const s = getContext().sessions.list.getSnapshot().byId[action.id];
+					const running = s ? s.running === true : action.running;
 					onDelete({
-						...fresh,
-						cwd: fresh.cwd
+						id: action.id,
+						cwd: s?.cwd ?? action.cwd,
+						title: action.title,
+						running
 					}, row);
 				});
 				row.appendChild(btn);
 			};
 			const sync = () => {
 				for (const [id, el] of Array.from(rowById.entries())) if (!el.isConnected) rowById.delete(id);
-				for (const container of document.querySelectorAll(SESSIONS_LIST_SEL)) for (const row of container.querySelectorAll(":scope [role=\"treeitem\"]")) injectIntoRow(row);
+				const snapshot = getContext().sessions.list.getSnapshot();
+				const byId = snapshot.byId;
+				const ids = snapshot.ids;
+				for (const container of document.querySelectorAll(SESSIONS_LIST_SEL)) {
+					const rows = Array.from(container.querySelectorAll(":scope [role=\"treeitem\"]"));
+					const labels = rows.map(rowLabel);
+					const actions = resolveRows(labels, byId, ids);
+					rows.forEach((row, i) => {
+						const action = actions[i];
+						if (!action) {
+							if (labels[i] !== null) console.debug("[dsh-session-manager] session row not resolvable:", {
+								ariaLabel: labels[i],
+								byIdCount: Object.keys(byId).length,
+								byIdTitles: Object.keys(byId).map((k) => byId[k]?.title ?? byId[k]?.displayTitle)
+							});
+							return;
+						}
+						injectIntoRow(row, action);
+					});
+				}
 			};
+			const dispose = () => {};
 			return {
 				sync,
 				rowById,
-				dispose: () => {}
+				dispose
 			};
 		}
 		//#endregion

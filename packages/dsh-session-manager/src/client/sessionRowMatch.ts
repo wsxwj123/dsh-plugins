@@ -14,6 +14,14 @@
  * titled session). We match against `title ?? displayTitle` so either field
  * works regardless of which the runtime carries.
  *
+ * Same-title ties (review I-6): DSH does not guarantee unique titles, so two
+ * sessions can render IDENTICAL labels. A per-row match is then ambiguous and
+ * must not silently pick the first byId key — that would bind BOTH rows'
+ * delete buttons to one session (删错目录). The container-level `resolveRows`
+ * resolves ties by aligning DOM row order with the ordered id list: the k-th
+ * row whose label resolves to a shared title binds the k-th same-title id, so
+ * every row gets a DISTINCT id and never another row's session.
+ *
  * Kept in its own module so a node unit test can drive it directly (mirrors
  * pendingDeletesCore): no DOM, no react.
  */
@@ -22,6 +30,8 @@ export interface SessionRowCandidate {
   displayTitle?: string
   running?: boolean
   blank?: boolean
+  /** Working-directory path used to locate the session dir on the host. */
+  cwd?: string
 }
 
 export interface MatchedSession {
@@ -32,32 +42,89 @@ export interface MatchedSession {
   running: boolean
 }
 
-/** Resolve one session id from a single row-actions aria-label. */
-export function matchSessionFromLabel(
-  label: string,
-  byId: Record<string, SessionRowCandidate | undefined>,
-): MatchedSession | null {
+/** Max title length a candidate may match (mirrors the host's 256 limit). */
+const MAX_TITLE_LEN = 256
+
+/** The longest non-blank title contained in the label (per-row primitive). */
+function bestTitleIn(label: string, byId: Record<string, SessionRowCandidate | undefined>): string | null {
   let best: string | null = null
-  let bestId: string | undefined
-  let bestRunning = false
-  let bestCwd: string | undefined
   for (const id of Object.keys(byId)) {
     const s = byId[id]
     if (!s || s.blank) continue
     const candidate = s.title ?? s.displayTitle ?? ''
     if (!candidate) continue
-    if (candidate.length === 0 || candidate.length > 256) continue
+    if (candidate.length === 0 || candidate.length > MAX_TITLE_LEN) continue
     // The aria-label interpolates the title; containment is locale-agnostic.
     if (!label.includes(candidate)) continue
-    if (best === null || candidate.length > best.length) {
-      best = candidate
-      bestId = id
-      bestRunning = s.running === true
-      // Preserve ABSENT cwd as undefined (send no cwd → host `_no-cwd`) instead
-      // of coercing to '' (host would return session-dir-not-found).
-      bestCwd = (s as Record<string, unknown>).cwd as string | undefined
+    if (best === null || candidate.length > best.length) best = candidate
+  }
+  return best
+}
+
+/** Resolve ONE session id from a single row-actions aria-label. Ties fall back
+ *  to the first byId key — use `resolveRows` for a whole container so same-title
+ *  rows bind distinct ids (review I-6). */
+export function matchSessionFromLabel(
+  label: string,
+  byId: Record<string, SessionRowCandidate | undefined>,
+): MatchedSession | null {
+  const title = bestTitleIn(label, byId)
+  if (title === null) return null
+  for (const id of Object.keys(byId)) {
+    const s = byId[id]
+    if (!s || s.blank) continue
+    if ((s.title ?? s.displayTitle ?? '') === title) {
+      return { id, cwd: s.cwd, title, running: s.running === true }
     }
   }
-  if (best === null || bestId === undefined) return null
-  return { id: bestId, cwd: bestCwd, title: best, running: bestRunning }
+  return null
+}
+
+/**
+ * Resolve ids for a WHOLE container's rows in DOM order, disambiguating
+ * same-title ties by aligning row order with the ordered id list (review I-6).
+ *
+ * For each row this finds the longest title contained in its label (identical
+ * to `matchSessionFromLabel`). When SEVERAL rows share a title, per-row
+ * matching is ambiguous; the official list renders rows in `ids` order, so the
+ * k-th such row (in DOM order) binds the k-th same-title id (in `ids` order).
+ * This guarantees every row binds a DISTINCT id — a row's delete button can
+ * never point at another row's session, and `rowById` keys never collide.
+ *
+ * @param labels - one aria-label per row, in DOM order (null → unmatchable row).
+ * @param byId - session summary map.
+ * @param ids - ordered session id list (the tie-order source of truth).
+ * @returns one MatchedSession per row; null when the row cannot be matched
+ *   (no title / blank / overflow beyond the same-title id group).
+ */
+export function resolveRows(
+  labels: Array<string | null>,
+  byId: Record<string, SessionRowCandidate | undefined>,
+  ids: string[],
+): Array<MatchedSession | null> {
+  const rowTitle = labels.map((label) => (label === null ? null : bestTitleIn(label, byId)))
+  // Same-title id groups in the AUTHORITATIVE ids order (not byId key order).
+  const idsByTitle = new Map<string, string[]>()
+  for (const id of ids) {
+    const s = byId[id]
+    if (!s || s.blank) continue
+    const title = s.title ?? s.displayTitle ?? ''
+    if (!title || title.length === 0 || title.length > MAX_TITLE_LEN) continue
+    const group = idsByTitle.get(title)
+    if (group) group.push(id)
+    else idsByTitle.set(title, [id])
+  }
+  const consumed = new Map<string, number>()
+  return rowTitle.map((title) => {
+    if (title === null) return null
+    const group = idsByTitle.get(title)
+    if (!group) return null
+    const index = consumed.get(title) ?? 0
+    consumed.set(title, index + 1)
+    const id = group[index]
+    if (id === undefined) return null // more same-title rows than ids: skip, never misbind
+    const s = byId[id]
+    if (!s) return null
+    return { id, cwd: s.cwd, title, running: s.running === true }
+  })
 }
