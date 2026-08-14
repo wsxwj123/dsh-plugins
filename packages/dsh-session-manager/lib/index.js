@@ -59,6 +59,27 @@ function resolveRoots(config) {
 function makeHandler(deps) {
 	return createSmHandler(deps);
 }
+/**
+* Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
+* client abort (ECONNRESET) or a transport error — resolves to null, which the
+* route maps to a structured 400. The old bare `for await` threw inside the
+* async route handler on an aborted connection, producing an unhandled
+* rejection that left the request hanging.
+*/
+async function readRequestBody(req) {
+	try {
+		let raw = "";
+		req.setEncoding("utf8");
+		for await (const chunk of req) raw += chunk;
+		return raw;
+	} catch {
+		return null;
+	}
+}
+function sendJson(res, status, json) {
+	res.writeHead(status, { "content-type": "application/json" });
+	res.end(JSON.stringify(json));
+}
 function apply(ctx, config = {}) {
 	const { sessionsRoot, trashRoot } = resolveRoots(config);
 	if (isTrashInside(sessionsRoot, trashRoot)) {
@@ -118,25 +139,41 @@ function apply(ctx, config = {}) {
 				res.end("not found");
 				return;
 			}
-			let raw = "";
-			req.setEncoding("utf8");
-			for await (const chunk of req) raw += chunk;
-			let body;
-			if (raw.length === 0) body = void 0;
-			else try {
-				body = JSON.parse(raw);
-			} catch {
-				res.writeHead(400, { "content-type": "application/json" });
-				res.end(JSON.stringify({
-					ok: false,
-					code: "bad-request",
-					message: "invalid JSON"
-				}));
-				return;
+			try {
+				const raw = await readRequestBody(req);
+				if (raw === null) {
+					sendJson(res, 400, {
+						ok: false,
+						code: "bad-request",
+						message: "request body read failed"
+					});
+					return;
+				}
+				let body;
+				if (raw.length === 0) body = void 0;
+				else try {
+					body = JSON.parse(raw);
+				} catch {
+					sendJson(res, 400, {
+						ok: false,
+						code: "bad-request",
+						message: "invalid JSON"
+					});
+					return;
+				}
+				const result = handler.handle(method, req, body);
+				res.writeHead(result.status, { "content-type": "application/json" });
+				res.end(JSON.stringify(result.json));
+			} catch (err) {
+				try {
+					if (!res.headersSent) res.writeHead(400, { "content-type": "application/json" });
+					res.end(JSON.stringify({
+						ok: false,
+						code: "bad-request",
+						message: "request failed"
+					}));
+				} catch {}
 			}
-			const result = handler.handle(method, req, body);
-			res.writeHead(result.status, { "content-type": "application/json" });
-			res.end(JSON.stringify(result.json));
 		}
 	});
 	ctx.effect(() => dispose);
@@ -148,4 +185,4 @@ function isTrashInside(sessionsRoot, trashRoot) {
 	return t === s || t.startsWith(s + path.sep);
 }
 //#endregion
-export { apply, inject, makeHandler, name, resolveRoots };
+export { apply, inject, makeHandler, name, readRequestBody, resolveRoots };

@@ -91,6 +91,29 @@ export function makeHandler(
   return createSmHandler(deps)
 }
 
+/**
+ * Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
+ * client abort (ECONNRESET) or a transport error — resolves to null, which the
+ * route maps to a structured 400. The old bare `for await` threw inside the
+ * async route handler on an aborted connection, producing an unhandled
+ * rejection that left the request hanging.
+ */
+export async function readRequestBody(req: IncomingMessage): Promise<string | null> {
+  try {
+    let raw = ''
+    req.setEncoding('utf8')
+    for await (const chunk of req) raw += chunk
+    return raw
+  } catch {
+    return null
+  }
+}
+
+function sendJson(res: ServerResponse, status: number, json: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json' })
+  res.end(JSON.stringify(json))
+}
+
 export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void {
   const { sessionsRoot, trashRoot } = resolveRoots(config)
   // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
@@ -183,27 +206,44 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
         return
       }
 
-      // Consume a raw JSON body. Malformed JSON => 400 (contract §0).
-      let raw = ''
-      req.setEncoding('utf8')
-      for await (const chunk of req) raw += chunk
-
-      let body: unknown
-      if (raw.length === 0) {
-        body = undefined
-      } else {
-        try {
-          body = JSON.parse(raw)
-        } catch {
-          res.writeHead(400, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, code: 'bad-request', message: 'invalid JSON' }))
+      // I-4: this async route handler must NEVER reject. Everything below is
+      // guarded — a body stream that dies mid-read (client abort / transport
+      // error), a malformed payload, or a response write onto a dead socket
+      // all end in a structured 400 instead of an unhandled rejection.
+      try {
+        const raw = await readRequestBody(req) // null on stream failure
+        if (raw === null) {
+          sendJson(res, 400, { ok: false, code: 'bad-request', message: 'request body read failed' })
           return
         }
-      }
 
-      const result = handler.handle(method, req, body)
-      res.writeHead(result.status, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(result.json))
+        let body: unknown
+        if (raw.length === 0) {
+          body = undefined
+        } else {
+          try {
+            body = JSON.parse(raw)
+          } catch {
+            sendJson(res, 400, { ok: false, code: 'bad-request', message: 'invalid JSON' })
+            return
+          }
+        }
+
+        const result = handler.handle(method, req, body)
+        res.writeHead(result.status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(result.json))
+      } catch (err) {
+        // Residual failures (dispatch bug, response write on a dead socket)
+        // must not escape the async handler either.
+        try {
+          if (!res.headersSent) {
+            res.writeHead(400, { 'content-type': 'application/json' })
+          }
+          res.end(JSON.stringify({ ok: false, code: 'bad-request', message: 'request failed' }))
+        } catch {
+          /* socket already gone — nothing left to send */
+        }
+      }
     },
   }
 

@@ -21,6 +21,7 @@ import assert from 'node:assert'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -172,5 +173,42 @@ test('handler: sessions missing skips running guard and delete proceeds', () => 
   assert.strictEqual(res.status, 200)
   assert.strictEqual(res.json.ok, true, 'delete proceeds when sessions service is absent')
   assert.strictEqual(fs.existsSync(path.join(projectDir, 's1')), false, 'dir moved to trash')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('route: body stream interrupted mid-read -> structured 400, async handler never rejects (I-4)', async () => {
+  // Capture the real /sm route mounted by apply(), then drive it with a request
+  // whose body dies mid-stream (client abort). The async handler must resolve —
+  // no unhandled rejection — and answer a structured 400.
+  const { ctx, provide } = makeCordisCtx()
+  let route = null
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: (r) => { route = r; return () => {} } },
+  })
+  const { base } = roots()
+  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
+  assert.ok(route && route.path === '/sm' && route.kind === 'prefix', 'route captured')
+
+  // A partial body followed by a transport-level destroy: the exact ECONNRESET
+  // scenario the old bare `for await` turned into an unhandled rejection.
+  const req = new Readable({ read() {} })
+  req.headers = { host: '127.0.0.1:3080' } // loopback -> passes the trust fence
+  req.url = '/sm/delete'
+  req.push('{"id":"')
+  req.destroy(new Error('ECONNRESET: socket hang up'))
+  const res = {
+    headersSent: false,
+    statusCode: null,
+    writeHead(code, headers) { this.headersSent = true; this.statusCode = code; this._headers = headers },
+    end(body) { this._body = body },
+  }
+  await route.handler(req, res) // must RESOLVE, never reject
+  assert.strictEqual(res.statusCode, 400, 'interrupted body answered with 400')
+  const sent = JSON.parse(res._body)
+  assert.strictEqual(sent.ok, false)
+  assert.strictEqual(sent.code, 'bad-request')
+  assert.ok(typeof sent.message === 'string' && sent.message.length > 0)
   fs.rmSync(base, { recursive: true, force: true })
 })
