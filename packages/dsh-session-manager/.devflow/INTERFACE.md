@@ -32,7 +32,7 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 ## 1. UI 入口 1：会话行删除按钮
 
 ### 1.1 触发方式
-- 在侧栏会话列表（分组或单列视图）任意**非 blank、非运行中**会话行上悬停，行内出现「删除」（垃圾桶）按钮。
+- 在侧栏会话列表（分组或单列视图）任意**非 blank**会话行上悬停，行内出现「删除」（垃圾桶）按钮（运行中会话同样出现，点击时走确认流程，见 §1.4）。
 - 点击删除按钮 → 触发删除流程。
 
 ### 1.2 预期行为（正常路径）
@@ -51,18 +51,17 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 |---|---|
 | 快速双击同一删除按钮 | 只产生 1 个 pending 条目（幂等） |
 | 对**正在倒计时的会话**再点删除 | 不重复入队，撤销条仍只有一条；保持原倒计时 |
-| 对**运行中（running）会话**点删除 | 前端提示「请先结束运行中的会话」；**且 host 侧同样拒绝**（`session-running`，见 §3.1）——前端拦截不是唯一防线 |
+| 对**运行中（running）会话**点删除 | 前端弹确认「会话正在运行任务，确认删除？（文件将移入回收站）」；确认 → 带 `force:true` 走 5 秒倒计时删除（仍可撤销）；取消 → 不删、行保持可见。`running` = client `byId.running`（真实请求状态：AI 正在回复/跑工具），**不是** live store |
 | 对 **blank（新建空会话）** 行 | 无删除按钮（不出现） |
 | **删除当前选中的会话**（审查 A-5） | UI 回到 no-session 态（或自动选中相邻最近会话）；点撤销恢复后，该会话回到列表但**不再自动选中**，停在"未选中 / 需重新打开"态。测试断言：删除后无 `sessions.list.current` 对应的可见会话 |
 | 删除后、倒计时内刷新页面 | 刷新清空 client pending，撤销机会丢失；该会话**未被实际删除**（未到点 host 未移动），刷新后仍在列表（数据安全） |
 | 倒计时结束但 host `delete` 返回 `system-error`（移动失败） | 撤销条显示「删除失败」且会话**重新出现在列表**；不静默丢失 |
-| 倒计时结束但 host `delete` 返回 `session-running`（host 判仍运行） | 同"删除失败"处理：会话回列表，提示未删除 |
 | 已撤销的会话，host 端误收到重复执行 | host 以"目标目录是否已移走"为真值，撤销后目录在原位则不移动（幂等 no-op） |
 | 删除一个**归档会话**（在归档视图触发，见 §2） | 走同一停 + 两步（移文件+清归档集）；归档视图该行消失，撤销条出现；撤销后回到归档视图 |
 
 ### 1.5 底层调用关系（测试可从外部复现）
 - 点击删除 = 调 `/sm/delete  { id, cwd, title }`（见 §3.1）；撤销 = 调 `/sm/restore { id }`（见 §3.2）。
-- 客户端数据依赖：会话 `id`、`cwd`、`displayTitle` 来自 `sessions.list.byId`；`running` 判断来自同一列表。
+- 客户端数据依赖：会话 `id`、`cwd`、`displayTitle` 来自 `sessions.list.byId`；`running` 判断来自同一列表的 `byId.running` —— 语义是「agent 正在跑任务（有请求在跑 / pending 队列非空）」，即 `agent.status === 'running'`，**不是**「会话被打开/加载过」（live store 语义）。打开但空闲的会话 `running === false`。
 
 ---
 
@@ -108,7 +107,7 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 ### 3.1 `/sm/delete`
 请求：`{ id: string, cwd?: string, title?: string, force?: boolean }`
 
-- **`force?: boolean`**：可选。目标会话「运行中/打开中但空闲」时可强制删除。`force !== true`（未传或 false）时，对 live 会话照旧返回 `session-running`（**契约不变，验收 65 条的 session-running 断言保留**）；`force === true` 时**放行移文件**（目录进回收站，可恢复）。`force` 传了但非布尔 → 400 `invalid-force`。删除成功的语义（含归档集第二步/partial-failure/幂等）与不带 force 完全一致。
+- **`force?: boolean`**：可选，**兼容性参数**。运行中判定已移到 client（`byId.running`），host 不再用它区分「运行中」——host 对 live 会话**一律放行删除**（live store 不再阻止删除）。`force` 仅由 client 在用户确认删除「运行中」会话后置 `true` 转发；host 校验其类型（非布尔 → 400 `invalid-force`）但不改变删除结果（no-op）。删除成功的语义（含归档集第二步/partial-failure/幂等）与不带 force 完全一致。
 
 > **路径解析（真实 DSH 语义）**：node 半按 DSH 的真实磁盘布局定位会话目录，使用官方编码器
 > （`dsh-session-persistence-jsonl`）：
@@ -139,7 +138,7 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 
 行为：
 1. **经信任 fence**，非 loopback / 跨源 → 403。
-2. **运行中护栏（审查 I-4）**：host 用 `ctx.sessions.get(id)`（node SessionStore）判定目标 live，live → 返回 `{ok:false, code:"session-running"}`，**不移动**。
+2. **（已移除）运行中护栏（审查 I-4 语义修正）**：host **不再**用 `ctx.sessions.get(id)`（node SessionStore）判定运行中并拒绝删除。live store 的语义是「会话被打开/加载过」，不等于「AI 正在回复/跑任务」——用它判「运行中」会把早已空闲的会话误判为运行中。运行中判定移到 client：`sessions.list.byId[id].running`（= agent 正在跑任务）。live store 现仅用于 `header.cwd` 的权威路径解析（见下方路径解析）。
 3. 计算源目录 `~/.dsh/sessions/<projectKey(cwd)>/<encodeSegment(id)>/`，校验在 `projectDir(root,cwd)` 前缀内且有 `session.jsonl.zstd`。
 4. 整个目录 `rename` 到回收站（幂等真值 = 目录已不在原位即视为已完成）。
 5. **若该会话在 `archivedSessionIds` 中（删除归档会话，两步）**：文件移动后再从 `archivedSessionIds` 移除 id（`storageDomain.get("workspace").global.set`）。**partial-failure（审查 I-3）**：第二步失败 → 整个 `delete` 返回 `{ok:false, code:"system-error"}`（**非 ok**）；host 承诺"文件已移走（幂等真值确立），归档集合清理可重试"，中间态契约见后。
@@ -147,7 +146,6 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 响应：
 - 200 `{ ok: true }`：第一步成功（含幂等"早已移走"）；若第二步也成功，`ok:true`。
 - 200 `{ ok:false, code:"session-dir-not-found" }`：源目录不存在且非幂等完成态。
-- 200 `{ ok:false, code:"session-running" }`：目标 live。
 - 200 `{ ok:false, code:"path-out-of-bounds" }`：路径越界。
 - 200 `{ ok:false, code:"system-error" }`：`rename` IO 失败，或（删除归档会话时）第二步归档清理失败。前者未移任何目录；后者文件已移、归档集待重试。
 
@@ -217,7 +215,7 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 | 归档集写回 | 只改 `workspace` 域 global 的 `archivedSessionIds` 字段；保留其余字段 |
 | 幂等 | delete/unarchive/emptyTrash/restore 均幂等；连续调用不报错不重复副作用 |
 | 并发（审查 A-3） | host 对不同 id 的操作串行（operation chain）；**同一 id 的 delete/restore 串行执行，以"回收站记录/目录是否存在"为真值，后写幂等**；unarchive 以"id 是否在集合"为幂等判据 |
-| 运行中保护（审查 I-4） | `delete` 前判 `ctx.sessions.get(id)`，live → `session-running`，host 拒移（不只靠 client 拦截） |
+| 运行中保护（审查 I-4，语义修正） | 运行中判定在 client：`sessions.list.byId[id].running`（agent 正在跑任务）。client 对 `running === true` 的会话删除前弹确认、确认后带 `force:true`。host 不再用 `ctx.sessions.get(id)`（live store）拒绝删除——live store 只用于 `header.cwd` 权威路径解析。直连 API 绕过 client 删除运行中会话的残余风险：目录移入回收站（可恢复），不销毁磁盘内容 |
 | 重启 | 重启后：已进回收站的目录不再出现（持久）；未清空的回收站条目仍在磁盘但不在 UI；归档集合持久（`workspace.json`） |
 
 ---
