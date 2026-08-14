@@ -50,6 +50,19 @@
 - 不做会话文件的内容级修改（只整体移动/恢复文件，不读写会话正文）。
 - 不实现 claude-gui 的服务器端进程管理逻辑（DSH 无此概念）。
 
+## 4.5 开发硬约束（用户提出：不得与 dsh 自身 cordis 插件/服务冲突）
+
+**背景**：此前开发 dsh-pet-bridge 插件时，因裸访问未 inject 的 cordis 服务属性，导致 **dsh web 启动崩溃**（本机踩坑记录 LRN-20260814-01/02）。本插件必须遵守：
+
+1. **cordis 服务访问规范**：
+   - 核心属性（`ctx.logger` / `ctx.on` / `ctx.emit` / `ctx.base` / `ctx.get` / `ctx.has`）可裸访问（安全）。
+   - 服务属性（如 `ctx.sessions`、`ctx.connection`、`ctx.storageDomain`、`ctx.webServer` 等）**必须 `inject` 声明或 `ctx.get()` 可选读**；裸访问会抛 `cannot get property "X" without inject` 并导致插件启动崩溃。
+   - `ctx.get()` 只取注册服务，不存在返回 undefined（不抛）——可选读语义。
+2. **命名与服务避让**：插件名、cordis 服务名、路由前缀不得与官方及其他已装插件重名/覆盖（官方服务如 sessions/workspaces/connection/webServer 等一概不注册同名服务；`/sm/*` 路由前缀确认无冲突）。
+3. **slot 占用检查**：注入的 UI 槽位（如 sidebar.footer.action）须确认未被其他已装插件占用（本机已装：dsh-better-sidebar、@linxin666/dsh-web-ui-all（含 ssh/task-board/aionui-panel/git-graph/live-stats/remote-web-ui）、dsh-genui、modlens、dsh-at-file、dsh-automation、dsh-theme-gallery、dsh-turn-scrubber、dsh-find-plugin、dsh-plugin-manager）。
+4. **启动不崩溃是验收前置**：插件安装后 dsh web 必须正常启动（任何启动报错 = 验收不合格）。
+5. **测试替身必须模拟 cordis 访问约束**（未注入属性抛错 + get 可选读），否则测试全绿也拦不住真实环境崩溃（LRN-20260814-01 教训）。
+
 ## 5. 成功标准
 
 1. 任意会话行悬停出现删除按钮，点击后会话立即隐藏 + 撤销条 10 秒倒计时可见。
