@@ -156,9 +156,11 @@ test('handler: storageDomain missing degrades unarchive to workspace-domain-unav
 test('handler: sessions missing skips running guard and delete proceeds', () => {
   const base = tmpdir()
   const sessionsRoot = path.join(base, 'sessions')
-  fs.mkdirSync(path.join(sessionsRoot, 'main'), { recursive: true })
-  fs.mkdirSync(path.join(sessionsRoot, 'main', 's1'), { recursive: true })
-  fs.writeFileSync(path.join(sessionsRoot, 'main', 's1', 'session.jsonl.zstd'), 'LOG')
+  // Session lives on the real encoded DSH layout (projectKey(cwd) / encodeSegment(id)).
+  const projectDir = path.join(sessionsRoot, '--main--')
+  fs.mkdirSync(projectDir, { recursive: true })
+  fs.mkdirSync(path.join(projectDir, 's1'), { recursive: true })
+  fs.writeFileSync(path.join(projectDir, 's1', 'session.jsonl.zstd'), 'LOG')
   const handler = createSmHandler({
     sessionsRoot,
     trash: new TrashStore(path.join(base, 'trash')),
@@ -171,7 +173,7 @@ test('handler: sessions missing skips running guard and delete proceeds', () => 
   const res = handler.handle('delete', {}, { id: 's1', cwd: 'main' })
   assert.strictEqual(res.status, 200)
   assert.strictEqual(res.json.ok, true, 'delete proceeds when sessions service is absent')
-  assert.strictEqual(fs.existsSync(path.join(sessionsRoot, 'main', 's1')), false, 'dir moved to trash')
+  assert.strictEqual(fs.existsSync(path.join(projectDir, 's1')), false, 'dir moved to trash')
   fs.rmSync(base, { recursive: true, force: true })
 })
 

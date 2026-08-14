@@ -32,18 +32,20 @@ test('isStableSegment: % ids are NOT stable (path-out-of-bounds at delete)', () 
 })
 
 // ---------- project lookup ----------
-test('lookupProjectDir: undefined cwd -> sessions root; empty -> not-found; non-string -> invalid', () => {
+test('lookupProjectDir: undefined cwd -> _no-cwd dir; empty -> not-found; non-string -> invalid', () => {
   assert.strictEqual(lookupProjectDir('/r', undefined).kind, 'dir')
-  assert.strictEqual(lookupProjectDir('/r', undefined).projectDir, '/r')
+  assert.strictEqual(lookupProjectDir('/r', undefined).projectDir, path.join('/r', '_no-cwd'))
   assert.strictEqual(lookupProjectDir('/r', null).kind, 'dir')
+  assert.strictEqual(lookupProjectDir('/r', null).projectDir, path.join('/r', '_no-cwd'))
   assert.strictEqual(lookupProjectDir('/r', '').kind, 'not-found')
   assert.strictEqual(lookupProjectDir('/r', 42).kind, 'invalid')
 })
 
-test('lookupProjectDir: string cwd joins under sessions root', () => {
+test('lookupProjectDir: string cwd joins the DSH projectKey segment under sessions root', () => {
+  // A plain 'main' folds to '--main--' (real DSH layout), not a literal 'main'.
   const r = lookupProjectDir('/r', 'main')
   assert.strictEqual(r.kind, 'dir')
-  assert.strictEqual(r.projectDir, path.join('/r', 'main'))
+  assert.strictEqual(r.projectDir, path.join('/r', '--main--'))
 })
 
 // ---------- path-in-root ----------

@@ -3,18 +3,24 @@ import path from "node:path";
 /**
 * Path encoding + bounds helpers for the session recycle bin.
 *
-* The actionable contract (INTERFACE §3, enforced by the locked acceptance
-* suite) models a session directory as a simple literal path:
+* The node half targets the REAL DSH on-disk session layout, so it uses the
+* actual DSH encoders (dsh-session-persistence-jsonl):
 *
-*     sessionDir = join(sessionsRoot, <cwd>, <id>)
+*     projectDir(root, cwd) = join(root, "_no-cwd")            // cwd undefined/null
+*                           = join(root, projectKey(cwd))       // otherwise
+*     sessionDir(root,cwd,id) = join(projectDir(root,cwd), encodeSegment(id))
 *
-* where both `<cwd>` and `<id>` are used as raw single path segments — NOT the
-* real DSH encoders (`projectKey` → `--…--`, `encodeSegment` → `~XXXX`).
-* Rationale: the recycle-bin scope is a configured host-side sessions root and
-* a set of well-behaved ids/cwd labels; the contract's safety gate is "id/cwd
-* carry no path-meaningful character", not the DSH logging encoders.
+* where `projectKey` folds a cwd path into a `--<readable>--` segment and
+* `encodeSegment` escapes an id into a `~XXXX` segment. The locked acceptance
+* suite (tests/acceptance) deliberately models a SIMPLIFIED literal layout
+* (`join(root, cwd, id)`) as a standalone contract mirror that runs against
+* its own harness backend; the node half here implements the real-encoding
+* semantics, and tests/integration adapts its fixtures to the encoded layout so
+* the same scenarios still pass against the shipped handler.
 */
 const INVALID_ID_CHARSET = /[\\/\n\r\t\0\u0000-\u001f]/;
+/** The project-directory segment DSH uses for a session without a cwd. */
+const NO_CWD_DIR = "_no-cwd";
 /**
 * 400-level id validity gate (INTERFACE §3.1 invalid-id). Rejects only the
 * inputs the harness asserts must be a 400:
@@ -33,20 +39,20 @@ function assertValidId(id) {
 	return true;
 }
 /**
-* 200-level "stable literal segment" gate, used by /sm/delete before the
+* 200-level "stable segment" gate, used by /sm/delete before the
 * path-out-of-bounds check. An id that fails this still passed assertValidId
-* (400) but cannot be placed as a literal segment without ambiguity — the
-* harness encodes it (basename mismatch → URL-encode, or contains `%`) and the
-* encoded form differs from the input, so it is `path-out-of-bounds`.
+* (400) but cannot be placed as a single on-disk segment without ambiguity —
+* e.g. it contains `%` which would collide with the `~XXXX` escape encoding.
 */
 function isStableSegment(id) {
 	if (id.includes("%")) return false;
 	return path.basename(id) === id;
 }
 /**
-* Production-faithful encodeSegment (dsh-session-persistence-jsonl). Not used
-* by the delete resolution (the contract uses literal segments) — exported for
-* feature completeness and future hardening.
+* Production-faithful encodeSegment (dsh-session-persistence-jsonl): escapes
+* every character outside the safe set into `~XXXX` (hex of the code point).
+* Safe chars `[A-Za-z0-9._-]` pass through unchanged, so a stable id (safe
+* charset) yields `encodeSegment(id) === id`.
 */
 function encodeSegment(raw) {
 	if (raw.length === 0) throw new Error("cannot encode an empty path segment");
@@ -62,8 +68,9 @@ function encodeSegment(raw) {
 	return out;
 }
 /**
-* Production-faithful projectKey (dsh-session-persistence-jsonl). Exported for
-* completeness; not used by delete resolution.
+* Production-faithful projectKey (dsh-session-persistence-jsonl): folds a cwd
+* path into a single `--<readable>--` directory segment. Separators collapse
+* to `-`, unsafe characters escape to `~XXXX`.
 */
 function projectKey(cwd) {
 	if (cwd.length === 0) throw new Error("cannot encode an empty project path");
@@ -88,13 +95,13 @@ function projectKey(cwd) {
 function lookupProjectDir(root, cwd) {
 	if (cwd === void 0 || cwd === null) return {
 		kind: "dir",
-		projectDir: root
+		projectDir: path.join(root, NO_CWD_DIR)
 	};
 	if (typeof cwd !== "string") return { kind: "invalid" };
 	if (cwd.length === 0) return { kind: "not-found" };
 	return {
 		kind: "dir",
-		projectDir: path.join(root, cwd)
+		projectDir: path.join(root, projectKey(cwd))
 	};
 }
 /**
@@ -108,12 +115,13 @@ function isInsideOrEqual(parent, child) {
 	return c === p || c.startsWith(p + path.sep);
 }
 /**
-* The session directory for a delete: literal `join(projectDir, id)`. The id
-* is already validated by assertValidId (no separator, no `.`/`..`), so `join`
-* cannot escape the project dir.
+* The session directory for a delete: `join(projectDir, encodeSegment(id))`.
+* The id is already validated by assertValidId (no separator, no `.`/`..`), so
+* `encodeSegment` cannot introduce a path separator; a stable id encodes to
+* itself (safe charset).
 */
 function sessionSegment(projectDir, id) {
-	return path.join(projectDir, id);
+	return path.join(projectDir, encodeSegment(id));
 }
 //#endregion
-export { assertValidId, encodeSegment, isInsideOrEqual, isStableSegment, lookupProjectDir, projectKey, sessionSegment };
+export { NO_CWD_DIR, assertValidId, encodeSegment, isInsideOrEqual, isStableSegment, lookupProjectDir, projectKey, sessionSegment };

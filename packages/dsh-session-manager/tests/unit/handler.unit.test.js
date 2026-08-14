@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const { TrashStore } = await import(path.join(ROOT, 'lib', 'trash.js'))
 const { createSmHandler } = await import(path.join(ROOT, 'lib', 'handler.js'))
+const { projectKey, encodeSegment, NO_CWD_DIR } = await import(path.join(ROOT, 'lib', 'paths.js'))
 
 const MARKER = 'session.jsonl.zstd'
 
@@ -101,7 +102,11 @@ function makeEnv(overrides = {}) {
       else state.liveIds.add(id)
     },
     newSession(project, id, content = 'DUMMY') {
-      const dir = project ? path.join(sessionsRoot, project, id) : path.join(sessionsRoot, id)
+      // Create sessions on the REAL encoded DSH layout so the handler's
+      // projectKey/encodeSegment resolution finds them: no-cwd -> _no-cwd dir,
+      // string cwd -> projectKey(project), id -> encodeSegment(id).
+      const projectDir = project ? path.join(sessionsRoot, projectKey(project)) : path.join(sessionsRoot, NO_CWD_DIR)
+      const dir = path.join(projectDir, encodeSegment(id))
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, MARKER), content)
       return { dir, marker: path.join(dir, MARKER) }

@@ -108,6 +108,22 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 ### 3.1 `/sm/delete`
 请求：`{ id: string, cwd?: string, title?: string }`
 
+> **路径解析（真实 DSH 语义）**：node 半按 DSH 的真实磁盘布局定位会话目录，使用官方编码器
+> （`dsh-session-persistence-jsonl`）：
+> ```
+> projectDir(root, cwd) = join(root, "_no-cwd")          // cwd 缺省/undefined/null
+>                       = join(root, projectKey(cwd))     // 否则（projectKey 折叠为 --<readable>-- 段）
+> sessionDir(root,cwd,id) = join(projectDir(root,cwd), encodeSegment(id))  // id 逃逸为 ~XXXX 段
+> ```
+> 客户端 `sessions.list.byId[id].cwd` 是会话的**工作目录原始路径**（如 `/Users/…/proj`），node 半用
+> `projectKey(cwd)` 折叠成对应的 `--…--` 项目目录段。
+>
+> **与验收测试的字面建模关系**：`tests/acceptance/`（只读契约镜像）为可独立运行的 harness 后端，按
+> 简化字面布局 `join(root, cwd, id)` 建模（`projectKey`/`encodeSegment` 取恒等），单独跑即可全绿；
+> **node 半**实现的是上面这套真实编码语义；`tests/integration/acceptance.real.test.js` 桥接测试把夹具
+> 建在真实编码布局上，使同一批 65 场景对真实 handler 仍全绿。两类测试共同覆盖：越界、不存在、边界
+> 判定不变（`path-out-of-bounds` / `session-dir-not-found` 仍按字面与编码两套一致性建模）。
+
 **输入校验（审查 I-1 / A-1 / A-2）**：
 | 条件 | 返回 |
 |---|---|

@@ -25,6 +25,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const { TrashStore, SESSION_MARKER, METADATA_DIR } = await import(path.join(ROOT, 'lib', 'trash.js'))
 const { createSmHandler } = await import(path.join(ROOT, 'lib', 'handler.js'))
 const { isTrustedSmRequest } = await import(path.join(ROOT, 'lib', 'trust-fence.js'))
+const { projectKey, encodeSegment, NO_CWD_DIR } = await import(path.join(ROOT, 'lib', 'paths.js'))
 
 // ---------------- real backend (raw /sm surface) ----------------
 function makeRealBackend(env) {
@@ -46,9 +47,15 @@ function makeFakeSessionsRoot(tmpRoot) {
   return sessionsRoot
 }
 
-function makeFakeSession(root, projectKey, id, opts = {}) {
-  const projectDir = projectKey ? path.join(root, projectKey) : root
-  const dir = path.join(projectDir, id)
+// Create a fake session on the REAL encoded DSH layout so the node handler's
+// projectKey/encodeSegment resolution finds it (mirrors the acceptance harness's
+// literal helper, but on the actual on-disk encoding this handler targets).
+// `projectLabel`: '' = no-cwd (_no-cwd dir), otherwise treated as a cwd label.
+function makeFakeSession(root, projectLabel, id, opts = {}) {
+  const projectDir = projectLabel
+    ? path.join(root, projectKey(projectLabel))
+    : path.join(root, NO_CWD_DIR)
+  const dir = path.join(projectDir, encodeSegment(id))
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, SESSION_MARKER), opts.content || 'DUMMY_SESSION_LOG\n')
   return { dir, markerPath: path.join(dir, SESSION_MARKER) }
