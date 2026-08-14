@@ -105,8 +105,17 @@ export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
   //                             delete-archived step-2 => system-error (partial)
   //   sessions     missing -> delete running-session guard skipped
   //   webServer    missing -> /sm routes not mounted (logged)
-  const storageDomain = ctx.get('storageDomain') as StorageDomainService | undefined
-  const sessions = ctx.get('sessions') as SessionsService | undefined
+  //
+  // P7: services are PROVIDED into the ROOT ctx's isolate (cordis provide writes
+  // `ctx.root[symbols.isolate][name]`), but a plugin's `apply(ctx)` runs on its
+  // own (possibly isolated) ctx, whose isolate may NOT carry the service symbol.
+  // A bare `ctx.get(name)` on that ctx then returns undefined even though the
+  // service is live — which is exactly why /sm never mounted. We therefore read
+  // from the ROOT ctx first (`ctx.root.get` walks the root isolate) and fall
+  // back to the current ctx, so an active service is reached regardless.
+  const rootGet = (name: string): unknown => ctx.root.get(name) ?? ctx.get(name)
+  const storageDomain = rootGet('storageDomain') as StorageDomainService | undefined
+  const sessions = rootGet('sessions') as SessionsService | undefined
 
   if (!storageDomain) {
     ctx.logger.warn(
@@ -146,8 +155,9 @@ export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
   const handler = createSmHandler(deps)
 
   // Recycle-bin enables a raw /sm/* route. We fetch the web server optionally
-  // (never bare) so that if it is absent we degrade gracefully.
-  const webServer = ctx.get('webServer') as WebServerService | undefined
+  // (never bare) so that if it is absent we degrade gracefully. Root fallback
+  // (P7) so an ACTIVE webServer is found even from an isolated plugin ctx.
+  const webServer = rootGet('webServer') as WebServerService | undefined
 
   if (!webServer || typeof webServer.register !== 'function') {
     ctx.logger.warn('[session-manager] webServer service unavailable; /sm routes are not mounted')

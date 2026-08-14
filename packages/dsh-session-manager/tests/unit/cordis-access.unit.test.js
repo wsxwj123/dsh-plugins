@@ -27,7 +27,7 @@ const plugin = await import(path.join(root, 'lib', 'index.js'))
 const { createSmHandler } = await import(path.join(root, 'lib', 'handler.js'))
 const { TrashStore } = await import(path.join(root, 'lib', 'trash.js'))
 
-const CORE = new Set(['logger', 'on', 'emit', 'base', 'has', 'effect', 'get', 'plugin', 'set', 'provide'])
+const CORE = new Set(['logger', 'on', 'emit', 'base', 'has', 'effect', 'get', 'plugin', 'set', 'provide', 'root'])
 
 /**
  * A fake cordis ctx that enforces the access model. Services are ONLY readable
@@ -35,8 +35,9 @@ const CORE = new Set(['logger', 'on', 'emit', 'base', 'has', 'effect', 'get', 'p
  * any service property throws the exact cordis wording. This proves apply()
  * never relies on inject-bare access.
  */
-function makeCordisCtx({ services = {} } = {}) {
+function makeCordisCtx({ services = {}, rootServices = {} } = {}) {
   const provided = new Map(Object.entries(services))
+  const rootProvided = new Map(Object.entries(rootServices))
   const warnLog = []
   const ctx = {
     logger: {
@@ -54,6 +55,13 @@ function makeCordisCtx({ services = {} } = {}) {
     base: {},
     has(name) { return provided.has(name) },
     get(name) { return provided.get(name) },
+  }
+  // `root` is a real cordis Context member; the plugin's P7 root-fallback reads
+  // `ctx.root.get(name)`. Simulate the isolated-ctx condition: services provided
+  // at root resolve via ctx.root.get, while current-ctx get() does not see them
+  // unless also listed in `services`.
+  ctx.root = {
+    get(name) { return rootProvided.has(name) ? rootProvided.get(name) : provided.get(name) },
   }
   return {
     ctx: new Proxy(ctx, {
@@ -131,6 +139,28 @@ test('apply with all services present: mounts the /sm route via ctx.get webServe
   const { base } = roots()
   plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
   assert.ok(registered, 'webServer.register called when the service is present')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('apply P7: a webServer provided ONLY at ROOT isolate is still found and mounted', () => {
+  // Regression for the real 405: services are provided into the ROOT ctx's
+  // isolate, but a plugin's apply(ctx) runs on its own isolated ctx whose get()
+  // does NOT see them. The root fallback (ctx.root.get ?? ctx.get) must reach
+  // an active root-only service.
+  let registered = false
+  const { ctx } = makeCordisCtx({
+    services: {
+      storageDomain: { get: () => null },
+      sessions: { get: () => undefined },
+    },
+    rootServices: {
+      webServer: { register: () => { registered = true; return () => {} } },
+    },
+  })
+  const { base } = roots()
+  assert.strictEqual(ctx.get('webServer'), undefined, 'current-ctx get does not see a root-only service')
+  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
+  assert.ok(registered, 'root-isolate webServer is reached via ctx.root.get and the /sm route mounts')
   fs.rmSync(base, { recursive: true, force: true })
 })
 

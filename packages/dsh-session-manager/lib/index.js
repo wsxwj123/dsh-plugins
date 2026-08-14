@@ -57,8 +57,9 @@ function apply(ctx, config = {}) {
 		ctx.logger.warn(`[session-manager] trash root ${trashRoot} is inside sessions root ${sessionsRoot}; refusing to enable recycle bin`);
 		return;
 	}
-	const storageDomain = ctx.get("storageDomain");
-	const sessions = ctx.get("sessions");
+	const rootGet = (name) => ctx.root.get(name) ?? ctx.get(name);
+	const storageDomain = rootGet("storageDomain");
+	const sessions = rootGet("sessions");
 	if (!storageDomain) ctx.logger.warn("[session-manager] storageDomain service unavailable; archive write (unarchive / delete-of-archived) will degrade to workspace-domain-unavailable / system-error");
 	if (!sessions) ctx.logger.warn("[session-manager] sessions service unavailable; running-session guard is skipped and deletes proceed");
 	const trash = new TrashStore(trashRoot);
@@ -83,7 +84,7 @@ function apply(ctx, config = {}) {
 		readWorkspaceGlobal: readGlobal,
 		log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) }
 	});
-	const webServer = ctx.get("webServer");
+	const webServer = rootGet("webServer");
 	if (!webServer || typeof webServer.register !== "function") {
 		ctx.logger.warn("[session-manager] webServer service unavailable; /sm routes are not mounted");
 		return;
