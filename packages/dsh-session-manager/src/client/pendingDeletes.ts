@@ -46,7 +46,11 @@ const localStorageAdapter: NonNullable<PendingDeleteDeps['storage']> = {
  * so nothing here touches the DOM.
  */
 export const pendingDeletes: PendingDeletes = createPendingDeletes({
-  fire: (entry) => smDelete(entry.id, entry.cwd, entry.title) as Promise<SmResult>,
+  fire: (entry, opts) => smDelete(entry.id, entry.cwd, entry.title, opts?.force) as Promise<SmResult>,
+  // The host returns session-running for a live session unless force:true.
+  // Ask the user before force-deleting (directory still goes to the recycle bin).
+  confirmForceDelete: (id, title) =>
+    window.confirm(`「${title}」该会话当前正在使用中，强制删除？（文件将移入回收站，可恢复）`),
   onChange: () => {},
   storage: localStorageAdapter,
 })

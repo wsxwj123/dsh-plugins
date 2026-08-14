@@ -108,11 +108,15 @@ export function apply(ctx: Context): void {
     }
   }
 
-  /** Clear selection if the deleted session was the current one (A-5). */
+  /** Clear selection once the CURRENT session's delete has CONFIRMED on the
+   *  host (fire-success), restoring the default New-Session view. This also
+   *  covers an open-but-idle session removed by a force-delete. We do NOT yank
+   *  the user off the session during the undoable/confirm window — only on
+   *  confirmed deletion (so an un-confirmed / undone delete keeps them on it). */
   const reconcileSelection = (): void => {
     const current = ctx.sessions.list.getSnapshot().current
     if (current === undefined) return
-    if (pendingDeletes.isPending(current)) ctx.sessions.clear()
+    if (pendingDeletes.isDeleted(current)) ctx.sessions.clear()
   }
 
   const offPending = pendingDeletes.subscribe(() => {

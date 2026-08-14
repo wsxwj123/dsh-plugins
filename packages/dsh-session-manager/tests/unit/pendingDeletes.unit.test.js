@@ -15,6 +15,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const core = await import(path.join(root, 'lib', 'pending-deletes-core.js'))
 const { createPendingDeletes, memoryStorage, UNDO_WINDOW_MS, FAILED_RETAIN_MS } = core
 
+/** Drain the microtask queue enough for the async fire chain to settle. */
+async function flush() {
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+}
+
 /**
  * A manual clock + manual scheduler: let/advance time by hand so timer-fired
  * deletes are deterministic (no real setTimeout in tests).
@@ -88,7 +93,7 @@ test('at deadline the host delete is fired exactly once and the entry clears', a
   pd.requestDelete('a', '/ctx', 'A')
   calls.length = 0
   advance(UNDO_WINDOW_MS) // window expires
-  await Promise.resolve() // let the async fire settle
+  await flush()
   assert.strictEqual(calls.length, 1)
   assert.deepStrictEqual(calls[0], { id: 'a', cwd: '/ctx', title: 'A' })
   assert.strictEqual(pd.get('a'), undefined)
@@ -104,7 +109,7 @@ test('countdown survives a view switch: firing is driven by module timer, not mo
   pd.requestDelete('x', '/c', 'X')
   unsub() // component "unmounted"
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(calls.length, 1)
 })
 
@@ -136,7 +141,7 @@ test('P9: multi-entry — undoing one leaves the other pending and still firing'
   assert.strictEqual(pd.isPending('a'), true)
   assert.strictEqual(pd.isPending('b'), false)
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.deepStrictEqual(calls.map((c) => c.id), ['a'], 'a still fires at its own deadline')
 })
 
@@ -147,7 +152,7 @@ test('undo before the deadline removes the entry and never fires', async () => {
   assert.strictEqual(pd.undo('a'), true)
   assert.strictEqual(pd.get('a'), undefined)
   advance(UNDO_WINDOW_MS * 2)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(calls.length, 0)
 })
 
@@ -156,7 +161,7 @@ test('undo after the entry already fired returns false (window is over)', async 
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx', 'A')
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(calls.length, 1)
   assert.strictEqual(pd.undo('a'), false)
 })
@@ -169,7 +174,7 @@ test('failed fire (system-error) surfaces a failed entry, then auto-clears', asy
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx', 'A')
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   const failed = pd.get('a')
   assert.strictEqual(failed?.state, 'failed')
   assert.strictEqual(failed?.error, 'system-error')
@@ -232,7 +237,7 @@ test('fire success marks the id as DELETED and persists it (row stays hidden)', 
   pd.requestDelete('a', '/ctx-a', 'A')
   assert.strictEqual(pd.isDeleted('a'), false, 'not deleted before fire')
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(pd.isDeleted('a'), true, 'host confirmed delete -> flagged deleted')
   // Persisted to the injected storage: a NEW instance seeded from the same
   // store still knows the id is deleted (refresh keeps the row hidden).
@@ -246,7 +251,7 @@ test('fiRED entry cannot be undone, and isDeleted stays true', async () => {
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(pd.isPending('a'), false, 'no undoable window after fire')
   assert.strictEqual(pd.isDeleted('a'), true)
   assert.strictEqual(pd.undo('a'), false, 'fire happened: cannot undo')
@@ -262,7 +267,7 @@ test('failed fire does NOT mark deleted, and the row is re-shown (INTERFACE §1.
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
   advance(UNDO_WINDOW_MS)
-  await Promise.resolve()
+  await flush()
   assert.strictEqual(pd.isDeleted('a'), false, 'a failed fire is not a confirmed delete')
   assert.strictEqual(pd.get('a')?.state, 'failed')
 })
@@ -275,4 +280,56 @@ test('storage seeds DELETED ids at init (persistence across a refresh)', () => {
   assert.strictEqual(pd.isDeleted('never-deleted'), false)
   // The deleted id is not in the pending table (it has no undoable window).
   assert.strictEqual(pd.get('already-gone'), undefined)
+})
+
+test('force: session-running + confirm(true) retries with force:true and deletes', async () => {
+  const calls = []
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    confirmForceDelete: async () => true,
+    fire: async (entry, opts) => {
+      calls.push(opts)
+      // Without force the host reports running; with force it deletes.
+      return opts?.force ? { ok: true } : { ok: false, code: 'session-running' }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(calls.length, 2, 'one normal fire + one force retry')
+  assert.deepStrictEqual(calls[0], undefined, 'first fire has no force')
+  assert.deepStrictEqual(calls[1], { force: true }, 'retry carries force:true')
+  assert.strictEqual(pd.isDeleted('a'), true, 'force-confirmed delete marks the id deleted')
+})
+
+test('force: session-running + confirm(false) leaves the entry failed (cancelled)', async () => {
+  let confirmed = 0
+  const { deps, advance } = makeDeps({
+    confirmForceDelete: async () => {
+      confirmed++
+      return false
+    },
+    fire: async (entry, opts) => (opts?.force ? { ok: true } : { ok: false, code: 'session-running' }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(confirmed, 1, 'the confirm callback was asked once')
+  assert.strictEqual(pd.get('a')?.state, 'failed', 'user declined force -> entry stays failed (row re-shows)')
+  assert.strictEqual(pd.isDeleted('a'), false)
+})
+
+test('force: session-running WITHOUT a confirm callback degrades like any failure', async () => {
+  // (already covered by the failed-fire test) — asserts the guard path is intact.
+  const { deps, advance } = makeDeps({
+    fire: async () => ({ ok: false, code: 'session-running' }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'failed')
 })

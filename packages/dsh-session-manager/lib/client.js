@@ -40,12 +40,15 @@ window.__ModuleLoader__.load({
 		*   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
 		*   an empty string. Pass `undefined`/omit to skip.
 		* @param title - display title for the trash record (identify-in-trash only).
+		* @param force - force-delete a running/live session (host moves the dir to the
+		*   recycle bin). Omitted/false → host still returns `session-running`.
 		*/
-		function smDelete(id, cwd, title) {
+		function smDelete(id, cwd, title, force) {
 			return post("/delete", {
 				id,
 				...cwd !== void 0 ? { cwd } : {},
-				title
+				title,
+				...force ? { force: true } : {}
 			});
 		}
 		/** Remove a session id from the archive set (`unarchive`). */
@@ -152,24 +155,27 @@ window.__ModuleLoader__.load({
 				}, Math.max(0, entry.deadline - now()));
 				timers.set(entry.id, cancel);
 			};
-			/** Fire one entry: move it past its window by invoking the host. */
+			/** Fire one entry: move it past its window by invoking the host. A
+			*  `session-running` result may be force-retried once after a user confirm. */
 			async function fire(id) {
 				if (!map.has(id)) return void 0;
 				const entry = map.get(id);
 				if (entry.state === "failed") return void 0;
 				drop(id);
-				let outcome;
-				try {
-					outcome = await deps.fire({
-						id: entry.id,
-						cwd: entry.cwd,
-						title: entry.title
-					});
-				} catch (err) {
-					outcome = {
-						ok: false,
-						code: String(err)
-					};
+				const base = {
+					id: entry.id,
+					cwd: entry.cwd,
+					title: entry.title
+				};
+				let outcome = await callFire(base);
+				if (!outcome.ok && outcome.code === "session-running" && deps.confirmForceDelete) {
+					let confirmed = false;
+					try {
+						confirmed = await deps.confirmForceDelete(entry.id, entry.title);
+					} catch {
+						confirmed = false;
+					}
+					if (confirmed) outcome = await callFire(base, { force: true });
 				}
 				if (!outcome.ok) {
 					const failed = {
@@ -196,6 +202,17 @@ window.__ModuleLoader__.load({
 					notify();
 				}
 				return outcome;
+			}
+			/** Invoke the host delete, mapping a thrown host call to a failure. */
+			async function callFire(entry, opts) {
+				try {
+					return await deps.fire(entry, opts);
+				} catch (err) {
+					return {
+						ok: false,
+						code: String(err)
+					};
+				}
 			}
 			/** Immediately fire whatever is parked for id (test/edge hook). */
 			async function fireNow(id) {
@@ -256,7 +273,8 @@ window.__ModuleLoader__.load({
 		* so nothing here touches the DOM.
 		*/
 		const pendingDeletes = createPendingDeletes({
-			fire: (entry) => smDelete(entry.id, entry.cwd, entry.title),
+			fire: (entry, opts) => smDelete(entry.id, entry.cwd, entry.title, opts?.force),
+			confirmForceDelete: (id, title) => window.confirm(`「${title}」该会话当前正在使用中，强制删除？（文件将移入回收站，可恢复）`),
 			onChange: () => {},
 			storage: {
 				load: () => {
@@ -330,33 +348,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"head": "FPsCja_head",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"row": "FPsCja_row",
-			"close": "FPsCja_close",
-			"action": "FPsCja_action",
-			"trashBar": "FPsCja_trashBar",
-			"countdown": "FPsCja_countdown",
-			"item": "FPsCja_item",
-			"trashButton": "FPsCja_trashButton",
-			"overlay": "FPsCja_overlay",
-			"dismiss": "FPsCja_dismiss",
-			"undo": "FPsCja_undo",
 			"failed": "FPsCja_failed",
-			"rail": "FPsCja_rail",
-			"rail-in": "FPsCja_rail-in",
-			"backdrop": "FPsCja_backdrop",
-			"list": "FPsCja_list",
-			"empty": "FPsCja_empty",
-			"errorBanner": "FPsCja_errorBanner",
-			"trashCount": "FPsCja_trashCount",
-			"divider": "FPsCja_divider",
-			"rowTitle": "FPsCja_rowTitle",
 			"title": "FPsCja_title",
+			"backdrop": "FPsCja_backdrop",
 			"danger": "FPsCja_danger",
+			"errorBanner": "FPsCja_errorBanner",
+			"list": "FPsCja_list",
 			"label": "FPsCja_label",
+			"empty": "FPsCja_empty",
+			"rail": "FPsCja_rail",
+			"divider": "FPsCja_divider",
+			"dismiss": "FPsCja_dismiss",
 			"entryButton": "FPsCja_entryButton",
-			"add": "FPsCja_add"
+			"close": "FPsCja_close",
+			"trashButton": "FPsCja_trashButton",
+			"row": "FPsCja_row",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"overlay": "FPsCja_overlay",
+			"undo": "FPsCja_undo",
+			"countdown": "FPsCja_countdown",
+			"rowTitle": "FPsCja_rowTitle",
+			"action": "FPsCja_action",
+			"add": "FPsCja_add",
+			"head": "FPsCja_head",
+			"trashCount": "FPsCja_trashCount",
+			"item": "FPsCja_item",
+			"trashBar": "FPsCja_trashBar",
+			"rail-in": "FPsCja_rail-in"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -415,7 +433,7 @@ window.__ModuleLoader__.load({
 				btn.type = "button";
 				btn.dataset.dshSmDelete = "true";
 				btn.className = rail_module_css_default.deleteBtn;
-				btn.title = action.running ? "请先结束运行中的会话" : "删除会话";
+				btn.title = action.running ? "删除会话（当前正在使用中，将提示强制删除）" : "删除会话";
 				btn.setAttribute("aria-label", `删除会话 ${action.title}`);
 				btn.innerHTML = TRASH_SVG;
 				btn.style.display = "none";
@@ -423,10 +441,6 @@ window.__ModuleLoader__.load({
 					e.preventDefault();
 					e.stopPropagation();
 					const fresh = resolveRowSession(row, getContext().sessions.list.getSnapshot().byId) ?? action;
-					if (fresh.running) {
-						window.alert("请先结束运行中的会话，再进行删除");
-						return;
-					}
 					onDelete({
 						...fresh,
 						cwd: fresh.cwd
@@ -783,11 +797,15 @@ window.__ModuleLoader__.load({
 					if (!hide && current === "none") row.style.display = "";
 				}
 			};
-			/** Clear selection if the deleted session was the current one (A-5). */
+			/** Clear selection once the CURRENT session's delete has CONFIRMED on the
+			*  host (fire-success), restoring the default New-Session view. This also
+			*  covers an open-but-idle session removed by a force-delete. We do NOT yank
+			*  the user off the session during the undoable/confirm window — only on
+			*  confirmed deletion (so an un-confirmed / undone delete keeps them on it). */
 			const reconcileSelection = () => {
 				const current = ctx.sessions.list.getSnapshot().current;
 				if (current === void 0) return;
-				if (pendingDeletes.isPending(current)) ctx.sessions.clear();
+				if (pendingDeletes.isDeleted(current)) ctx.sessions.clear();
 			};
 			const offPending = pendingDeletes.subscribe(() => {
 				reconcileVisibility();

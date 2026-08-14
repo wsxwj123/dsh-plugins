@@ -116,7 +116,7 @@ export function createDeleteController(
     btn.type = 'button'
     btn.dataset.dshSmDelete = 'true'
     btn.className = css.deleteBtn
-    btn.title = action.running ? '请先结束运行中的会话' : '删除会话'
+    btn.title = action.running ? '删除会话（当前正在使用中，将提示强制删除）' : '删除会话'
     btn.setAttribute('aria-label', `删除会话 ${action.title}`)
     // Static, trusted SVG (no user input) — do not concatenate anything here.
     btn.innerHTML = TRASH_SVG
@@ -127,14 +127,10 @@ export function createDeleteController(
       e.preventDefault()
       e.stopPropagation()
       // Re-resolve against the LIVE byId so a rename between injection and
-      // click yields current metadata; the running guard uses the freshest value.
+      // click yields current metadata. RUNNING sessions are NOT hard-blocked
+      // here: the delete is parked and, at fire, the host returns session-running
+      // which the state machine confirms then force-retries (unified UX).
       const fresh = resolveRowSession(row, getContext().sessions.list.getSnapshot().byId) ?? action
-      if (fresh.running) {
-        // Front-end running guard (INTERFACE §1.4). The host half independently
-        // rejects with session-running — this prompt is UX, not the only line.
-        window.alert('请先结束运行中的会话，再进行删除')
-        return
-      }
       onDelete({ ...fresh, cwd: fresh.cwd }, row)
     })
     // Append as a direct child of the row so the :hover > child rule applies.

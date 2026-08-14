@@ -62,8 +62,21 @@ export interface FireOutcome {
 
 /** Injectable seams so unit tests run with a fake timer and a stubbed host. */
 export interface PendingDeleteDeps {
-  /** Actually send the delete; resolved once per fired entry. */
-  fire: (entry: Pick<PendingEntry, 'id' | 'cwd' | 'title'>) => FireOutcome | Promise<FireOutcome>
+  /**
+   * Actually send the delete. `opts.force` forwards to the host so a running
+   * session can be moved to the recycle bin.
+   */
+  fire: (
+    entry: Pick<PendingEntry, 'id' | 'cwd' | 'title'>,
+    opts?: { force?: boolean },
+  ) => FireOutcome | Promise<FireOutcome>
+  /**
+   * When a fire returns `session-running`, ask this (shows a browser confirm)
+   * whether to force-delete. Resolve `true` to retry with force:true; `false`
+   * to keep the entry failed (and re-show the session). Optional — without it,
+   * a running-session failure just degrades like any other failure.
+   */
+  confirmForceDelete?: (id: string, title: string) => boolean | Promise<boolean>
   /** Wall-clock source (defaults to Date.now). */
   now?: () => number
   /** Schedule a callback after a delay; returns a cancel function. */
@@ -173,7 +186,8 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     timers.set(entry.id, cancel)
   }
 
-  /** Fire one entry: move it past its window by invoking the host. */
+  /** Fire one entry: move it past its window by invoking the host. A
+   *  `session-running` result may be force-retried once after a user confirm. */
   async function fire(id: string): Promise<FireOutcome | undefined> {
     // Idempotency + undo race guard: only a currently-parked entry fires.
     if (!map.has(id)) return undefined
@@ -182,16 +196,26 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     // The window is over: drop the undoable entry before awaiting the host so
     // an in-flight fire cannot be undone mid-request.
     drop(id)
-    let outcome: FireOutcome
-    try {
-      outcome = await deps.fire({ id: entry.id, cwd: entry.cwd, title: entry.title })
-    } catch (err) {
-      outcome = { ok: false, code: String(err) }
+    const base = { id: entry.id, cwd: entry.cwd, title: entry.title }
+
+    let outcome = await callFire(base)
+    // Running-session conflict: ask the user to force-delete (the host keeps
+    // returning session-running until force:true). Confirm → one force retry;
+    // cancel → leave it a failure (row re-shows).
+    if (!outcome.ok && outcome.code === 'session-running' && deps.confirmForceDelete) {
+      let confirmed = false
+      try {
+        confirmed = await deps.confirmForceDelete(entry.id, entry.title)
+      } catch {
+        confirmed = false
+      }
+      if (confirmed) outcome = await callFire(base, { force: true })
     }
+
     if (!outcome.ok) {
-      // Real/failed delete (system-error, session-running, http-error): keep
-      // the entry visible as a failure so the UI can re-show the session and
-      // surface the reason. Auto-clear after a short retain window.
+      // Real/failed delete (system-error, session-running-without-force-granted,
+      // http-error): keep the entry visible as a failure so the UI can re-show
+      // the session and surface the reason. Auto-clear after a retain window.
       const failed: PendingEntry = {
         id: entry.id,
         cwd: entry.cwd,
@@ -220,6 +244,15 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       notify()
     }
     return outcome
+  }
+
+  /** Invoke the host delete, mapping a thrown host call to a failure. */
+  async function callFire(entry: Pick<PendingEntry, 'id' | 'cwd' | 'title'>, opts?: { force?: boolean }): Promise<FireOutcome> {
+    try {
+      return await deps.fire(entry, opts)
+    } catch (err) {
+      return { ok: false, code: String(err) }
+    }
   }
 
   /** Immediately fire whatever is parked for id (test/edge hook). */

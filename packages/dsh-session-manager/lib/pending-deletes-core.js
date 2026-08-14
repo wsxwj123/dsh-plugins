@@ -86,24 +86,27 @@ function createPendingDeletes(deps) {
 		}, Math.max(0, entry.deadline - now()));
 		timers.set(entry.id, cancel);
 	};
-	/** Fire one entry: move it past its window by invoking the host. */
+	/** Fire one entry: move it past its window by invoking the host. A
+	*  `session-running` result may be force-retried once after a user confirm. */
 	async function fire(id) {
 		if (!map.has(id)) return void 0;
 		const entry = map.get(id);
 		if (entry.state === "failed") return void 0;
 		drop(id);
-		let outcome;
-		try {
-			outcome = await deps.fire({
-				id: entry.id,
-				cwd: entry.cwd,
-				title: entry.title
-			});
-		} catch (err) {
-			outcome = {
-				ok: false,
-				code: String(err)
-			};
+		const base = {
+			id: entry.id,
+			cwd: entry.cwd,
+			title: entry.title
+		};
+		let outcome = await callFire(base);
+		if (!outcome.ok && outcome.code === "session-running" && deps.confirmForceDelete) {
+			let confirmed = false;
+			try {
+				confirmed = await deps.confirmForceDelete(entry.id, entry.title);
+			} catch {
+				confirmed = false;
+			}
+			if (confirmed) outcome = await callFire(base, { force: true });
 		}
 		if (!outcome.ok) {
 			const failed = {
@@ -130,6 +133,17 @@ function createPendingDeletes(deps) {
 			notify();
 		}
 		return outcome;
+	}
+	/** Invoke the host delete, mapping a thrown host call to a failure. */
+	async function callFire(entry, opts) {
+		try {
+			return await deps.fire(entry, opts);
+		} catch (err) {
+			return {
+				ok: false,
+				code: String(err)
+			};
+		}
 	}
 	/** Immediately fire whatever is parked for id (test/edge hook). */
 	async function fireNow(id) {
