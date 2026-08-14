@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Added Blush Dawn / 粉霞 with white surfaces and soft rose accents.
+- Added Lilac Mist / 紫雾 with white surfaces and gentle lilac accents.
+- Added coordinated dark palettes so both families follow DSH's native appearance modes.
+
 ## 0.5.0
 
 - Made the native DSH Appearance preference the sole owner of light, dark, and follow-system behavior.

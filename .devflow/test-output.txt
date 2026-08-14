@@ -1,0 +1,24 @@
+
+> dsh-plugins@0.1.0 build /Users/wsxwj/Desktop/app/dsh-plugins
+> pnpm -r build
+
+
+> dsh-theme-gallery@0.6.0 build /Users/wsxwj/Desktop/app/dsh-plugins/packages/theme-gallery
+> node build.mjs
+
+built /Users/wsxwj/Desktop/app/dsh-plugins/packages/theme-gallery/lib/client.js
+
+> dsh-plugins@0.1.0 check /Users/wsxwj/Desktop/app/dsh-plugins
+> pnpm -r check
+
+
+> dsh-theme-gallery@0.6.0 check /Users/wsxwj/Desktop/app/dsh-plugins/packages/theme-gallery
+> node build.mjs --check
+
+built /Users/wsxwj/Desktop/app/dsh-plugins/packages/theme-gallery/lib/client.js
+blush-dawn light contrast 4.98:1
+blush-dawn dark contrast 8.04:1
+lilac-mist light contrast 5.54:1
+lilac-mist dark contrast 8.88:1
+new theme catalog validation passed
+runtime validation passed

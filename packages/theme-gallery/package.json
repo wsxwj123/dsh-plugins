@@ -1,6 +1,6 @@
 {
   "name": "dsh-theme-gallery",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A curated DSH theme-family gallery that follows the native light, dark, and system appearance modes.",
   "type": "module",
   "main": "lib/index.js",

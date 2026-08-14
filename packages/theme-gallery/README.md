@@ -4,7 +4,7 @@ A fast, curated Client Cordis theme gallery for the DeepSeek Harness Web GUI.
 
 ## Themes
 
-The public package contains 13 original, source-neutral theme families. Every family includes a complete light and dark palette:
+The public package contains 15 original, source-neutral theme families. Every family includes a complete light and dark palette:
 
 | 中文名 | English name | Visual direction |
 |---|---|---|
@@ -21,6 +21,8 @@ The public package contains 13 original, source-neutral theme families. Every fa
 | 天际 | Horizon | Airy blue-gray with gold |
 | 晴蓝 | Azure | Clean contemporary blue |
 | 黑白界 | Monochrome | Accessibility-focused high contrast |
+| 粉霞 | Blush Dawn | White surfaces with soft rose accents |
+| 紫雾 | Lilac Mist | White surfaces with gentle lilac accents |
 
 ## Design approach
 
@@ -29,7 +31,7 @@ Editor themes often differ mainly in syntax-token colors. DSH is a conversationa
 ## Features
 
 - One unified gallery with no upstream-product categories.
-- Search across 13 curated families.
+- Search across 15 curated families.
 - Uses DSH's native **Light / Dark / Follow system** appearance preference without disabling or replacing it.
 - Applies the selected family through one `overrideTokens()` layer with complete `{ light, dark }` token pairs.
 - Maps each family to DSH surfaces, text, borders, semantic states, sidebars, and button aliases.
