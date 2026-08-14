@@ -34,8 +34,9 @@ test('多 agent 各自独立：watch 两个 agent，事件按发生序各自外�
     sent.map((e) => e.k),
     ['user', 'pre', 'pre'],
   )
-  assert.strictEqual(sent[1].t, '运行命令')
-  assert.strictEqual(sent[2].t, '读取中')
+  // tool_name = 原始工具名
+  assert.strictEqual(sent[1].t, 'bash_b')
+  assert.strictEqual(sent[2].t, 'read_a')
   await ticks(2, 5)
   assert.strictEqual(sent.length, 3, '无新增不得重放')
   c.dispose()

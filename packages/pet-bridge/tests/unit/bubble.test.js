@@ -48,30 +48,35 @@ function waitFor(predicate, ms) {
   })
 }
 
-test('buildPayload 恒为契约五字段：tool_input 恒 null、agent_source 恒 dsh、caller_pid=process.pid', () => {
-  for (const kind of ['user', 'pre', 'post', 'stop']) {
-    const p = buildPayload(kind, '运行命令')
+test('buildPayload 恒为契约五字段：agent_source 恒 dsh、caller_pid=process.pid、tool_input 可携摘要', () => {
+  for (const kind of ['user', 'post', 'stop']) {
+    const p = buildPayload(kind)
     assert.deepStrictEqual(Object.keys(p).sort(), ['agent_source', 'caller_pid', 'kind', 'tool_input', 'tool_name'])
     assert.strictEqual(p.kind, kind)
     assert.strictEqual(p.agent_source, 'dsh')
-    assert.strictEqual(p.tool_input, null)
+    assert.strictEqual(p.tool_input, null) // 非 pre 恒 null
+    assert.strictEqual(p.tool_name, null)
     assert.strictEqual(p.caller_pid, process.pid)
-    assert.strictEqual(p.tool_name, '运行命令')
   }
-  // tool_name 缺省为 null / 显式 null
+  // pre：tool_name=原始名、tool_input=精简摘要对象
+  const pre = buildPayload('pre', 'bash', { command: 'ls' })
+  assert.strictEqual(pre.tool_name, 'bash')
+  assert.deepStrictEqual(pre.tool_input, { command: 'ls' })
+  // 缺省归一为 null
   assert.strictEqual(buildPayload('user', undefined).tool_name, null)
   assert.strictEqual(buildPayload('user', null).tool_name, null)
+  assert.strictEqual(buildPayload('user', 'bash', undefined).tool_input, null)
 })
 
-test('push 正常路径：POST /bubble、收到 2xx、payload 正确', async () => {
+test('push 正常路径：POST /bubble、收到 2xx、payload 正确（pre 携摘要）', async () => {
   const fake = await startFakePet(200)
   try {
-    push(fake.port, 'pre', '读取中')
+    push(fake.port, 'pre', 'bash', { command: 'ls' })
     await waitFor(() => fake.requests.length >= 1, 500)
     assert.strictEqual(fake.requests[0].url, '/bubble')
     assert.strictEqual(fake.requests[0].body.kind, 'pre')
-    assert.strictEqual(fake.requests[0].body.tool_name, '读取中')
-    assert.strictEqual(fake.requests[0].body.tool_input, null)
+    assert.strictEqual(fake.requests[0].body.tool_name, 'bash')
+    assert.deepStrictEqual(fake.requests[0].body.tool_input, { command: 'ls' })
   } finally {
     await fake.stop()
   }

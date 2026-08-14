@@ -16,18 +16,18 @@ function ticks(n, ms) {
   return new Promise((r) => setTimeout(r, (n + 1) * ms))
 }
 
-/** 构造 watcher：收集 emit，固定 pollInterval=5 */
+/** 构造 watcher：收集 emit（kind, toolName, toolInput），固定 pollInterval=5 */
 function setup(initialEvents) {
   const emitted = []
   const agent = { session: { events: initialEvents ? initialEvents.map((e) => ({ ...e })) : [] } }
-  const w = createWatcher(agent, { enabled: true, pollInterval: 5, port: 1 }, (k, t) => emitted.push({ k, t }))
+  const w = createWatcher(agent, { enabled: true, pollInterval: 5, port: 1 }, (k, t, ti) => emitted.push({ k, t, ti }))
   return { agent, emitted, w }
 }
 
 test('事件 -> kind 映射：turn/start→user、tool/call→pre、tool/result→post、turn/end→stop、assistant/message 不推', async () => {
   const { agent, emitted, w } = setup()
   agent.session.events.push(evt(1, 'turn/start'))
-  agent.session.events.push(evt(2, 'tool/call', { name: 'bash_x', arguments: '{}' }))
+  agent.session.events.push(evt(2, 'tool/call', { name: 'bash_x', arguments: '{"command":"ls -la"}' }))
   agent.session.events.push(evt(3, 'tool/result', { name: 'bash_x' }))
   agent.session.events.push(evt(4, 'turn/end'))
   agent.session.events.push(evt(5, 'assistant/message', { content: 'x' }))
@@ -36,19 +36,26 @@ test('事件 -> kind 映射：turn/start→user、tool/call→pre、tool/result�
     emitted.map((e) => e.k),
     ['user', 'pre', 'post', 'stop'],
   )
-  assert.strictEqual(emitted[1].t, '运行命令') // tool/call 带中文文案
+  // tool/call：tool_name=原始名、tool_input=精简摘要
+  assert.strictEqual(emitted[1].t, 'bash_x')
+  assert.deepStrictEqual(emitted[1].ti, { command: 'ls' })
+  // 非 tool/call 事件 tool_name/tool_input 恒 undefined（后续归一为 null）
+  assert.strictEqual(emitted[0].t, undefined)
+  assert.strictEqual(emitted[0].ti, undefined)
   w.dispose()
 })
 
 test('位置游标：seq 乱序（seq2 排在 seq1 前）仍按 append 序外发', async () => {
   const { agent, emitted, w } = setup()
-  agent.session.events.push(evt(2, 'tool/call', { name: 'bash_y', arguments: '{}' }))
-  agent.session.events.push(evt(1, 'tool/call', { name: 'read_z', arguments: '{}' }))
+  agent.session.events.push(evt(2, 'tool/call', { name: 'bash_y', arguments: '{"command":"ls"}' }))
+  agent.session.events.push(evt(1, 'tool/call', { name: 'read_z', arguments: '{"file_path":"/a/b.ts"}' }))
   await ticks(2, 5)
   assert.deepStrictEqual(
     emitted.map((e) => e.t),
-    ['运行命令', '读取中'], // 按 append 序，不是 seq 序
+    ['bash_y', 'read_z'], // tool_name = 原始工具名，按 append 序
   )
+  assert.deepStrictEqual(emitted[0].ti, { command: 'ls' })
+  assert.deepStrictEqual(emitted[1].ti, { file_path: 'b.ts' })
   w.dispose()
 })
 
