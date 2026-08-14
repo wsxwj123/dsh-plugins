@@ -38,16 +38,18 @@ test('turn/start 推 kind=user、agent_source="dsh"、tool_name=null、tool_inpu
   }
 })
 
-test('tool/call 推 kind=pre，tool_name=中文文案，tool_input 恒 null', async () => {
+test('tool/call 推 kind=pre，tool_name=原始工具名，tool_input=精简摘要对象', async () => {
   const fake = await startFakePet()
   const { push } = mount(fake)
   try {
-    push(toolCall(1, 'bash_bar', '{}'))
+    push(toolCall(1, 'bash', JSON.stringify({ command: 'ls -la' })))
     await serverReceived(fake, 1)
     const b = fake.requests[0].body
     assert.strictEqual(b.kind, 'pre')
-    assert.strictEqual(b.tool_name, '运行命令')
-    assert.strictEqual(b.tool_input, null, 'tool/call 的 tool_input 也必须为 null')
+    // tool_name 传原始工具名（不再翻译成中文文案）
+    assert.strictEqual(b.tool_name, 'bash')
+    // tool_input 是剪枝安全摘要对象（命令首词）
+    assert.deepStrictEqual(b.tool_input, { command: 'ls' })
   } finally {
     await fake.stop()
   }
@@ -112,9 +114,15 @@ test('一个完整回合：start→call→result→end 依次外发 user/pre/pos
       ['user', 'pre', 'post', 'stop'],
     )
     // 逐一核对四个 payload 的关键字段
-    assert.strictEqual(fake.requests[1].body.tool_name, '读取中')
+    // glob 属于「其余→无摘要」，tool_input 为 null；tool_name 传原始名
+    assert.strictEqual(fake.requests[1].body.tool_name, 'glob_ts')
     assert.strictEqual(fake.requests[1].body.tool_input, null)
-    fake.requests.forEach((r) => {
+    // 非 tool/call 事件的 tool_name/tool_input 恒 null
+    fake.requests.forEach((r, i) => {
+      if (i !== 1) {
+        assert.strictEqual(r.body.tool_name, null)
+        assert.strictEqual(r.body.tool_input, null)
+      }
       assert.strictEqual(r.body.agent_source, 'dsh')
       assert.strictEqual(r.body.caller_pid, process.pid)
     })

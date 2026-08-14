@@ -42,7 +42,7 @@ test('session.events 缺失（undefined）：该 tick 跳过、不崩、不推�
   }
 })
 
-test('超长 arguments：不外发，payload 里不出现参数内容', async () => {
+test('超长/敏感 arguments：完整内容不外发，仅出 ≤24 字符摘要', async () => {
   const fake = await startFakePet()
   const ctx = makeCtx()
   const h = makeAgent()
@@ -50,13 +50,18 @@ test('超长 arguments：不外发，payload 里不出现参数内容', async ()
   const dispose = plugin.apply(ctx, { port: fake.port, pollInterval: 5 })
   ctx._emitAgentCreated(h.agent)
   try {
-    h.push(toolCall(1, 'bash_pwd', JSON.stringify({ cmd: longArgs, secret: 'sk-abc123' })))
+    // bash 前缀命中 command 提取；.cmd 兼容字段首词（截断 ≤24）
+    h.push(toolCall(1, 'bash', JSON.stringify({ cmd: longArgs, secret: 'sk-abc123' })))
     await serverReceived(fake, 1)
     const b = fake.requests[0].body
-    assert.strictEqual(b.tool_input, null, '参数恒不进 tool_input')
+    // tool_input 是精简摘要对象（命令首词，截断 24），不是 null、也不带全量
+    assert.ok(b.tool_input && typeof b.tool_input === 'object')
+    assert.deepStrictEqual(b.tool_input, { command: 'x'.repeat(24) })
+    // 完整 arguments 与敏感字段绝不外发
     const raw = fake.requests[0].raw
     assert.ok(!raw.includes('sk-abc123'), '敏感参数不得出现在任何外发内容里')
-    assert.ok(!raw.includes('x'.repeat(6000).slice(0, 100)), '超长参数内容不得外发')
+    assert.ok(!raw.includes('x'.repeat(6000).slice(0, 100)), '超长参数全量不得外发')
+    assert.ok(!Object.values(b.tool_input).some((v) => v.length > 24), '摘要值不得超过 24 字符')
     // payload 只允许契约规定的 5 个字段
     assert.deepStrictEqual(Object.keys(b).sort(), [
       'agent_source',

@@ -21,7 +21,7 @@ test('卸载后：再喂事件不再推送（timer 已停、观察已解绑）',
   // 卸载前能推
   h.push(toolCall(1, 'bash_bar', '{}'))
   await serverReceived(fake, 1)
-  assert.strictEqual(fake.requests[0].body.tool_name, '运行命令')
+  assert.strictEqual(fake.requests[0].body.tool_name, 'bash_bar') // 原始工具名
 
   // 卸载
   dispose()
@@ -46,7 +46,7 @@ test('多次 apply + 卸载不泄漏：各自推送独立、卸载后全停', as
   ha.push(toolCall(1, 'bash_a', '{}'))
   hb.push(evt(1, 'turn/start'))
   await serverReceived(fake, 2)
-  assert.strictEqual(fake.requests[0].body.tool_name, '运行命令')
+  assert.strictEqual(fake.requests[0].body.tool_name, 'bash_a') // 原始工具名
   assert.strictEqual(fake.requests[1].body.kind, 'user')
 
   // 卸载其中一个，其事件不再推，另一个仍正常

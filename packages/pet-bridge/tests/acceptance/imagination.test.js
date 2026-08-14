@@ -31,7 +31,7 @@ test('assistant/message 混入事件流：只推送非 assistant 事件，不污
   }
 })
 
-test('tool/call 缺 data.name（undefined）：tool_name 兜底为「执行中」，恒非空字符串', async () => {
+test('tool/call 缺 data.name（undefined）：不崩、仍推 pre，tool_input=null（tool_name 视原始名）', async () => {
   const fake = await startFakePet()
   const ctx = makeCtx()
   const h = makeAgent()
@@ -40,10 +40,10 @@ test('tool/call 缺 data.name（undefined）：tool_name 兜底为「执行中�
   try {
     h.push(evt(1, 'tool/call', {})) // data 里没有 name
     await serverReceived(fake, 1)
-    const tn = fake.requests[0].body.tool_name
-    assert.strictEqual(typeof tn, 'string')
-    assert.ok(tn.length > 0, 'tool_name 恒非空字符串')
-    assert.strictEqual(tn, '执行中') // 无 name → 兜底
+    const b = fake.requests[0].body
+    assert.strictEqual(b.kind, 'pre') // 缺 name 也能正常推送，不崩
+    // 新契约 tool_name=原始名，缺时无约定兜底；tool_input 无摘要为 null
+    assert.strictEqual(b.tool_input, null)
   } finally {
     dispose()
     await fake.stop()
@@ -62,7 +62,7 @@ test('seq 追加时位置乱序（seq2 排在 seq1 前）：两条都是新增�
     await serverReceived(fake, 2)
     assert.deepStrictEqual(
       fake.requests.map((r) => r.body.tool_name),
-      ['运行命令', '读取中'],
+      ['bash_y', 'read_z'], // tool_name = 原始工具名
     )
   } finally {
     dispose()
@@ -81,7 +81,7 @@ test('重复 feed：同一事件重复 append 同内容会各推一次，但同�
     h.push(toolCall(1, 'bash_dup', '{}'), toolCall(2, 'bash_dup', '{}'))
     await serverReceived(fake, 2)
     assert.strictEqual(fake.requests.length, 2)
-    fake.requests.forEach((r) => assert.strictEqual(r.body.tool_name, '运行命令'))
+    fake.requests.forEach((r) => assert.strictEqual(r.body.tool_name, 'bash_dup'))
   } finally {
     dispose()
     await fake.stop()

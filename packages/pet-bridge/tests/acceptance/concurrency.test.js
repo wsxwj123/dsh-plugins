@@ -28,8 +28,8 @@ test('两个 agent 各自独立增量：各自事件都按发生序外发，不�
       fake.requests.map((r) => r.body.kind),
       ['user', 'pre', 'pre'],
     )
-    assert.strictEqual(fake.requests[1].body.tool_name, '运行命令') // b
-    assert.strictEqual(fake.requests[2].body.tool_name, '读取中') // a
+    assert.strictEqual(fake.requests[1].body.tool_name, 'bash_b') // b 的 tool/call 原始名
+    assert.strictEqual(fake.requests[2].body.tool_name, 'read_a') // a 的 tool/call 原始名
     // 无额外推送（两个 agent 独立游标，各自不重放对方事件）
     await new Promise((r) => setTimeout(r, 200))
     assert.strictEqual(fake.requests.length, 3)
