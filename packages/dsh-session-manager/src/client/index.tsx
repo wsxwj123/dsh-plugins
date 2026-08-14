@@ -165,7 +165,11 @@ export function apply(ctx: Context): void {
     disposeSlot()
     offPending()
     offList()
+    // Stop BOTH sync drivers (list subscription + MutationObserver) BEFORE
+    // dispose: removing the injected buttons mutates the DOM and would
+    // otherwise re-trigger sync() and re-inject them (review I-7).
     mo.disconnect()
+    controller.dispose()
     overlays.unmount()
     mount.remove()
   }, 'dsh-session-manager: client lifecycle')

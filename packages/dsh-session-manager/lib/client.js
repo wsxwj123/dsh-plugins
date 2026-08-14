@@ -465,33 +465,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"trashCount": "FPsCja_trashCount",
-			"trashBar": "FPsCja_trashBar",
-			"dismiss": "FPsCja_dismiss",
-			"undo": "FPsCja_undo",
-			"danger": "FPsCja_danger",
-			"failed": "FPsCja_failed",
 			"rail-in": "FPsCja_rail-in",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"countdown": "FPsCja_countdown",
-			"title": "FPsCja_title",
-			"overlay": "FPsCja_overlay",
-			"trashButton": "FPsCja_trashButton",
-			"item": "FPsCja_item",
+			"errorBanner": "FPsCja_errorBanner",
+			"trashCount": "FPsCja_trashCount",
 			"add": "FPsCja_add",
-			"row": "FPsCja_row",
-			"rail": "FPsCja_rail",
-			"divider": "FPsCja_divider",
-			"list": "FPsCja_list",
+			"item": "FPsCja_item",
+			"deleteBtn": "FPsCja_deleteBtn",
 			"entryButton": "FPsCja_entryButton",
+			"trashButton": "FPsCja_trashButton",
 			"action": "FPsCja_action",
+			"rowTitle": "FPsCja_rowTitle",
+			"danger": "FPsCja_danger",
+			"title": "FPsCja_title",
+			"countdown": "FPsCja_countdown",
+			"undo": "FPsCja_undo",
+			"rail": "FPsCja_rail",
 			"label": "FPsCja_label",
 			"backdrop": "FPsCja_backdrop",
-			"empty": "FPsCja_empty",
+			"divider": "FPsCja_divider",
 			"close": "FPsCja_close",
+			"list": "FPsCja_list",
+			"row": "FPsCja_row",
+			"trashBar": "FPsCja_trashBar",
 			"head": "FPsCja_head",
-			"rowTitle": "FPsCja_rowTitle",
-			"errorBanner": "FPsCja_errorBanner"
+			"failed": "FPsCja_failed",
+			"empty": "FPsCja_empty",
+			"dismiss": "FPsCja_dismiss",
+			"overlay": "FPsCja_overlay"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -578,7 +578,19 @@ window.__ModuleLoader__.load({
 					});
 				}
 			};
-			const dispose = () => {};
+			/**
+			* Release everything this controller injected (review I-7): every delete
+			* button (removing the node also drops its click listener — no dangling
+			* closures over the old ctx), the injected hover `<style>`, and the row map.
+			* Called from the client effect cleanup AFTER the MutationObserver and list
+			* subscription are disconnected, so the removals cannot re-trigger sync().
+			* A later re-apply recreates the style and buttons from scratch.
+			*/
+			const dispose = () => {
+				document.querySelectorAll(DELETE_BTN_SEL).forEach((el) => el.remove());
+				document.querySelectorAll("#dsh-session-manager-delete-hover").forEach((el) => el.remove());
+				rowById.clear();
+			};
 			return {
 				sync,
 				rowById,
@@ -999,6 +1011,7 @@ window.__ModuleLoader__.load({
 				offPending();
 				offList();
 				mo.disconnect();
+				controller.dispose();
 				overlays.unmount();
 				mount.remove();
 			}, "dsh-session-manager: client lifecycle");

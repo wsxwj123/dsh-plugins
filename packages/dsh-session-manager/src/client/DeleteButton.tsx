@@ -160,9 +160,19 @@ export function createDeleteController(
     }
   }
 
-  // dispose 的真实清理（移除注入按钮 + hover 样式）在 I-7 提交中实现；
-  // 此处保持与改动前一致的空实现，保证本提交（I-6 绑定修复）逻辑单一。
-  const dispose = (): void => {}
+  /**
+   * Release everything this controller injected (review I-7): every delete
+   * button (removing the node also drops its click listener — no dangling
+   * closures over the old ctx), the injected hover `<style>`, and the row map.
+   * Called from the client effect cleanup AFTER the MutationObserver and list
+   * subscription are disconnected, so the removals cannot re-trigger sync().
+   * A later re-apply recreates the style and buttons from scratch.
+   */
+  const dispose = (): void => {
+    document.querySelectorAll(DELETE_BTN_SEL).forEach((el) => el.remove())
+    document.querySelectorAll('#dsh-session-manager-delete-hover').forEach((el) => el.remove())
+    rowById.clear()
+  }
 
   return { sync, rowById, dispose }
 }
