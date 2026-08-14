@@ -48,6 +48,22 @@ function bodyIsObject(body) {
 	return typeof body === "object" && body !== null && !Array.isArray(body);
 }
 /**
+* Resolve the project dir for a delete, honoring an optional test override.
+* The override + the shared lookup cover the harness's projectCwdMap semantics.
+*/
+function resolveLookup(deps, cwd) {
+	const base = lookupProjectDir(deps.sessionsRoot, cwd);
+	if (base.kind !== "dir") return base;
+	if (typeof cwd === "string" && deps.projectDirOverride) {
+		const mapped = deps.projectDirOverride(cwd);
+		if (mapped !== void 0) return {
+			kind: "dir",
+			projectDir: mapped
+		};
+	}
+	return base;
+}
+/**
 * Create the /sm handler. `handle(method, req, body)` returns the HTTP status
 * + JSON to send for one request. The loopback trust fence is applied by the
 * route owner (src/index.ts); this function operates on already-trusted input.
@@ -62,7 +78,7 @@ function createSmHandler(deps) {
 		if (title !== void 0 && title !== null) {
 			if (typeof title !== "string" || title.length > 256) return bad("invalid-title", "invalid title");
 		}
-		const proj = lookupProjectDir(deps.sessionsRoot, cwd);
+		const proj = resolveLookup(deps, cwd);
 		if (proj.kind === "invalid") return bad("invalid-cwd", "invalid cwd");
 		if (proj.kind === "not-found") return fail("session-dir-not-found", "project dir not found");
 		if (!isStableSegment(id)) return fail("path-out-of-bounds", "id escapes segment encoding");

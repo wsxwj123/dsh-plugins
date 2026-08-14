@@ -24,6 +24,7 @@ import {
   lookupProjectDir,
   isInsideOrEqual,
   sessionSegment,
+  type ProjectLookup,
 } from './paths.js'
 
 export interface ArchiveDomain {
@@ -46,6 +47,15 @@ export interface SmHandlerDeps {
   readArchived(): string[]
   /** Read the current workspace global object `{initialized, workspaceIds, archivedSessionIds}`. */
   readWorkspaceGlobal(): Record<string, unknown>
+  /**
+   * Optional project-dir override for a cwd label. When absent (production),
+   * the handler resolves `join(sessionsRoot, cwd)`. When present and returns a
+   * directory, that directory is used and the same path-out-of-bounds gate
+   * applies — used in tests to exercise the "cwd resolves outside sessions
+   * root" rejection (the harness's projectCwdMap). Returning undefined falls
+   * back to the default resolution.
+   */
+  projectDirOverride?: (cwd: string) => string | undefined
   /** Optional logger for the partial-failure / boundary paths. */
   log?: { warn(msg: string): void }
 }
@@ -69,6 +79,20 @@ function bad(code: string, message: string): SmResponse {
 
 function bodyIsObject(body: unknown): body is Record<string, unknown> {
   return typeof body === 'object' && body !== null && !Array.isArray(body)
+}
+
+/**
+ * Resolve the project dir for a delete, honoring an optional test override.
+ * The override + the shared lookup cover the harness's projectCwdMap semantics.
+ */
+function resolveLookup(deps: SmHandlerDeps, cwd: unknown): ProjectLookup {
+  const base = lookupProjectDir(deps.sessionsRoot, cwd)
+  if (base.kind !== 'dir') return base
+  if (typeof cwd === 'string' && deps.projectDirOverride) {
+    const mapped = deps.projectDirOverride(cwd)
+    if (mapped !== undefined) return { kind: 'dir', projectDir: mapped }
+  }
+  return base
 }
 
 /**
@@ -98,8 +122,9 @@ export function createSmHandler(deps: SmHandlerDeps): {
       }
     }
 
-    // Locate the project dir.
-    const proj = lookupProjectDir(deps.sessionsRoot, cwd)
+    // Locate the project dir (honoring an optional test override map; bounds
+    // still apply after).
+    const proj = resolveLookup(deps, cwd)
     if (proj.kind === 'invalid') return bad('invalid-cwd', 'invalid cwd')
     if (proj.kind === 'not-found') return fail('session-dir-not-found', 'project dir not found')
 

@@ -177,6 +177,26 @@ test('delete: % id -> path-out-of-bounds (passes id guard, fails segment gate)',
   env.cleanup()
 })
 
+test('delete: cwd resolving outside sessions root -> path-out-of-bounds, no move', () => {
+  // Build an env with a projectDirOverride that maps a cwd outside the root.
+  const env = makeEnv()
+  const outside = path.join(env.base, 'outside')
+  env.handler = createSmHandler({
+    sessionsRoot: env.sessionsRoot,
+    trash: env.truncate,
+    sessions: { get: () => undefined },
+    storageDomain: { get: () => null },
+    readArchived: () => [],
+    readWorkspaceGlobal: () => ({}),
+    projectDirOverride: (cwd) => (cwd === '/etc/yolo' ? outside : undefined),
+  })
+  const res = env.handler.handle('delete', {}, { id: 'x', cwd: '/etc/yolo' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.code, 'path-out-of-bounds')
+  assert.strictEqual(fs.existsSync(path.join(env.truncate.root, 'x')), false, 'no move on boundary rejection')
+  env.cleanup()
+})
+
 test('delete: cwd of wrong type -> 400 invalid-cwd; empty cwd -> 200 session-dir-not-found', () => {
   const env = makeEnv()
   assert.strictEqual(env.D({ id: 'x', cwd: 42 }).code ?? env.D({ id: 'x', cwd: 42 }).json.code, 'invalid-cwd')
