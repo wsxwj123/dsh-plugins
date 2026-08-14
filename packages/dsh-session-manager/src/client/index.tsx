@@ -30,6 +30,14 @@ export const inject = ['sessions', 'workspaces', 'slots']
 const FOOTER_ACTION_ID = 'dsh-session-manager'
 
 /**
+ * MutationObserver debounce window (S-8). The observer fires on EVERY body
+ * mutation (typing, tooltips, React re-renders); running the full
+ * O(rows×sessions) re-scan each time stalls on large lists. Trailing-debounce
+ * collapses bursts of DOM churn into one sync.
+ */
+const MO_DEBOUNCE_MS = 100
+
+/**
  * Error boundary over the fixed overlays. A render crash (e.g. an archive-view
  * subscription/field mismatch) must NOT silently do nothing — it logs the
  * stack and shows a dismissible strip instead of blanking the undo rail.
@@ -158,7 +166,18 @@ export function apply(ctx: Context): void {
     controller.sync()
     reconcileVisibility()
   }
-  const mo = new MutationObserver(sync)
+  // S-8: pending debounce handle for the MutationObserver (see MO_DEBOUNCE_MS).
+  let moTimer: ReturnType<typeof setTimeout> | undefined
+  const mo = new MutationObserver(() => {
+    // S-8: debounce the observer — the body churns far faster than the list
+    // actually changes. A pending timer collapses all mutations in the window
+    // into ONE trailing sync.
+    if (moTimer !== undefined) return
+    moTimer = setTimeout(() => {
+      moTimer = undefined
+      sync()
+    }, MO_DEBOUNCE_MS)
+  })
   mo.observe(document.body, { childList: true, subtree: true })
 
   // ---- Fixed overlays (UndoRail + ArchiveView) appended to body. ----
@@ -185,6 +204,7 @@ export function apply(ctx: Context): void {
     // Stop BOTH sync drivers (list subscription + MutationObserver) BEFORE
     // dispose: removing the injected buttons mutates the DOM and would
     // otherwise re-trigger sync() and re-inject them (review I-7).
+    if (moTimer !== undefined) clearTimeout(moTimer) // S-8: no stale debounced sync after dispose
     mo.disconnect()
     controller.dispose()
     overlays.unmount()

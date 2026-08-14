@@ -53,3 +53,24 @@ test('I-7: the client effect cleanup invokes controller.dispose() after stopping
   const offListIdx = cleanup.indexOf('offList()')
   assert.ok(offListIdx >= 0 && disposeIdx > offListIdx, 'dispose must run after offList()')
 })
+
+test('S-8: the MutationObserver callback is debounced, and cleanup cancels a pending debounce', () => {
+  // The observer fires on EVERY body mutation; a full O(rows×sessions) re-scan
+  // per mutation stalls on large lists. The callback must collapse mutations
+  // into one trailing sync (named delay constant), and the client cleanup must
+  // cancel a pending debounce so no stale sync runs after dispose.
+  assert.match(
+    indexSrc,
+    /MutationObserver\(\(\)\s*=>\s*\{[\s\S]*?setTimeout/,
+    'the observer callback must debounce via setTimeout (S-8)',
+  )
+  assert.ok(indexSrc.includes('MO_DEBOUNCE_MS'), 'the debounce delay must be a named constant (S-8)')
+  assert.ok(/let\s+moTimer/.test(indexSrc), 'the debounce handle must be tracked for cleanup')
+  const effectStart = indexSrc.indexOf('ctx.effect(() => () => {')
+  assert.ok(effectStart >= 0, 'the client lifecycle effect must exist')
+  const cleanup = indexSrc.slice(effectStart)
+  assert.match(cleanup, /clearTimeout\(moTimer\)/, 'cleanup must cancel a pending debounce (S-8)')
+  const clearIdx = cleanup.indexOf('clearTimeout(moTimer)')
+  const moIdx = cleanup.indexOf('mo.disconnect()')
+  assert.ok(clearIdx >= 0 && moIdx >= 0, 'cleanup must clear the timer and disconnect the observer')
+})
