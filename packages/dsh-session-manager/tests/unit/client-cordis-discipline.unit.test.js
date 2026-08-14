@@ -78,3 +78,23 @@ test('client never captures a callable service across an async callback (logger 
       `client must not bare-access ctx.logger (callable across callbacks) in ${f}`)
   }
 })
+
+test('S-11: archive trash count re-reads with the park table and success clears the error', () => {
+  // ArchiveView is a React component (browser-only), so we lock the S-11
+  // discipline statically: the trash read must re-run when the pending-delete
+  // table changes while the view is open (a fired delete grows the recycle
+  // bin), and any read success must clear a previous error banner.
+  const arc = fs.readFileSync(path.join(clientDir, 'ArchiveView.tsx'), 'utf8')
+  assert.match(
+    arc,
+    /\[open,\s*pending\]/,
+    'the trash read effect must depend on the park table while open (S-11)',
+  )
+  const countSet = arc.indexOf('setTrashCount(Array.isArray(res.items) ? res.items.length : 0)')
+  const errorClear = arc.indexOf('setError(null)')
+  assert.ok(countSet >= 0, 'the read-success branch must update the count')
+  assert.ok(
+    errorClear > countSet,
+    'the read-success branch must clear any stale error banner (S-11)',
+  )
+})

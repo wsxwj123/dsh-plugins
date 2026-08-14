@@ -54,10 +54,12 @@ export function ArchiveView({
     () => workspacesFeed.getSnapshot(),
   )
 
-  // Recycle-bin entry count for the 「清空回收站」 control. Refreshed on open and
-  // after each empty so the count/disabled state tracks the host truth. The
-  // error banner (`error`) surfaces EVERY host failure visibly — read, empty,
-  // unarchive — never silently (review I-5).
+  // Recycle-bin entry count for the 「清空回收站」 control. Refreshed on open AND
+  // whenever the pending-delete table changes while open (a fired delete moves a
+  // session into the recycle bin → count grows; undo/failure leave it unchanged
+  // but re-reading keeps it honest). The error banner (`error`) surfaces EVERY
+  // host failure visibly — read, empty, unarchive — never silently (review
+  // I-5), and any read SUCCESS clears a previous banner (S-11).
   const [trashCount, setTrashCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -68,6 +70,9 @@ export function ArchiveView({
         if (cancelled) return
         if (res.ok) {
           setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+          // S-11: a previous read failure must not stick — the first success
+          // after any failure clears the banner.
+          setError(null)
           // S-10: re-align the hidden-rows set with the host trash every time
           // we re-read it (open / re-open). A restored or cleared session must
           // not stay hidden forever (ghost row).
@@ -88,7 +93,7 @@ export function ArchiveView({
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, pending])
 
   if (!open) return null
 
