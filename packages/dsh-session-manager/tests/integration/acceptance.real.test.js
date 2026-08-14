@@ -162,7 +162,6 @@ async function createRealTestContext(overrides = {}) {
     trash: store,
     sessions: { get: (id) => (state.liveIds.has(id) ? { id } : null) },
     storageDomain,
-    readArchived: () => workspace.archived(),
     readWorkspaceGlobal: () => workspace.read(),
     projectDirOverride: (cwd) => env.projectCwdMap[cwd],
     log: { warn: () => {} },

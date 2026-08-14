@@ -29,7 +29,7 @@ import os from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { TrashStore } from './trash.js'
-import { createSmHandler, archiveFromGlobal, type SmHandlerDeps, type ArchiveDomain } from './handler.js'
+import { createSmHandler, type SmHandlerDeps, type ArchiveDomain } from './handler.js'
 import { isTrustedSmRequest } from './trust-fence.js'
 
 /** Minimal web-server service surface we depend on (injected => bare access). */
@@ -121,8 +121,15 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
 
   const trash = new TrashStore(trashRoot)
 
-  /** Read the current workspace global object; {} when the domain is absent. */
-  const readGlobal = (): Record<string, unknown> => {
+  /**
+   * Read the current workspace global object. I-1: a THROWN read (storage
+   * fault) returns the `undefined` sentinel — distinguishable from "domain
+   * absent / empty global" (`{}`). The handler maps `undefined` to a retryable
+   * system-error and never spreads it into a write payload, so a read failure
+   * can no longer silently skip archive cleanup or clobber workspaceIds/
+   * initialized with `{ ...{}, archivedSessionIds }`.
+   */
+  const readGlobal = (): Record<string, unknown> | undefined => {
     if (!storageDomain) return {}
     const domain = storageDomain.get('workspace')
     if (!domain || typeof domain.global?.get !== 'function') return {}
@@ -130,7 +137,7 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
       const v = domain.global.get()
       return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
     } catch {
-      return {}
+      return undefined
     }
   }
 
@@ -139,7 +146,6 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
     trash,
     sessions, // optional; cwd resolution falls back to client cwd when undefined
     storageDomain, // optional; handler degrades archive paths when undefined
-    readArchived: () => archiveFromGlobal(readGlobal()),
     readWorkspaceGlobal: readGlobal,
     log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) },
   }

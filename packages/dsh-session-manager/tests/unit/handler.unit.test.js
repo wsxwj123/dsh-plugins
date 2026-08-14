@@ -37,6 +37,9 @@ function makeEnv(overrides = {}) {
     liveCwds: {},
     domainUnavailable: overrides.domainUnavailable || false,
     storageWriteFail: overrides.storageWriteFail || false,
+    // I-1: simulate the storage-domain global.get() THROWING (read failure) —
+    // must surface as a retryable error, never as an empty global.
+    globalReadFail: overrides.globalReadFail || false,
     archiveIds: [...(overrides.archiveIds || [])],
   }
   const writeWorkspace = () => {
@@ -46,7 +49,10 @@ function makeEnv(overrides = {}) {
     )
   }
   writeWorkspace()
+  let globalReadCalls = 0
   const readWorkspaceGlobal = () => {
+    globalReadCalls++
+    if (state.globalReadFail) return undefined // read failure sentinel (I-1)
     try {
       return JSON.parse(fs.readFileSync(workspaceFile, 'utf8'))
     } catch {
@@ -88,7 +94,6 @@ function makeEnv(overrides = {}) {
           : undefined,
     },
     storageDomain,
-    readArchived: () => Array.from(state.archiveIds),
     readWorkspaceGlobal,
     log: { warn: () => {} },
   })
@@ -100,6 +105,7 @@ function makeEnv(overrides = {}) {
     state,
     handler,
     workspaceFile,
+    globalReadCalls: () => globalReadCalls,
     archiveIds: () => Array.from(state.archiveIds),
     setArchived(ids) {
       state.archiveIds = [...ids]
@@ -284,7 +290,6 @@ test('delete: cwd resolving outside sessions root -> path-out-of-bounds, no move
     trash: env.truncate,
     sessions: { get: () => undefined },
     storageDomain: { get: () => null },
-    readArchived: () => [],
     readWorkspaceGlobal: () => ({}),
     projectDirOverride: (cwd) => (cwd === '/etc/yolo' ? outside : undefined),
   })
@@ -397,6 +402,68 @@ test('delete archived session partial-failure: file moved, archive not cleared, 
   const res2 = env.D({ id: 'part', cwd: 'main' })
   assert.strictEqual(res2.json.ok, true)
   assert.ok(!env.archiveIds().includes('part'))
+  env.cleanup()
+})
+
+test('delete archived session: global READ failure -> system-error (not silent ok), nothing written, retry completes', () => {
+  // I-1 regression: a thrown global read must NOT be treated as "not archived"
+  // (which silently skipped the cleanup and left a permanent ghost row) nor as
+  // an empty global (which clobbered workspaceIds/initialized on write).
+  const env = makeEnv()
+  const s = env.newSession('main', 'rdfail')
+  env.setArchived(['rdfail'])
+  env.state.globalReadFail = true
+  const res = env.D({ id: 'rdfail', cwd: 'main' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.code, 'system-error', 'read failure surfaces as retryable error')
+  assert.strictEqual(fs.existsSync(s.dir), false, 'file moved (delete step-1 effective)')
+  assert.ok(env.archiveIds().includes('rdfail'), 'archive set untouched')
+  // The workspace file must be byte-for-byte intact (no {...{}, archivedSessionIds} clobber).
+  const g = JSON.parse(fs.readFileSync(env.workspaceFile, 'utf8'))
+  assert.strictEqual(g.initialized, true)
+  assert.deepStrictEqual(g.workspaceIds, ['main'])
+  // Exactly one snapshot read per operation (single-read design, I-1).
+  assert.strictEqual(env.globalReadCalls(), 1)
+  // Retry after the read recovers completes step-2.
+  env.state.globalReadFail = false
+  const res2 = env.D({ id: 'rdfail', cwd: 'main' })
+  assert.strictEqual(res2.json.ok, true)
+  assert.ok(!env.archiveIds().includes('rdfail'))
+  env.cleanup()
+})
+
+test('delete archived session: workspaceIds/initialized preserved on success (single-snapshot write)', () => {
+  // I-1 regression: the write payload must keep the untouched fields from the
+  // same snapshot that decided "is archived" — never a separately re-read
+  // global that could be stale or empty.
+  const env = makeEnv()
+  env.newSession('main', 'keep-fields')
+  env.setArchived(['keep-fields', 'other'])
+  const res = env.D({ id: 'keep-fields', cwd: 'main' })
+  assert.strictEqual(res.json.ok, true)
+  assert.deepStrictEqual(env.archiveIds().sort(), ['other'])
+  const g = JSON.parse(fs.readFileSync(env.workspaceFile, 'utf8'))
+  assert.strictEqual(g.initialized, true, 'initialized preserved')
+  assert.deepStrictEqual(g.workspaceIds, ['main'], 'workspaceIds preserved')
+  assert.strictEqual(env.globalReadCalls(), 1, 'single snapshot read for the whole delete step-2')
+  env.cleanup()
+})
+
+test('unarchive: global READ failure -> system-error, nothing written, retry ok', () => {
+  const env = makeEnv()
+  env.setArchived(['urdf'])
+  env.state.globalReadFail = true
+  const res = env.U({ id: 'urdf' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.code, 'system-error', 'read failure is retryable, not a silent ok')
+  assert.ok(env.archiveIds().includes('urdf'), 'archive set untouched')
+  const g = JSON.parse(fs.readFileSync(env.workspaceFile, 'utf8'))
+  assert.strictEqual(g.initialized, true)
+  assert.deepStrictEqual(g.workspaceIds, ['main'])
+  assert.strictEqual(env.globalReadCalls(), 1, 'single snapshot read')
+  env.state.globalReadFail = false
+  assert.strictEqual(env.U({ id: 'urdf' }).json.ok, true)
+  assert.ok(!env.archiveIds().includes('urdf'))
   env.cleanup()
 })
 

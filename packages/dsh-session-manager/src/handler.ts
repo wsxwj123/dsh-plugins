@@ -66,10 +66,16 @@ export interface SmHandlerDeps {
    * never crashes or hangs the plugin.
    */
   storageDomain?: { get(name: string): ArchiveDomain | null | undefined }
-  /** Read the current archivedSessionIds set (never touches the write domain). */
-  readArchived(): string[]
-  /** Read the current workspace global object `{initialized, workspaceIds, archivedSessionIds}`. */
-  readWorkspaceGlobal(): Record<string, unknown>
+  /**
+   * Read the current workspace global object `{initialized, workspaceIds,
+   * archivedSessionIds}`. Returns `undefined` when the read FAILED (the
+   * storage domain threw) — a sentinel that must NOT be conflated with an
+   * empty global: callers map it to a retryable system-error instead of
+   * continuing to write (I-1: a failed read must never be treated as "no
+   * archive set", and must never be spread into the write payload, which
+   * would clobber workspaceIds/initialized).
+   */
+  readWorkspaceGlobal(): Record<string, unknown> | undefined
   /**
    * Optional project-dir override for a cwd label. When absent (production),
    * the handler resolves `join(sessionsRoot, cwd)`. When present and returns a
@@ -235,11 +241,22 @@ export function createSmHandler(deps: SmHandlerDeps): {
   }
 
   // Delete-step-2 for archived sessions: drop the id from the archive set.
-  // Reads the archive set independently of the write domain (so an otherwise
-  // non-archived delete stays a pure no-op), then requires the write domain.
+  // The workspace global is read ONCE (I-1): both the "is archived" judgment
+  // and the write payload derive from the same snapshot, so a second read can
+  // never return a stale/failed `{}` that would clobber workspaceIds/initialized.
   // Partial failure → system-error while the file is already moved (retryable).
   function doArchivedCleanup(id: string): SmResponse {
-    if (!deps.readArchived().includes(id)) return ok()
+    const global = deps.readWorkspaceGlobal()
+    // A failed read is NOT the same as "not archived" — surface it as a
+    // retryable partial failure instead of silently skipping the cleanup (the
+    // old `catch { return {} }` turned read failure into a permanent ghost
+    // row with no recovery signal).
+    if (global === undefined) {
+      log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
+      return fail('system-error', 'archive state unreadable; file already moved, retry to complete')
+    }
+    const archived = archiveFromGlobal(global)
+    if (!archived.includes(id)) return ok()
 
     const domain = deps.storageDomain?.get('workspace')
     if (domain === null || domain === undefined) {
@@ -247,9 +264,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return fail('system-error', 'archive cleanup failed; file already moved, retry to complete')
     }
     try {
-      const current = deps.readWorkspaceGlobal()
-      const next = deps.readArchived().filter((x) => x !== id)
-      domain.global.set({ ...current, archivedSessionIds: next })
+      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
       return ok()
     } catch (err) {
       log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
@@ -312,13 +327,19 @@ export function createSmHandler(deps: SmHandlerDeps): {
     if (domain === null || domain === undefined) {
       return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
     }
-    const archived = deps.readArchived()
+    // Single read (I-1): derive "is archived" and the write payload from the
+    // same snapshot. A read failure (undefined) is a retryable system-error —
+    // never treated as an empty global (which would clobber the other fields
+    // on write).
+    const global = deps.readWorkspaceGlobal()
+    if (global === undefined) {
+      return fail('system-error', 'workspace global unreadable; retry')
+    }
+    const archived = archiveFromGlobal(global)
     if (!archived.includes(id as string)) return ok() // idempotent no-op
 
     try {
-      const current = deps.readWorkspaceGlobal()
-      const next = archived.filter((x) => x !== id)
-      domain.global.set({ ...current, archivedSessionIds: next })
+      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
       return ok()
     } catch (err) {
       return fail('system-error', String(err))

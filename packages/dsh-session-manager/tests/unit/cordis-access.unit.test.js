@@ -143,7 +143,6 @@ test('handler: storageDomain missing degrades unarchive to workspace-domain-unav
     trash: new TrashStore(path.join(base, 'trash')),
     sessions: { get: () => undefined },
     // storageDomain NOT supplied (undefined) — the missing-service degradation
-    readArchived: () => ['na-1'],
     readWorkspaceGlobal: () => ({ archival: 'x' }),
     log: { warn: () => {} },
   })
@@ -166,7 +165,6 @@ test('handler: sessions missing skips running guard and delete proceeds', () => 
     trash: new TrashStore(path.join(base, 'trash')),
     // sessions NOT supplied — running guard skipped
     storageDomain: { get: () => null },
-    readArchived: () => [],
     readWorkspaceGlobal: () => ({}),
     log: { warn: () => {} },
   })

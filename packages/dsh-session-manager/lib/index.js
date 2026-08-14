@@ -1,5 +1,5 @@
 import { TrashStore } from "./trash.js";
-import { archiveFromGlobal, createSmHandler } from "./handler.js";
+import { createSmHandler } from "./handler.js";
 import { isTrustedSmRequest } from "./trust-fence.js";
 import path from "node:path";
 import os from "node:os";
@@ -70,7 +70,14 @@ function apply(ctx, config = {}) {
 	if (!storageDomain) ctx.logger.warn("[session-manager] storageDomain service unavailable; archive write (unarchive / delete-of-archived) will degrade to workspace-domain-unavailable / system-error");
 	if (!sessions) ctx.logger.warn("[session-manager] sessions service unavailable; host-authoritative cwd resolution is skipped and deletes use the client-supplied cwd");
 	const trash = new TrashStore(trashRoot);
-	/** Read the current workspace global object; {} when the domain is absent. */
+	/**
+	* Read the current workspace global object. I-1: a THROWN read (storage
+	* fault) returns the `undefined` sentinel — distinguishable from "domain
+	* absent / empty global" (`{}`). The handler maps `undefined` to a retryable
+	* system-error and never spreads it into a write payload, so a read failure
+	* can no longer silently skip archive cleanup or clobber workspaceIds/
+	* initialized with `{ ...{}, archivedSessionIds }`.
+	*/
 	const readGlobal = () => {
 		if (!storageDomain) return {};
 		const domain = storageDomain.get("workspace");
@@ -79,7 +86,7 @@ function apply(ctx, config = {}) {
 			const v = domain.global.get();
 			return v && typeof v === "object" ? v : {};
 		} catch {
-			return {};
+			return;
 		}
 	};
 	const handler = createSmHandler({
@@ -87,7 +94,6 @@ function apply(ctx, config = {}) {
 		trash,
 		sessions,
 		storageDomain,
-		readArchived: () => archiveFromGlobal(readGlobal()),
 		readWorkspaceGlobal: readGlobal,
 		log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) }
 	});

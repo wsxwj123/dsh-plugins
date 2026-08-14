@@ -104,18 +104,22 @@ function createSmHandler(deps) {
 		return doArchivedCleanup(id);
 	}
 	function doArchivedCleanup(id) {
-		if (!deps.readArchived().includes(id)) return ok();
+		const global = deps.readWorkspaceGlobal();
+		if (global === void 0) {
+			log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`);
+			return fail("system-error", "archive state unreadable; file already moved, retry to complete");
+		}
+		const archived = archiveFromGlobal(global);
+		if (!archived.includes(id)) return ok();
 		const domain = deps.storageDomain?.get("workspace");
 		if (domain === null || domain === void 0) {
 			log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`);
 			return fail("system-error", "archive cleanup failed; file already moved, retry to complete");
 		}
 		try {
-			const current = deps.readWorkspaceGlobal();
-			const next = deps.readArchived().filter((x) => x !== id);
 			domain.global.set({
-				...current,
-				archivedSessionIds: next
+				...global,
+				archivedSessionIds: archived.filter((x) => x !== id)
 			});
 			return ok();
 		} catch (err) {
@@ -157,14 +161,14 @@ function createSmHandler(deps) {
 		if (!assertValidId(id)) return bad("invalid-id", "invalid id");
 		const domain = deps.storageDomain?.get("workspace");
 		if (domain === null || domain === void 0) return fail("workspace-domain-unavailable", "workspace storage domain unavailable");
-		const archived = deps.readArchived();
+		const global = deps.readWorkspaceGlobal();
+		if (global === void 0) return fail("system-error", "workspace global unreadable; retry");
+		const archived = archiveFromGlobal(global);
 		if (!archived.includes(id)) return ok();
 		try {
-			const current = deps.readWorkspaceGlobal();
-			const next = archived.filter((x) => x !== id);
 			domain.global.set({
-				...current,
-				archivedSessionIds: next
+				...global,
+				archivedSessionIds: archived.filter((x) => x !== id)
 			});
 			return ok();
 		} catch (err) {
