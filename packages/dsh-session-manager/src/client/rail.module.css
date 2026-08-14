@@ -9,12 +9,15 @@
   top: 12px;
   transform: translateX(-50%);
   z-index: 2147483000;
+  /* Multiple pending entries stack vertically (top-center), each a full-width
+     readable row with a divider between — not overlapping. A single entry
+     renders the same as before. */
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   max-width: min(520px, calc(100vw - 24px));
-  padding: 8px 8px 8px 14px;
+  padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.3));
   background: var(--dsw-alias-bg-overlay, rgba(24, 24, 28, 0.96));
@@ -24,8 +27,6 @@
   font-size: 13px;
   line-height: 1.4;
   animation: rail-in 0.16s ease-out;
-  flex-wrap: wrap;
-  justify-content: center;
   /* The parent overlay wrapper is click-through; this strip opts back in so
      Undo/Dismiss remain interactive. */
   pointer-events: auto;
@@ -120,8 +121,10 @@
 }
 
 .divider {
-  width: 1px;
-  align-self: stretch;
+  /* Horizontal divider between stacked rail rows. */
+  height: 1px;
+  width: 100%;
+  flex: none;
   background: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
 }
 

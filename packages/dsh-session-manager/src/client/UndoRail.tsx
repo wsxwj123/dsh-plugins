@@ -89,16 +89,12 @@ export function UndoRail(): ReactNode {
   if (entries.length === 0) return null
 
   const now = Date.now()
-  const items: ReactNode[] = entries.map((entry, i) => {
-    const row = createElement(EntryRow, { entry, now, key: entry.id })
-    if (i === 0) return row
-    return createElement(
-      // A keyed wrapper keeps sibling divs stable as entries come and go.
-      'div',
-      { key: entry.id + '-wrap', className: css.item, style: { gap: 12 } as CSSProperties },
-      createElement('div', { className: css.divider }),
-      row,
-    )
+  // Build the stacked rows: each entry is a full-width row; a horizontal divider
+  // sits above every row after the first (vertical stack, not overlapping).
+  const items: ReactNode[] = entries.flatMap((entry, i) => {
+    const row = createElement(EntryRow, { entry, now, key: 'row-' + entry.id })
+    if (i === 0) return [row]
+    return [createElement('div', { key: 'div-' + entry.id, className: css.divider }), row]
   })
 
   return createElement('div', { className: css.rail, role: 'status' }, items)
