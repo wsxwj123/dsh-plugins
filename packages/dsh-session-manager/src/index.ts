@@ -58,7 +58,7 @@ export const inject: readonly string[] = ['webServer', 'storageDomain', 'session
 interface InjectedServices {
   webServer: WebServerService
   storageDomain: { get(name: string): ArchiveDomain | null | undefined }
-  sessions: { get(id: string): unknown }
+  sessions: { get(id: string): { header?: { cwd?: string } } | null | undefined }
 }
 type InjectedCtx = Context & InjectedServices
 

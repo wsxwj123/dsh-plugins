@@ -32,6 +32,8 @@ function makeEnv(overrides = {}) {
   const workspaceFile = path.join(base, 'workspace.json')
   const state = {
     liveIds: new Set(overrides.liveIds || []),
+    // Optional authoritative cwd per live id (mirrors dsh-session SessionHeader).
+    liveCwds: {},
     domainUnavailable: overrides.domainUnavailable || false,
     storageWriteFail: overrides.storageWriteFail || false,
     archiveIds: [...(overrides.archiveIds || [])],
@@ -78,7 +80,12 @@ function makeEnv(overrides = {}) {
   const handler = createSmHandler({
     sessionsRoot,
     trash: truncate,
-    sessions: { get: (id) => (state.liveIds.has(id) ? { id, running: true } : undefined) },
+    sessions: {
+      get: (id) =>
+        state.liveIds.has(id)
+          ? { id, running: true, ...(state.liveCwds[id] ? { header: { cwd: state.liveCwds[id] } } : {}) }
+          : undefined,
+    },
     storageDomain,
     readArchived: () => Array.from(state.archiveIds),
     readWorkspaceGlobal,
@@ -100,6 +107,11 @@ function makeEnv(overrides = {}) {
     live(id, on) {
       if (on === false) state.liveIds.delete(id)
       else state.liveIds.add(id)
+    },
+    // Mark a session live with an authoritative header cwd (dsh-session Session).
+    liveWithCwd(id, cwd) {
+      state.liveIds.add(id)
+      state.liveCwds[id] = cwd
     },
     newSession(project, id, content = 'DUMMY') {
       // Create sessions on the REAL encoded DSH layout so the handler's
@@ -160,6 +172,81 @@ test('delete: running session refused (session-running), no move', () => {
   const res = env.D({ id: 'running', cwd: 'main' })
   assert.strictEqual(res.json.code, 'session-running')
   assert.ok(fs.existsSync(s.dir))
+  env.cleanup()
+})
+
+test('delete: force:true on a running session passes the guard and moves its dir', () => {
+  const env = makeEnv()
+  const s = env.newSession('main', 'force-run')
+  env.live('force-run')
+  const res = env.D({ id: 'force-run', cwd: 'main', force: true })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.code, undefined)
+  assert.strictEqual(res.json.ok, true)
+  assert.strictEqual(fs.existsSync(s.dir), false, 'force moves the running session dir')
+  assert.ok(fs.existsSync(path.join(env.truncate.root, 'force-run')))
+  env.cleanup()
+})
+
+test('delete: live Session header cwd is authoritative — resolves the correct project even when client cwd is absent/wrong', () => {
+  const env = makeEnv()
+  // The session dir physically lives under the AUTHORITATIVE project dir
+  // projectKey("HeaderCwd").
+  const s = env.newSession('/abs/path/AuthoritativeProject', 'liveauth')
+  // Live session reports its real cwd; client sends nothing (the absent byId.cwd
+  // symptom) — host must honor header.cwd, not fall back to _no-cwd/absence.
+  env.liveWithCwd('liveauth', '/abs/path/AuthoritativeProject')
+  const res = env.D({ id: 'liveauth', force: true })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.ok, true)
+  assert.strictEqual(fs.existsSync(s.dir), false, 'dir under header-cwd project is moved')
+  assert.ok(fs.existsSync(path.join(env.truncate.root, 'liveauth')))
+  // No stray move from the _no-cwd project dir.
+  const noCwdDir = path.join(env.sessionsRoot, NO_CWD_DIR)
+  assert.strictEqual(fs.existsSync(path.join(noCwdDir, 'liveauth')), false)
+  env.cleanup()
+})
+
+test('delete: live Session with header cwd beats a WRONG client cwd (client snapshot stale)', () => {
+  const env = makeEnv()
+  const s = env.newSession('/abs/path/AuthoritativeProject', 'liveauth2')
+  env.liveWithCwd('liveauth2', '/abs/path/AuthoritativeProject')
+  // Client sends a stale/wrong cwd label; header.cwd must win.
+  const res = env.D({ id: 'liveauth2', cwd: 'some-other-project', force: true })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.ok, true)
+  assert.strictEqual(fs.existsSync(s.dir), false, 'header-cwd project dir moved')
+  assert.ok(fs.existsSync(path.join(env.truncate.root, 'liveauth2')))
+  env.cleanup()
+})
+
+test('delete: live but not persisted (no dir on disk) -> ok:true, no trash entry, no orphan', () => {
+  const env = makeEnv()
+  // Session id is live (in the injected store, non-running) but its dir was
+  // never flushed to disk. There is nothing to move; delete must read as ok so
+  // the client hides the row immediately.
+  env.liveWithCwd('fresh-live', '/abs/path/Project')
+  const res = env.D({ id: 'fresh-live', cwd: 'whatever', force: true })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.ok, true)
+  assert.strictEqual(fs.existsSync(path.join(env.truncate.root, 'fresh-live')), false, 'no trash entry created')
+  env.cleanup()
+})
+
+test('delete: live but not persisted with force:true -> ok:true (no dir to move)', () => {
+  const env = makeEnv()
+  env.liveWithCwd('fresh-live-force', '/abs/path/Project')
+  const res = env.D({ id: 'fresh-live-force', cwd: 'x', force: true })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.ok, true)
+  assert.strictEqual(fs.existsSync(path.join(env.truncate.root, 'fresh-live-force')), false)
+  env.cleanup()
+})
+
+test('delete: not live and not persisted -> still session-dir-not-found (contract unchanged)', () => {
+  const env = makeEnv()
+  const res = env.D({ id: 'ghost2', cwd: 'main' })
+  assert.strictEqual(res.json.code, 'session-dir-not-found')
   env.cleanup()
 })
 

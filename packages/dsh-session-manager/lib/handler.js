@@ -79,15 +79,17 @@ function createSmHandler(deps) {
 			if (typeof title !== "string" || title.length > 256) return bad("invalid-title", "invalid title");
 		}
 		if (force !== void 0 && typeof force !== "boolean") return bad("invalid-force", "invalid force");
-		const proj = resolveLookup(deps, cwd);
+		const liveSession = deps.sessions?.get(id);
+		const proj = resolveLookup(deps, (liveSession && typeof liveSession.header?.cwd === "string" && liveSession.header.cwd.length > 0 ? liveSession.header.cwd : void 0) ?? cwd);
 		if (proj.kind === "invalid") return bad("invalid-cwd", "invalid cwd");
 		if (proj.kind === "not-found") return fail("session-dir-not-found", "project dir not found");
 		if (!isStableSegment(id)) return fail("path-out-of-bounds", "id escapes segment encoding");
 		const targetDir = sessionSegment(proj.projectDir, id);
 		if (!isInsideOrEqual(deps.sessionsRoot, targetDir)) return fail("path-out-of-bounds", "target outside sessions root");
-		if (deps.sessions?.get(id) && force !== true) return fail("session-running", "session is running");
+		if (liveSession && force !== true) return fail("session-running", "session is running");
 		if (!fs.existsSync(targetDir)) {
 			if (deps.trash.hasItem(id)) return doArchivedCleanup(id);
+			if (liveSession) return doArchivedCleanup(id);
 			return fail("session-dir-not-found", "session dir not found");
 		}
 		try {

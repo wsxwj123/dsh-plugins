@@ -37,13 +37,20 @@ export interface SmHandlerDeps {
   /** The recycle-bin store (its root must be OUTSIDE sessionsRoot). */
   trash: TrashStore
   /**
-   * Optional Node SessionStore: truthy when the id is currently running /
-   * live. When absent (headless profiles without a session service), the
-   * running-session guard is skipped and delete proceeds — the guard is a
-   * safety enhancement, not a functional requirement (INTERFACE §4), so we
-   * degrade to "run without it" rather than refuse to delete.
+   * Optional Node SessionStore (`ctx.sessions`). When it returns a live
+   * `Session` object for the id, that object is BOTH:
+   *   1. the running-session guard input (truthy ⇒ live), and
+   *   2. the HOST-AUTHORITATIVE source of the session's cwd — `session.header.cwd`
+   *      (dsh-session's immutable SessionHeader) is the absolute working directory
+   *      the session was created with, which we prefer over the client-supplied
+   *      `cwd`. A freshly-created (just-messaged) session's client snapshot can
+   *      carry an absent/empty `byId.cwd`, but the live header never does.
+   * When absent (headless profiles without a session service), the running-session
+   * guard is skipped and delete proceeds — the guard is a safety enhancement, not
+   * a functional requirement (INTERFACE §4), so we degrade to "run without it"
+   * rather than refuse to delete.
    */
-  sessions?: { get(id: string): unknown | null | undefined }
+  sessions?: { get(id: string): { header?: { cwd?: string } } | null | undefined }
   /**
    * Optional storage-domain facility: `get('workspace')` returns the live,
    * already-open workspace DomainImpl. When the facility itself is absent the
@@ -135,9 +142,26 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return bad('invalid-force', 'invalid force')
     }
 
-    // Locate the project dir (honoring an optional test override map; bounds
-    // still apply after).
-    const proj = resolveLookup(deps, cwd)
+    // Host-authoritative cwd. Read the live Session (once) from the injected
+    // store: it drives BOTH the running-session guard truthiness and the
+    // project-dir resolution. A live session's `header.cwd` is the absolute
+    // cwd it was created with (dsh-session SessionHeader), which is more
+    // trustworthy than the client-supplied `cwd` — a just-created session's
+    // client snapshot may carry an absent/empty byId.cwd. When the session is
+    // not in the store (old session) or its header lacks cwd, we fall back to
+    // the client `cwd` (existing behavior).
+    const liveSession = deps.sessions?.get(id as string)
+    const liveCwd =
+      liveSession &&
+      typeof (liveSession as { header?: { cwd?: unknown } }).header?.cwd === 'string' &&
+      (liveSession as { header: { cwd: string } }).header.cwd.length > 0
+        ? (liveSession as { header: { cwd: string } }).header.cwd
+        : undefined
+    const effectiveCwd: unknown = liveCwd ?? cwd
+
+    // Locate the project dir from the effective cwd (honoring an optional test
+    // override map; bounds still apply after).
+    const proj = resolveLookup(deps, effectiveCwd)
     if (proj.kind === 'invalid') return bad('invalid-cwd', 'invalid cwd')
     if (proj.kind === 'not-found') return fail('session-dir-not-found', 'project dir not found')
 
@@ -159,14 +183,28 @@ export function createSmHandler(deps: SmHandlerDeps): {
     // `force:true` opts into deleting a live (running) session: the file moves
     // to the recycle bin anyway (recoverable). WITHOUT force a live session is
     // still refused with the stable `session-running` code (contract unchanged).
-    if (deps.sessions?.get(id as string) && force !== true) {
+    if (liveSession && force !== true) {
       return fail('session-running', 'session is running')
     }
 
-    // Source missing: if already in the trash → idempotent-complete, run the
-    // archive step-2; else a genuine not-found.
+    // Source missing. Three cases:
+    //  - already in the trash          → idempotent-complete, run archive step-2
+    //  - live but not persisted        → the session exists only in the in-memory
+    //    Session object (its dir was never flushed to `~/.dsh/sessions`). There
+    //    is no on-disk artifact to move, and its events are ephemeral (gone on
+    //    restart). Treat the delete as effective: return ok so the client hides
+    //    it. We deliberately do NOT try to detach/dispose the live SessionStore
+    //    entry — dsh-session exposes no public remove-by-id API (detach is bound
+    //    to the creating fiber's own effect), and the store entry drains on
+    //    process restart anyway. The only residual risk is a live session that is
+    //    genuinely still running an agent with force:true — its dir just hasn't
+    //    been written yet, and the running agent may write it after we return ok.
+    //    That is the already-accepted force contract (user forced a delete of a
+    //    running session), so we proceed rather than block a fresh-session delete.
+    //  - neither live nor persisted     → a genuine not-found (unchanged).
     if (!fs.existsSync(targetDir)) {
       if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)
+      if (liveSession) return doArchivedCleanup(id as string)
       return fail('session-dir-not-found', 'session dir not found')
     }
 
