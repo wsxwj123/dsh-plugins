@@ -1,0 +1,22 @@
+/*
+ * dragon-heir — 龙的传人 — 可访问性修正
+ * 作用域：body[data-dsh-dragon-heir]（暗色变体带 [data-ds-dark-theme]）。
+ * 原则：只提升对比度，不删/不改皮肤素材、不改布局尺寸动画。
+ *
+ * 修正项（对比度经脚本核算，AA ≥ 4.5:1）：
+ *  1) 暗态主按钮 hover 白字 vs #b8862f = 3.21，未达 AA → 在本作用域重定义 hover 至
+ *     #956d26（对白字对比 4.69）。fill #96702a = 4.52 达标保持。
+ *  2) 代码块底色半透明（light #f4efe480 / dark #151b2999），正文叠在长城画上 → 实体化
+ *     为不透明浅/深底，正文对比稳定 ≥ 4.5。前景 token 保持皮肤原值。
+ */
+body[data-dsh-dragon-heir] {
+  --dsw-alias-markdown-code-block: #f4efe4;
+  --dsw-alias-markdown-inline-code: #ede5d5;
+  --dsw-alias-markdown-placeholder: #f4efe4;
+}
+body[data-dsh-dragon-heir][data-ds-dark-theme] {
+  --dsw-alias-button-primary-hover: #956d26;
+  --dsw-alias-markdown-code-block: #151b29;
+  --dsw-alias-markdown-inline-code: #1c2334;
+  --dsw-alias-markdown-placeholder: #151b29;
+}
