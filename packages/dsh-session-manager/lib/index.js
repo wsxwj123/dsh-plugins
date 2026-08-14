@@ -95,21 +95,44 @@ function trashRootUnsafeReason(trashRoot, home = os.homedir()) {
 	for (const sys of SYSTEM_TRASH_ROOT_DENYLIST) if (path.resolve(sys) === resolved) return `the system directory ${sys}`;
 	return null;
 }
+/** Max /sm request body in BYTES; larger bodies are refused 413 (S2). */
+const MAX_BODY_BYTES = 65536;
 /**
-* Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
-* client abort (ECONNRESET) or a transport error — resolves to null, which the
-* route maps to a structured 400. The old bare `for await` threw inside the
-* async route handler on an aborted connection, producing an unhandled
-* rejection that left the request hanging.
+* Consume the raw request body (I-4 + S2). NEVER rejects: a mid-stream failure
+* — client abort (ECONNRESET) or a transport error — resolves to
+* `{ ok:false, code:'read-failed' }`, which the route maps to a structured
+* 400. A body that exceeds `limit` resolves to `{ ok:false, code:'too-large' }`
+* (route maps it to 413) WITHOUT buffering the excess. The count is
+* byte-accurate: raw Buffers are measured, so multibyte UTF-8 payloads cannot
+* slip past the limit.
 */
-async function readRequestBody(req) {
+async function readRequestBody(req, limit = MAX_BODY_BYTES) {
+	const declared = Number(req.headers["content-length"]);
+	if (Number.isFinite(declared) && declared > limit) return {
+		ok: false,
+		code: "too-large"
+	};
 	try {
-		let raw = "";
-		req.setEncoding("utf8");
-		for await (const chunk of req) raw += chunk;
-		return raw;
+		const chunks = [];
+		let size = 0;
+		for await (const chunk of req) {
+			const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			size += buf.byteLength;
+			if (size > limit) return {
+				ok: false,
+				code: "too-large"
+			};
+			chunks.push(buf);
+		}
+		return {
+			ok: true,
+			body: Buffer.concat(chunks).toString("utf8")
+		};
 	} catch {
-		return null;
+		return {
+			ok: false,
+			code: "read-failed"
+		};
 	}
 }
 function sendJson(res, status, json) {
@@ -181,15 +204,24 @@ function apply(ctx, config = {}) {
 				return;
 			}
 			try {
-				const raw = await readRequestBody(req);
-				if (raw === null) {
-					sendJson(res, 400, {
+				const read = await readRequestBody(req);
+				if (!read.ok) {
+					if (read.code === "read-failed") {
+						sendJson(res, 400, {
+							ok: false,
+							code: "bad-request",
+							message: "request body read failed"
+						});
+						return;
+					}
+					sendJson(res, 413, {
 						ok: false,
-						code: "bad-request",
-						message: "request body read failed"
+						code: "payload-too-large",
+						message: `request body exceeds ${MAX_BODY_BYTES} bytes`
 					});
 					return;
 				}
+				const raw = read.body;
 				let body;
 				if (raw.length === 0) body = void 0;
 				else try {
@@ -220,4 +252,4 @@ function apply(ctx, config = {}) {
 	ctx.effect(() => dispose);
 }
 //#endregion
-export { apply, inject, name, readRequestBody, resolveRoots, trashRootUnsafeReason };
+export { MAX_BODY_BYTES, apply, inject, name, readRequestBody, resolveRoots, trashRootUnsafeReason };

@@ -113,21 +113,39 @@ export function trashRootUnsafeReason(trashRoot: string, home: string = os.homed
   return null
 }
 
+/** Max /sm request body in BYTES; larger bodies are refused 413 (S2). */
+export const MAX_BODY_BYTES = 64 * 1024
+
+export type BodyRead =
+  | { ok: true; body: string }
+  | { ok: false; code: 'read-failed' }
+  | { ok: false; code: 'too-large' }
+
 /**
- * Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
- * client abort (ECONNRESET) or a transport error — resolves to null, which the
- * route maps to a structured 400. The old bare `for await` threw inside the
- * async route handler on an aborted connection, producing an unhandled
- * rejection that left the request hanging.
+ * Consume the raw request body (I-4 + S2). NEVER rejects: a mid-stream failure
+ * — client abort (ECONNRESET) or a transport error — resolves to
+ * `{ ok:false, code:'read-failed' }`, which the route maps to a structured
+ * 400. A body that exceeds `limit` resolves to `{ ok:false, code:'too-large' }`
+ * (route maps it to 413) WITHOUT buffering the excess. The count is
+ * byte-accurate: raw Buffers are measured, so multibyte UTF-8 payloads cannot
+ * slip past the limit.
  */
-export async function readRequestBody(req: IncomingMessage): Promise<string | null> {
+export async function readRequestBody(req: IncomingMessage, limit: number = MAX_BODY_BYTES): Promise<BodyRead> {
+  // Cheap early rejection when the caller declared the size up-front.
+  const declared = Number(req.headers['content-length'])
+  if (Number.isFinite(declared) && declared > limit) return { ok: false, code: 'too-large' }
   try {
-    let raw = ''
-    req.setEncoding('utf8')
-    for await (const chunk of req) raw += chunk
-    return raw
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      size += buf.byteLength
+      if (size > limit) return { ok: false, code: 'too-large' }
+      chunks.push(buf)
+    }
+    return { ok: true, body: Buffer.concat(chunks).toString('utf8') }
   } catch {
-    return null
+    return { ok: false, code: 'read-failed' }
   }
 }
 
@@ -252,11 +270,16 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
       // error), a malformed payload, or a response write onto a dead socket
       // all end in a structured 400 instead of an unhandled rejection.
       try {
-        const raw = await readRequestBody(req) // null on stream failure
-        if (raw === null) {
-          sendJson(res, 400, { ok: false, code: 'bad-request', message: 'request body read failed' })
+        const read = await readRequestBody(req)
+        if (!read.ok) {
+          if (read.code === 'read-failed') {
+            sendJson(res, 400, { ok: false, code: 'bad-request', message: 'request body read failed' })
+            return
+          }
+          sendJson(res, 413, { ok: false, code: 'payload-too-large', message: `request body exceeds ${MAX_BODY_BYTES} bytes` })
           return
         }
+        const raw = read.body
 
         let body: unknown
         if (raw.length === 0) {

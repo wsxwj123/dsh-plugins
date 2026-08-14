@@ -234,6 +234,66 @@ test('handler: sessions missing skips running guard and delete proceeds', () => 
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('readRequestBody: content-length over limit -> too-large without reading; under -> ok (S2)', async () => {
+  // Byte-accurate limit (S2): rejects by the declared Content-Length up-front,
+  // and returns the body unchanged when it fits.
+  const over = new Readable({ read() {} })
+  over.headers = { host: '127.0.0.1:3080', 'content-length': String(plugin.MAX_BODY_BYTES + 1) }
+  over.url = '/sm/delete'
+  over.method = 'POST'
+  assert.deepStrictEqual(await plugin.readRequestBody(over), { ok: false, code: 'too-large' })
+  const under = new Readable({ read() {} })
+  under.headers = { host: '127.0.0.1:3080', 'content-length': '4' }
+  under.push(Buffer.from('{"a"'))
+  under.push(null) // end the stream so the async iterator resolves
+  const got = await plugin.readRequestBody(under)
+  assert.strictEqual(got.ok, true)
+  assert.strictEqual(got.body, '{"a"')
+})
+
+test('readRequestBody: streamed body over limit -> too-large, byte-accurate (S2)', async () => {
+  const atLimit = new Readable({ read() {} })
+  atLimit.headers = { host: '127.0.0.1:3080' } // no content-length -> chunked path
+  atLimit.push(Buffer.alloc(plugin.MAX_BODY_BYTES, 0x61)) // exactly the limit
+  atLimit.push(null)
+  const got = await plugin.readRequestBody(atLimit)
+  assert.strictEqual(got.ok, true, 'exactly at the limit is accepted')
+  assert.strictEqual(got.body.length, plugin.MAX_BODY_BYTES)
+  const oneOver = new Readable({ read() {} })
+  oneOver.headers = { host: '127.0.0.1:3080' }
+  oneOver.push(Buffer.alloc(plugin.MAX_BODY_BYTES + 1, 0x61)) // one byte over
+  oneOver.push(null)
+  assert.deepStrictEqual(await plugin.readRequestBody(oneOver), { ok: false, code: 'too-large' })
+})
+
+test('route: oversized body -> HTTP 413 payload-too-large (S2)', async () => {
+  const { ctx, provide } = makeCordisCtx()
+  let route = null
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: (r) => { route = r; return () => {} } },
+  })
+  const { base } = roots()
+  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
+  const req = new Readable({ read() {} })
+  req.headers = { host: '127.0.0.1:3080', 'content-length': String(plugin.MAX_BODY_BYTES + 1) }
+  req.url = '/sm/delete'
+  req.method = 'POST'
+  const res = {
+    headersSent: false,
+    statusCode: null,
+    writeHead(code) { this.headersSent = true; this.statusCode = code },
+    end(body) { this._body = body },
+  }
+  await route.handler(req, res) // must resolve, never reject
+  assert.strictEqual(res.statusCode, 413)
+  const sent = JSON.parse(res._body)
+  assert.strictEqual(sent.ok, false)
+  assert.strictEqual(sent.code, 'payload-too-large')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('route: body stream interrupted mid-read -> structured 400, async handler never rejects (I-4)', async () => {
   // Capture the real /sm route mounted by apply(), then drive it with a request
   // whose body dies mid-stream (client abort). The async handler must resolve —
