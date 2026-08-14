@@ -39,6 +39,10 @@ export const NO_CWD_DIR = '_no-cwd'
 export function assertValidId(id: unknown): id is string {
   if (typeof id !== 'string' || id.length === 0) return false
   if (id === '.' || id === '..') return false
+  // `_metadata` is the recycle-bin's reserved metadata directory name; a
+  // session id equal to it would collide with the metadata namespace inside
+  // the trash (delete would rename onto a non-empty dir, empty would skip it).
+  if (id === '_metadata') return false
   if (INVALID_ID_CHARSET.test(id)) return false
   // A single path segment must survive a basename round-trip unchanged.
   if (path.basename(id) !== id) return false

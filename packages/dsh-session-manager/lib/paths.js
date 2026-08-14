@@ -34,6 +34,7 @@ const NO_CWD_DIR = "_no-cwd";
 function assertValidId(id) {
 	if (typeof id !== "string" || id.length === 0) return false;
 	if (id === "." || id === "..") return false;
+	if (id === "_metadata") return false;
 	if (INVALID_ID_CHARSET.test(id)) return false;
 	if (path.basename(id) !== id) return false;
 	return true;

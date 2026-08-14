@@ -81,3 +81,8 @@ test('fence: cross-site refused, foreign origin refused, same-origin trusted', (
     true,
   )
 })
+
+test('paths: assertValidId rejects the reserved _metadata name (S-14)', () => {
+  assert.strictEqual(assertValidId('_metadata'), false)
+  assert.strictEqual(assertValidId('normal-session-id'), true)
+})
