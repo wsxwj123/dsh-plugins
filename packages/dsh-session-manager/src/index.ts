@@ -82,17 +82,6 @@ export function resolveRoots(config: SessionManagerConfig) {
 }
 
 /**
- * Build the /sm dispatch with a production storage-domain facility. Kept as a
- * separate exported function so tests can wire a real handler without booting
- * cordis, and so the archive read helpers stay in one place.
- */
-export function makeHandler(
-  deps: SmHandlerDeps,
-): ReturnType<typeof createSmHandler> {
-  return createSmHandler(deps)
-}
-
-/**
  * Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
  * client abort (ECONNRESET) or a transport error — resolves to null, which the
  * route maps to a structured 400. The old bare `for await` threw inside the
