@@ -95,12 +95,13 @@ export function ArchiveView({
   const byId = sessionsSnap.byId
   // Hide rows only while their deferred-delete window is UNDOABLE (pending). A
   // failed fire leaves row hidden neither here nor in the main list — the
-  // session reappears (INTERFACE §2.4).
+  // session reappears (INTERFACE §2.4). CONFIRMED deletions stay hidden too.
   const parked = new Set(pending.filter((e) => e.state === 'pending').map((e) => e.id))
   const rows: ArchivedRow[] = []
   for (const id of workspacesSnap.archivedSessionIds) {
     const s = byId[id]
-    if (!s || s.blank || parked.has(id)) continue
+    if (!s || s.blank) continue
+    if (parked.has(id) || pendingDeletes.isDeleted(id)) continue
     rows.push({ ...s, id })
   }
 

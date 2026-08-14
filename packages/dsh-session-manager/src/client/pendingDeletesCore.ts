@@ -68,6 +68,14 @@ export interface PendingDeleteDeps {
   schedule?: (cb: () => void, delay: number) => () => void
   /** Called after any state change so UI subscribers re-read the table. */
   onChange?: () => void
+  /**
+   * Persistent store for the set of session ids whose deletion has CONFIRMED
+   * (fire returned ok). Exactly the ids that must keep their UI rows hidden
+   * across mounts/refreshes even though the client's `sessions.list` still
+   * carries them (host only re-scans its disk on a later refresh). Browser
+   * wiring uses localStorage; tests inject an in-memory adapter.
+   */
+  storage?: { load(): string[]; save(ids: string[]): void }
 }
 
 export interface PendingDeletes {
@@ -90,6 +98,8 @@ export interface PendingDeletes {
   get(id: string): PendingEntry | undefined
   /** Whether an id currently has a live pending (undoable) entry. */
   isPending(id: string): boolean
+  /** Whether a deletion for id has CONFIRMED on the host (keeps its row hidden). */
+  isDeleted(id: string): boolean
   /** Fire the parked entry immediately (test/edge hook, bypasses the countdown). */
   fireNow(id: string): Promise<FireOutcome | undefined>
 }
@@ -118,6 +128,21 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
 
   const invalidateCache = (): void => {
     cached = null
+  }
+
+  // Confirmed-deleted session ids: a fire that returned ok must keep its UI row
+  // hidden even after the pending entry is gone AND across refreshes (the host
+  // moves the directory; the client list still shows the id until a re-pull).
+  const storage = deps.storage
+  const deletedIds = new Set<string>(storage?.load() ?? [])
+  const persistDeleted = (): void => {
+    // Fire-and-forget: the store is best-effort (browser localStorage). Never
+    // throw into the fire path over a storage error.
+    try {
+      storage?.save(Array.from(deletedIds))
+    } catch {
+      /* non-fatal */
+    }
   }
 
   const notify = (): void => {
@@ -183,6 +208,14 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       }, FAILED_RETAIN_MS)
       timers.set(failed.id, cancel)
       notify()
+    } else {
+      // SUCCESS: the host confirmed the delete (directory moved to the
+      // recycle bin). Record the id as DELETED so its UI row stays hidden even
+      // though the client list still carries it (client source persists until a
+      // later re-pull). Persist so a refresh keeps the row hidden.
+      deletedIds.add(entry.id)
+      persistDeleted()
+      notify()
     }
     return outcome
   }
@@ -205,6 +238,10 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       const entry = map.get(id)
       if (!entry || entry.state !== 'pending') return false
       drop(id)
+      // Defensive: a restored session must not stay flagged as deleted. In
+      // practice an id only lands in deletedIds AFTER a successful fire (which
+      // made it un-undoable), so this is a safety net, not the normal path.
+      if (deletedIds.delete(id)) persistDeleted()
       notify()
       return true
     },
@@ -222,6 +259,18 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     },
     get: (id) => map.get(id),
     isPending: (id) => map.get(id)?.state === 'pending',
+    isDeleted: (id) => deletedIds.has(id),
     fireNow,
+  }
+}
+
+/** In-memory storage adapter (tests, and a no-op fallback for non-web runs). */
+export function memoryStorage(initial: string[] = []): NonNullable<PendingDeleteDeps['storage']> {
+  let ids = [...initial]
+  return {
+    load: () => ids,
+    save: (next) => {
+      ids = [...next]
+    },
   }
 }

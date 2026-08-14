@@ -97,9 +97,10 @@ export function apply(ctx: Context): void {
     for (const [id, row] of controller.rowById.entries()) {
       if (!row.isConnected) continue
       const entry = pendingDeletes.get(id)
-      // Hidden only while an UNDOABLE pending window is open; a failed fire
-      // (entry gone or failed) restores the row (INTERFACE §1.4).
-      const hide = entry?.state === 'pending'
+      // Keep the row hidden while its deletion is UNDOABLE (pending) OR CONFIRMED
+      // (host moved the dir; the client list still shows the id until a re-pull).
+      // A failed fire (entry gone or failed) restores the row (INTERFACE §1.4).
+      const hide = entry?.state === 'pending' || pendingDeletes.isDeleted(id)
       const current = row.style.display
       if (hide && current !== 'none') row.style.display = 'none'
       if (!hide && current === 'none') row.style.display = ''

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const core = await import(path.join(root, 'lib', 'pending-deletes-core.js'))
-const { createPendingDeletes, UNDO_WINDOW_MS, FAILED_RETAIN_MS } = core
+const { createPendingDeletes, memoryStorage, UNDO_WINDOW_MS, FAILED_RETAIN_MS } = core
 
 /**
  * A manual clock + manual scheduler: let/advance time by hand so timer-fired
@@ -223,4 +223,56 @@ test('snapshot returns the SAME reference while the map is unchanged (React #185
   assert.notStrictEqual(s3, s2)
   assert.strictEqual(s3.length, 1)
   assert.strictEqual(pd.snapshot(), s3)
+})
+
+test('fire success marks the id as DELETED and persists it (row stays hidden)', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  assert.strictEqual(pd.isDeleted('a'), false, 'not deleted before fire')
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.strictEqual(pd.isDeleted('a'), true, 'host confirmed delete -> flagged deleted')
+  // Persisted to the injected storage: a NEW instance seeded from the same
+  // store still knows the id is deleted (refresh keeps the row hidden).
+  const pd2 = createPendingDeletes({ ...deps, storage })
+  assert.strictEqual(pd2.isDeleted('a'), true, 'persisted across a "refresh" (new instance, same store)')
+})
+
+test('fiRED entry cannot be undone, and isDeleted stays true', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.strictEqual(pd.isPending('a'), false, 'no undoable window after fire')
+  assert.strictEqual(pd.isDeleted('a'), true)
+  assert.strictEqual(pd.undo('a'), false, 'fire happened: cannot undo')
+  assert.strictEqual(pd.get('a'), undefined)
+})
+
+test('failed fire does NOT mark deleted, and the row is re-shown (INTERFACE §1.4)', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'session-running' }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await Promise.resolve()
+  assert.strictEqual(pd.isDeleted('a'), false, 'a failed fire is not a confirmed delete')
+  assert.strictEqual(pd.get('a')?.state, 'failed')
+})
+
+test('storage seeds DELETED ids at init (persistence across a refresh)', () => {
+  const storage = memoryStorage(['already-gone'])
+  const { deps } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  assert.strictEqual(pd.isDeleted('already-gone'), true, 'seeded from storage at init')
+  assert.strictEqual(pd.isDeleted('never-deleted'), false)
+  // The deleted id is not in the pending table (it has no undoable window).
+  assert.strictEqual(pd.get('already-gone'), undefined)
 })

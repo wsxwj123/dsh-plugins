@@ -120,6 +120,13 @@ window.__ModuleLoader__.load({
 			const invalidateCache = () => {
 				cached = null;
 			};
+			const storage = deps.storage;
+			const deletedIds = new Set(storage?.load() ?? []);
+			const persistDeleted = () => {
+				try {
+					storage?.save(Array.from(deletedIds));
+				} catch {}
+			};
 			const notify = () => {
 				onChange();
 				for (const l of listeners) l();
@@ -180,6 +187,10 @@ window.__ModuleLoader__.load({
 					}, FAILED_RETAIN_MS);
 					timers.set(failed.id, cancel);
 					notify();
+				} else {
+					deletedIds.add(entry.id);
+					persistDeleted();
+					notify();
 				}
 				return outcome;
 			}
@@ -205,6 +216,7 @@ window.__ModuleLoader__.load({
 					const entry = map.get(id);
 					if (!entry || entry.state !== "pending") return false;
 					drop(id);
+					if (deletedIds.delete(id)) persistDeleted();
 					notify();
 					return true;
 				},
@@ -220,6 +232,7 @@ window.__ModuleLoader__.load({
 				},
 				get: (id) => map.get(id),
 				isPending: (id) => map.get(id)?.state === "pending",
+				isDeleted: (id) => deletedIds.has(id),
 				fireNow
 			};
 		}
@@ -231,15 +244,33 @@ window.__ModuleLoader__.load({
 		* separately); this module wires it to the real `/sm` bridge and re-exports the
 		* core API + constants so the React UI imports everything from one place.
 		*/
+		/** localStorage key holding the confirmed-deleted session ids. */
+		const DELETED_STORAGE_KEY = "dsh-sm.deleted";
 		/**
 		* The module singleton the UI drives. Wired to the real host bridge; the DOM
 		* ride-along (row hide/show) is applied by the injection layer via a subscribe
-		* that reconciles visibility from the park table, so nothing here touches the
-		* DOM.
+		* that reconciles visibility from the park table + the persisted deleted set,
+		* so nothing here touches the DOM.
 		*/
 		const pendingDeletes = createPendingDeletes({
 			fire: (entry) => smDelete(entry.id, entry.cwd, entry.title),
-			onChange: () => {}
+			onChange: () => {},
+			storage: {
+				load: () => {
+					try {
+						const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DELETED_STORAGE_KEY) : null;
+						const arr = raw ? JSON.parse(raw) : [];
+						return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+					} catch {
+						return [];
+					}
+				},
+				save: (ids) => {
+					try {
+						if (typeof localStorage !== "undefined") localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify(ids));
+					} catch {}
+				}
+			}
 		});
 		//#endregion
 		//#region src/client/sessionRowMatch.ts
@@ -296,33 +327,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"backdrop": "FPsCja_backdrop",
-			"rowTitle": "FPsCja_rowTitle",
-			"action": "FPsCja_action",
-			"overlay": "FPsCja_overlay",
-			"rail-in": "FPsCja_rail-in",
-			"danger": "FPsCja_danger",
-			"undo": "FPsCja_undo",
-			"trashBar": "FPsCja_trashBar",
-			"item": "FPsCja_item",
-			"rail": "FPsCja_rail",
-			"countdown": "FPsCja_countdown",
-			"trashButton": "FPsCja_trashButton",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"list": "FPsCja_list",
 			"failed": "FPsCja_failed",
-			"row": "FPsCja_row",
-			"trashCount": "FPsCja_trashCount",
-			"label": "FPsCja_label",
-			"empty": "FPsCja_empty",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"close": "FPsCja_close",
+			"countdown": "FPsCja_countdown",
+			"item": "FPsCja_item",
+			"backdrop": "FPsCja_backdrop",
+			"action": "FPsCja_action",
+			"trashButton": "FPsCja_trashButton",
+			"rail-in": "FPsCja_rail-in",
 			"title": "FPsCja_title",
-			"errorBanner": "FPsCja_errorBanner",
-			"dismiss": "FPsCja_dismiss",
 			"add": "FPsCja_add",
-			"divider": "FPsCja_divider",
-			"entryButton": "FPsCja_entryButton",
+			"undo": "FPsCja_undo",
+			"row": "FPsCja_row",
+			"danger": "FPsCja_danger",
+			"empty": "FPsCja_empty",
+			"trashCount": "FPsCja_trashCount",
 			"head": "FPsCja_head",
-			"close": "FPsCja_close"
+			"label": "FPsCja_label",
+			"rail": "FPsCja_rail",
+			"dismiss": "FPsCja_dismiss",
+			"entryButton": "FPsCja_entryButton",
+			"overlay": "FPsCja_overlay",
+			"list": "FPsCja_list",
+			"rowTitle": "FPsCja_rowTitle",
+			"errorBanner": "FPsCja_errorBanner",
+			"trashBar": "FPsCja_trashBar",
+			"divider": "FPsCja_divider"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -583,7 +614,8 @@ window.__ModuleLoader__.load({
 			const rows = [];
 			for (const id of workspacesSnap.archivedSessionIds) {
 				const s = byId[id];
-				if (!s || s.blank || parked.has(id)) continue;
+				if (!s || s.blank) continue;
+				if (parked.has(id) || pendingDeletes.isDeleted(id)) continue;
 				rows.push({
 					...s,
 					id
@@ -730,7 +762,7 @@ window.__ModuleLoader__.load({
 			const reconcileVisibility = () => {
 				for (const [id, row] of controller.rowById.entries()) {
 					if (!row.isConnected) continue;
-					const hide = pendingDeletes.get(id)?.state === "pending";
+					const hide = pendingDeletes.get(id)?.state === "pending" || pendingDeletes.isDeleted(id);
 					const current = row.style.display;
 					if (hide && current !== "none") row.style.display = "none";
 					if (!hide && current === "none") row.style.display = "";

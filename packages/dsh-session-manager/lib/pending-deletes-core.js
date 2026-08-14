@@ -57,6 +57,13 @@ function createPendingDeletes(deps) {
 	const invalidateCache = () => {
 		cached = null;
 	};
+	const storage = deps.storage;
+	const deletedIds = new Set(storage?.load() ?? []);
+	const persistDeleted = () => {
+		try {
+			storage?.save(Array.from(deletedIds));
+		} catch {}
+	};
 	const notify = () => {
 		onChange();
 		for (const l of listeners) l();
@@ -117,6 +124,10 @@ function createPendingDeletes(deps) {
 			}, FAILED_RETAIN_MS);
 			timers.set(failed.id, cancel);
 			notify();
+		} else {
+			deletedIds.add(entry.id);
+			persistDeleted();
+			notify();
 		}
 		return outcome;
 	}
@@ -142,6 +153,7 @@ function createPendingDeletes(deps) {
 			const entry = map.get(id);
 			if (!entry || entry.state !== "pending") return false;
 			drop(id);
+			if (deletedIds.delete(id)) persistDeleted();
 			notify();
 			return true;
 		},
@@ -157,8 +169,19 @@ function createPendingDeletes(deps) {
 		},
 		get: (id) => map.get(id),
 		isPending: (id) => map.get(id)?.state === "pending",
+		isDeleted: (id) => deletedIds.has(id),
 		fireNow
 	};
 }
+/** In-memory storage adapter (tests, and a no-op fallback for non-web runs). */
+function memoryStorage(initial = []) {
+	let ids = [...initial];
+	return {
+		load: () => ids,
+		save: (next) => {
+			ids = [...next];
+		}
+	};
+}
 //#endregion
-export { FAILED_RETAIN_MS, UNDO_WINDOW_MS, createPendingDeletes };
+export { FAILED_RETAIN_MS, UNDO_WINDOW_MS, createPendingDeletes, memoryStorage };
