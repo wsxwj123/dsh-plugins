@@ -134,6 +134,15 @@ export interface PendingDeletes {
   isPending(id: string): boolean
   /** Whether a deletion for id has CONFIRMED on the host (keeps its row hidden). */
   isDeleted(id: string): boolean
+  /**
+   * Drop ids from the confirmed-deleted set that the HOST recycle bin no longer
+   * holds (reconciled against `/sm/trash`). A session restored via the restore
+   * API / an outside tool — or whose trash entry was cleared — must not stay
+   * hidden forever (S-10 / SECURITY S5): only ids actually present in the host
+   * trash keep their rows hidden. Pure no-op when nothing changed (no notify,
+   * no storage write).
+   */
+  reconcileWithTrash(trashIds: string[]): void
   /** Fire the parked entry immediately (test/edge hook, bypasses the countdown). */
   fireNow(id: string): Promise<FireOutcome | undefined>
   /**
@@ -369,6 +378,24 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     get: (id) => map.get(id),
     isPending: (id) => map.get(id)?.state === 'pending',
     isDeleted: (id) => deletedIds.has(id),
+    // S-10 / SECURITY S5: keep the hidden-rows set honest against the host.
+    // deletedIds outlives its entry on purpose (refresh-proof hiding), but it
+    // must NOT outlive the host's own record: a restored/cleared session would
+    // otherwise stay hidden forever (a ghost). Only ids the host still lists in
+    // /sm/trash keep hiding their rows; the rest are un-flagged and persisted.
+    reconcileWithTrash(trashIds) {
+      const live = new Set(trashIds)
+      let changed = false
+      for (const id of deletedIds) {
+        if (!live.has(id)) {
+          deletedIds.delete(id)
+          changed = true
+        }
+      }
+      if (!changed) return
+      persistDeleted()
+      notify()
+    },
     fireNow,
     retry,
   }

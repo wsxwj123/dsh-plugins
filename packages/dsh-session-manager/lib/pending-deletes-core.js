@@ -225,6 +225,17 @@ function createPendingDeletes(deps) {
 		get: (id) => map.get(id),
 		isPending: (id) => map.get(id)?.state === "pending",
 		isDeleted: (id) => deletedIds.has(id),
+		reconcileWithTrash(trashIds) {
+			const live = new Set(trashIds);
+			let changed = false;
+			for (const id of deletedIds) if (!live.has(id)) {
+				deletedIds.delete(id);
+				changed = true;
+			}
+			if (!changed) return;
+			persistDeleted();
+			notify();
+		},
 		fireNow,
 		retry
 	};

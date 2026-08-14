@@ -66,8 +66,19 @@ export function ArchiveView({
     void smTrash()
       .then((res) => {
         if (cancelled) return
-        if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
-        else setError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
+        if (res.ok) {
+          setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+          // S-10: re-align the hidden-rows set with the host trash every time
+          // we re-read it (open / re-open). A restored or cleared session must
+          // not stay hidden forever (ghost row).
+          if (Array.isArray(res.items)) {
+            pendingDeletes.reconcileWithTrash(
+              (res.items as Array<{ id?: unknown }>)
+                .map((i) => i.id)
+                .filter((id): id is string => typeof id === 'string'),
+            )
+          }
+        } else setError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
       })
       .catch((err) => {
         // I-5 belt-and-suspenders: even if the bridge ever rejects again, the
@@ -100,6 +111,16 @@ export function ArchiveView({
       const t = await smTrash()
       if (t.ok) {
         setTrashCount(Array.isArray(t.items) ? t.items.length : 0)
+        // S-10: after emptying, the host trash holds nothing — any id still
+        // flagged deleted has no backing record and must stop hiding its row
+        // (the next list re-pull drops the now-gone session entirely).
+        if (Array.isArray(t.items)) {
+          pendingDeletes.reconcileWithTrash(
+            (t.items as Array<{ id?: unknown }>)
+              .map((i) => i.id)
+              .filter((id): id is string => typeof id === 'string'),
+          )
+        }
       } else {
         setError(`读取回收站失败：${t.code ?? t.message ?? 'unknown'}`)
       }

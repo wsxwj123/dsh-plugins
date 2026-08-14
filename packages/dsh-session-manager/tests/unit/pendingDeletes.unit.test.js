@@ -562,3 +562,94 @@ test('S-9: a CLEANUP entry still rejects a re-delete (file already moved; retry(
   assert.strictEqual(pd.get('a')?.state, 'cleanup', 'the cleanup entry survives the rejected re-delete')
   assert.strictEqual(pd.isDeleted('a'), true, 'the row stays hidden (file is in the recycle bin)')
 })
+
+// ---- S-10 / SECURITY S5: reconcile deletedIds against the host recycle bin ----
+
+test('S-10: reconcileWithTrash keeps ids that are still in the host trash', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.isDeleted('a'), true, 'precondition: confirmed delete')
+  pd.reconcileWithTrash(['a'])
+  assert.strictEqual(pd.isDeleted('a'), true, 'id still in the host trash -> row stays hidden')
+  assert.deepStrictEqual(storage.load(), ['a'])
+})
+
+test('S-10: reconcileWithTrash un-hides ids the host trash no longer holds (restored/cleared)', () => {
+  let saved = null
+  const storage = {
+    load: () => ['a', 'b', 'c'],
+    save: (ids) => {
+      saved = [...ids]
+    },
+  }
+  const { deps } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.reconcileWithTrash(['a', 'b']) // c was restored / its trash entry is gone
+  assert.strictEqual(pd.isDeleted('c'), false, 'a session no longer in trash is un-hidden')
+  assert.strictEqual(pd.isDeleted('a'), true, 'ids still in trash stay hidden')
+  assert.strictEqual(pd.isDeleted('b'), true)
+  assert.deepStrictEqual(saved, ['a', 'b'], 'the pruned set is re-persisted')
+})
+
+test('S-10: reconcileWithTrash is a pure no-op when nothing changed (no save, no notify)', () => {
+  let saves = 0
+  let notifies = 0
+  const storage = {
+    load: () => ['a'],
+    save: () => {
+      saves += 1
+    },
+  }
+  const { deps } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.subscribe(() => {
+    notifies += 1
+  })
+  pd.reconcileWithTrash(['a'])
+  assert.strictEqual(saves, 0, 'no storage write when the set is unchanged')
+  assert.strictEqual(notifies, 0, 'no UI notify when the set is unchanged')
+})
+
+test('S-10: reconcileWithTrash with an empty trash un-hides everything (emptyTrash case)', () => {
+  let saved = null
+  const storage = {
+    load: () => ['a', 'b'],
+    save: (ids) => {
+      saved = [...ids]
+    },
+  }
+  const { deps } = makeDeps({ storage })
+  const pd = createPendingDeletes(deps)
+  pd.reconcileWithTrash([])
+  assert.strictEqual(pd.isDeleted('a'), false)
+  assert.strictEqual(pd.isDeleted('b'), false)
+  assert.deepStrictEqual(saved, [], 'empty trash -> nothing stays flagged deleted')
+})
+
+test('S-10: reconcileWithTrash does not disturb live pending/cleanup entries', async () => {
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => ({ ok: false, code: 'system-error', moved: true }),
+  })
+  const pd = createPendingDeletes(deps)
+  // A pending (not yet fired) entry has no deleted flag — reconcile must not
+  // touch its window.
+  pd.requestDelete('a', '/ctx-a', 'A')
+  pd.reconcileWithTrash([])
+  assert.strictEqual(pd.get('a')?.state, 'pending', 'a live pending window survives reconciliation')
+  // A cleanup entry keeps its id flagged (the file IS in the trash) and its
+  // retryable entry intact.
+  pd.undo('a')
+  pd.requestDelete('b', '/ctx-b', 'B')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('b')?.state, 'cleanup')
+  pd.reconcileWithTrash(['b'])
+  assert.strictEqual(pd.isDeleted('b'), true, 'cleanup ids match a real trash record -> stay hidden')
+  assert.strictEqual(pd.get('b')?.state, 'cleanup', 'the retryable entry survives reconciliation')
+})

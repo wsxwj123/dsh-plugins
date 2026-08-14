@@ -301,7 +301,9 @@ window.__ModuleLoader__.load({
 			}
 			return {
 				requestDelete(id, cwd, title, force) {
-					if (map.has(id)) return false;
+					const existing = map.get(id);
+					if (existing !== void 0 && existing.state !== "failed") return false;
+					if (existing !== void 0) drop(id);
 					park({
 						id,
 						cwd,
@@ -334,6 +336,17 @@ window.__ModuleLoader__.load({
 				get: (id) => map.get(id),
 				isPending: (id) => map.get(id)?.state === "pending",
 				isDeleted: (id) => deletedIds.has(id),
+				reconcileWithTrash(trashIds) {
+					const live = new Set(trashIds);
+					let changed = false;
+					for (const id of deletedIds) if (!live.has(id)) {
+						deletedIds.delete(id);
+						changed = true;
+					}
+					if (!changed) return;
+					persistDeleted();
+					notify();
+				},
 				fireNow,
 				retry
 			};
@@ -490,33 +503,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"list": "FPsCja_list",
-			"danger": "FPsCja_danger",
-			"entryButton": "FPsCja_entryButton",
-			"trashButton": "FPsCja_trashButton",
-			"rail": "FPsCja_rail",
-			"errorBanner": "FPsCja_errorBanner",
-			"empty": "FPsCja_empty",
-			"label": "FPsCja_label",
-			"countdown": "FPsCja_countdown",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"rowTitle": "FPsCja_rowTitle",
-			"title": "FPsCja_title",
-			"failed": "FPsCja_failed",
-			"close": "FPsCja_close",
-			"action": "FPsCja_action",
-			"backdrop": "FPsCja_backdrop",
-			"row": "FPsCja_row",
 			"item": "FPsCja_item",
-			"overlay": "FPsCja_overlay",
-			"undo": "FPsCja_undo",
-			"trashBar": "FPsCja_trashBar",
-			"add": "FPsCja_add",
 			"rail-in": "FPsCja_rail-in",
-			"dismiss": "FPsCja_dismiss",
+			"countdown": "FPsCja_countdown",
+			"failed": "FPsCja_failed",
+			"backdrop": "FPsCja_backdrop",
 			"head": "FPsCja_head",
+			"rail": "FPsCja_rail",
+			"entryButton": "FPsCja_entryButton",
+			"overlay": "FPsCja_overlay",
+			"errorBanner": "FPsCja_errorBanner",
+			"divider": "FPsCja_divider",
+			"row": "FPsCja_row",
+			"add": "FPsCja_add",
+			"trashButton": "FPsCja_trashButton",
+			"action": "FPsCja_action",
+			"title": "FPsCja_title",
+			"empty": "FPsCja_empty",
+			"undo": "FPsCja_undo",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"close": "FPsCja_close",
+			"rowTitle": "FPsCja_rowTitle",
+			"danger": "FPsCja_danger",
+			"dismiss": "FPsCja_dismiss",
+			"trashBar": "FPsCja_trashBar",
 			"trashCount": "FPsCja_trashCount",
-			"divider": "FPsCja_divider"
+			"label": "FPsCja_label",
+			"list": "FPsCja_list"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -792,8 +805,10 @@ window.__ModuleLoader__.load({
 				let cancelled = false;
 				smTrash().then((res) => {
 					if (cancelled) return;
-					if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0);
-					else setError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
+					if (res.ok) {
+						setTrashCount(Array.isArray(res.items) ? res.items.length : 0);
+						if (Array.isArray(res.items)) pendingDeletes.reconcileWithTrash(res.items.map((i) => i.id).filter((id) => typeof id === "string"));
+					} else setError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
 				}).catch((err) => {
 					if (!cancelled) setError(`读取回收站失败：${err instanceof Error ? err.message : String(err)}`);
 				});
@@ -818,8 +833,10 @@ window.__ModuleLoader__.load({
 					}
 					setError(null);
 					const t = await smTrash();
-					if (t.ok) setTrashCount(Array.isArray(t.items) ? t.items.length : 0);
-					else setError(`读取回收站失败：${t.code ?? t.message ?? "unknown"}`);
+					if (t.ok) {
+						setTrashCount(Array.isArray(t.items) ? t.items.length : 0);
+						if (Array.isArray(t.items)) pendingDeletes.reconcileWithTrash(t.items.map((i) => i.id).filter((id) => typeof id === "string"));
+					} else setError(`读取回收站失败：${t.code ?? t.message ?? "unknown"}`);
 				} catch (err) {
 					setError(`清空回收站失败：${err instanceof Error ? err.message : String(err)}`);
 				}
@@ -1009,6 +1026,9 @@ window.__ModuleLoader__.load({
 			const offPending = pendingDeletes.subscribe(() => {
 				reconcileVisibility();
 				reconcileSelection();
+			});
+			smTrash().then((res) => {
+				if (res.ok && Array.isArray(res.items)) pendingDeletes.reconcileWithTrash(res.items.map((item) => item.id).filter((id) => typeof id === "string"));
 			});
 			const offList = ctx.sessions.list.subscribe(() => controller.sync());
 			const sync = () => {

@@ -17,6 +17,7 @@ import { createElement, Component, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Context } from './context-types.ts'
 import { pendingDeletes } from './pendingDeletes.ts'
+import { smTrash } from './bridge.ts'
 import { createDeleteController } from './DeleteButton.tsx'
 import { UndoRail } from './UndoRail.tsx'
 import { ArchiveEntry } from './ArchiveEntry.tsx'
@@ -133,6 +134,22 @@ export function apply(ctx: Context): void {
   const offPending = pendingDeletes.subscribe(() => {
     reconcileVisibility()
     reconcileSelection()
+  })
+
+  // S-10 / SECURITY S5: reconcile the persisted hidden-rows set with the host
+  // recycle bin once at startup. `deletedIds` keeps a confirmed-deleted row
+  // hidden across refreshes, but it must not outlive the host record — if the
+  // session was restored (restore API / outside tool) or its trash entry was
+  // cleared, the row must come back instead of ghosting forever. A failed read
+  // (res.ok false / network) is ignored: never un-hide on uncertainty.
+  void smTrash().then((res) => {
+    if (res.ok && Array.isArray(res.items)) {
+      pendingDeletes.reconcileWithTrash(
+        (res.items as Array<{ id?: unknown }>)
+          .map((item) => item.id)
+          .filter((id): id is string => typeof id === 'string'),
+      )
+    }
   })
 
   // Re-sync injected buttons when the session list or its DOM changes.

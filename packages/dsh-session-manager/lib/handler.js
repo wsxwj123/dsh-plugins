@@ -1,6 +1,6 @@
+import { assertValidId, isInsideOrEqual, isStableSegment, lookupProjectDir, sessionSegment } from "./paths.js";
 import "./trash.js";
 import { t as WORKSPACE_DOMAIN } from "./constants-B5ET8slt.js";
-import { assertValidId, isInsideOrEqual, isStableSegment, lookupProjectDir, sessionSegment } from "./paths.js";
 import path from "node:path";
 import fs from "node:fs";
 //#region src/handler.ts
