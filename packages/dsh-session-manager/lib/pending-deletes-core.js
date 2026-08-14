@@ -86,28 +86,19 @@ function createPendingDeletes(deps) {
 		}, Math.max(0, entry.deadline - now()));
 		timers.set(entry.id, cancel);
 	};
-	/** Fire one entry: move it past its window by invoking the host. A
-	*  `session-running` result may be force-retried once after a user confirm. */
+	/** Fire one entry: move it past its window by invoking the host. A `force`
+	*  captured at request time (the user confirmed a running session) is
+	*  forwarded as `force:true`; otherwise the fire carries no force. */
 	async function fire(id) {
 		if (!map.has(id)) return void 0;
 		const entry = map.get(id);
 		if (entry.state === "failed") return void 0;
 		drop(id);
-		const base = {
+		const outcome = await callFire({
 			id: entry.id,
 			cwd: entry.cwd,
 			title: entry.title
-		};
-		let outcome = await callFire(base);
-		if (!outcome.ok && outcome.code === "session-running" && deps.confirmForceDelete) {
-			let confirmed = false;
-			try {
-				confirmed = await deps.confirmForceDelete(entry.id, entry.title);
-			} catch {
-				confirmed = false;
-			}
-			if (confirmed) outcome = await callFire(base, { force: true });
-		}
+		}, entry.force ? { force: true } : void 0);
 		if (!outcome.ok) {
 			const failed = {
 				id: entry.id,
@@ -151,12 +142,13 @@ function createPendingDeletes(deps) {
 		return fire(id);
 	}
 	return {
-		requestDelete(id, cwd, title) {
+		requestDelete(id, cwd, title, force) {
 			if (map.has(id)) return false;
 			park({
 				id,
 				cwd,
 				title,
+				force: force === true ? true : void 0,
 				deadline: now() + UNDO_WINDOW_MS,
 				state: "pending"
 			});

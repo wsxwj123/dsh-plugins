@@ -27,7 +27,12 @@ export interface SessionSummary {
   cwd: string
   /** A blank (New Session) row has no underlying session file. */
   blank?: boolean
-  /** Whether the session has a live host Session instance. */
+  /**
+   * Whether the host agent for this session is actively running a turn
+   * (`agent.status === 'running'`): true while the AI is replying / running
+   * tools, false once idle. This is NOT "the session is open/loaded" — an
+   * open-but-idle session reports running === false.
+   */
   running?: boolean
   updatedAt?: number
   completed?: boolean

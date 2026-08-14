@@ -48,8 +48,10 @@ async function post(path: string, body: unknown): Promise<SmResult> {
  *   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
  *   an empty string. Pass `undefined`/omit to skip.
  * @param title - display title for the trash record (identify-in-trash only).
- * @param force - force-delete a running/live session (host moves the dir to the
- *   recycle bin). Omitted/false → host still returns `session-running`.
+ * @param force - set true only when the user already confirmed at click time that
+ *   a RUNNING session should be deleted (`byId.running === true`). The host no
+ *   longer uses it to gate deletion (running is a client-side judgment), but it
+ *   is still forwarded for compatibility. Omitted/false → a plain delete.
  */
 export function smDelete(id: string, cwd: string | undefined, title: string, force?: boolean): Promise<SmResult> {
   return post('/delete', { id, ...(cwd !== undefined ? { cwd } : {}), title, ...(force ? { force: true } : {}) })

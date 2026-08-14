@@ -262,7 +262,7 @@ test('failed fire does NOT mark deleted, and the row is re-shown (INTERFACE §1.
   const storage = memoryStorage()
   const { deps, advance } = makeDeps({
     storage,
-    fire: async () => ({ ok: false, code: 'session-running' }),
+    fire: async () => ({ ok: false, code: 'system-error' }),
   })
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
@@ -282,54 +282,53 @@ test('storage seeds DELETED ids at init (persistence across a refresh)', () => {
   assert.strictEqual(pd.get('already-gone'), undefined)
 })
 
-test('force: session-running + confirm(true) retries with force:true and deletes', async () => {
+test('force: requestDelete(..., true) fires with force:true (running confirmed at click time)', async () => {
   const calls = []
   const storage = memoryStorage()
   const { deps, advance } = makeDeps({
     storage,
-    confirmForceDelete: async () => true,
     fire: async (entry, opts) => {
       calls.push(opts)
-      // Without force the host reports running; with force it deletes.
-      return opts?.force ? { ok: true } : { ok: false, code: 'session-running' }
+      return { ok: true }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx-a', 'A', true)
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(calls.length, 1, 'exactly one fire, no retry')
+  assert.deepStrictEqual(calls[0], { force: true }, 'a running-confirmed delete fires with force:true')
+  assert.strictEqual(pd.isDeleted('a'), true)
+})
+
+test('force: requestDelete without force fires with no force (undefined)', async () => {
+  const calls = []
+  const { deps, advance } = makeDeps({
+    fire: async (entry, opts) => {
+      calls.push(opts)
+      return { ok: true }
     },
   })
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
   advance(UNDO_WINDOW_MS)
   await flush()
-  assert.strictEqual(calls.length, 2, 'one normal fire + one force retry')
-  assert.deepStrictEqual(calls[0], undefined, 'first fire has no force')
-  assert.deepStrictEqual(calls[1], { force: true }, 'retry carries force:true')
-  assert.strictEqual(pd.isDeleted('a'), true, 'force-confirmed delete marks the id deleted')
+  assert.strictEqual(calls.length, 1)
+  assert.deepStrictEqual(calls[0], undefined, 'an idle delete fires without force')
 })
 
-test('force: session-running + confirm(false) leaves the entry failed (cancelled)', async () => {
-  let confirmed = 0
+test('force: requestDelete(..., false) also fires with no force (false is not forced)', async () => {
+  const calls = []
   const { deps, advance } = makeDeps({
-    confirmForceDelete: async () => {
-      confirmed++
-      return false
+    fire: async (entry, opts) => {
+      calls.push(opts)
+      return { ok: true }
     },
-    fire: async (entry, opts) => (opts?.force ? { ok: true } : { ok: false, code: 'session-running' }),
   })
   const pd = createPendingDeletes(deps)
-  pd.requestDelete('a', '/ctx-a', 'A')
+  pd.requestDelete('a', '/ctx-a', 'A', false)
   advance(UNDO_WINDOW_MS)
   await flush()
-  assert.strictEqual(confirmed, 1, 'the confirm callback was asked once')
-  assert.strictEqual(pd.get('a')?.state, 'failed', 'user declined force -> entry stays failed (row re-shows)')
-  assert.strictEqual(pd.isDeleted('a'), false)
-})
-
-test('force: session-running WITHOUT a confirm callback degrades like any failure', async () => {
-  // (already covered by the failed-fire test) — asserts the guard path is intact.
-  const { deps, advance } = makeDeps({
-    fire: async () => ({ ok: false, code: 'session-running' }),
-  })
-  const pd = createPendingDeletes(deps)
-  pd.requestDelete('a', '/ctx-a', 'A')
-  advance(UNDO_WINDOW_MS)
-  await flush()
-  assert.strictEqual(pd.get('a')?.state, 'failed')
+  assert.strictEqual(calls.length, 1)
+  assert.deepStrictEqual(calls[0], undefined, 'explicit false is the same as omitted')
 })

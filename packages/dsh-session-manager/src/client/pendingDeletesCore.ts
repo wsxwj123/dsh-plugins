@@ -52,6 +52,13 @@ export interface PendingEntry {
   state: PendingState
   /** Set only for a `failed` entry: the host error code/message. */
   error?: string
+  /**
+   * True when the user confirmed, at CLICK time, that a RUNNING session should
+   * be deleted (`byId.running === true`). Forwarded as `force:true` when the
+   * window fires; the host accepts it as a compatibility no-op. Idle sessions
+   * leave this undefined and fire without force.
+   */
+  force?: boolean
 }
 
 /** Outcome of a fire() call, as returned to the state machine. */
@@ -63,20 +70,14 @@ export interface FireOutcome {
 /** Injectable seams so unit tests run with a fake timer and a stubbed host. */
 export interface PendingDeleteDeps {
   /**
-   * Actually send the delete. `opts.force` forwards to the host so a running
-   * session can be moved to the recycle bin.
+   * Actually send the delete. `opts.force` is `{ force: true }` only when the
+   * user confirmed a running session at click time; the host treats it as a
+   * compatibility no-op. Idle deletes call with no `opts`.
    */
   fire: (
     entry: Pick<PendingEntry, 'id' | 'cwd' | 'title'>,
     opts?: { force?: boolean },
   ) => FireOutcome | Promise<FireOutcome>
-  /**
-   * When a fire returns `session-running`, ask this (shows a browser confirm)
-   * whether to force-delete. Resolve `true` to retry with force:true; `false`
-   * to keep the entry failed (and re-show the session). Optional — without it,
-   * a running-session failure just degrades like any other failure.
-   */
-  confirmForceDelete?: (id: string, title: string) => boolean | Promise<boolean>
   /** Wall-clock source (defaults to Date.now). */
   now?: () => number
   /** Schedule a callback after a delay; returns a cancel function. */
@@ -99,7 +100,7 @@ export interface PendingDeletes {
    * its own undo button. Returns `true` when a new entry is parked, and `false`
    * when the SAME id is already parked (idempotent no-op — no double window).
    */
-  requestDelete(id: string, cwd: string | undefined, title: string): boolean
+  requestDelete(id: string, cwd: string | undefined, title: string, force?: boolean): boolean
   /**
    * Cancel a still-waiting deletion (before its deadline). Only pending
    * entries are undoable; a fired/failing/dead entry returns false.
@@ -186,8 +187,9 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     timers.set(entry.id, cancel)
   }
 
-  /** Fire one entry: move it past its window by invoking the host. A
-   *  `session-running` result may be force-retried once after a user confirm. */
+  /** Fire one entry: move it past its window by invoking the host. A `force`
+   *  captured at request time (the user confirmed a running session) is
+   *  forwarded as `force:true`; otherwise the fire carries no force. */
   async function fire(id: string): Promise<FireOutcome | undefined> {
     // Idempotency + undo race guard: only a currently-parked entry fires.
     if (!map.has(id)) return undefined
@@ -198,24 +200,15 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     drop(id)
     const base = { id: entry.id, cwd: entry.cwd, title: entry.title }
 
-    let outcome = await callFire(base)
-    // Running-session conflict: ask the user to force-delete (the host keeps
-    // returning session-running until force:true). Confirm → one force retry;
-    // cancel → leave it a failure (row re-shows).
-    if (!outcome.ok && outcome.code === 'session-running' && deps.confirmForceDelete) {
-      let confirmed = false
-      try {
-        confirmed = await deps.confirmForceDelete(entry.id, entry.title)
-      } catch {
-        confirmed = false
-      }
-      if (confirmed) outcome = await callFire(base, { force: true })
-    }
+    // The running-session decision (confirm) happened at CLICK time, not here:
+    // entry.force carries the user's earlier choice. The host no longer returns
+    // session-running, so there is nothing to force-retry at fire time.
+    const outcome = await callFire(base, entry.force ? { force: true } : undefined)
 
     if (!outcome.ok) {
-      // Real/failed delete (system-error, session-running-without-force-granted,
-      // http-error): keep the entry visible as a failure so the UI can re-show
-      // the session and surface the reason. Auto-clear after a retain window.
+      // Real/failed delete (system-error, http-error, …): keep the entry visible
+      // as a failure so the UI can re-show the session and surface the reason.
+      // Auto-clear after a retain window.
       const failed: PendingEntry = {
         id: entry.id,
         cwd: entry.cwd,
@@ -262,10 +255,10 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
   }
 
   return {
-    requestDelete(id, cwd, title) {
+    requestDelete(id, cwd, title, force) {
       // Same id already parked -> reject (idempotent no-op; multi-entry, P9).
       if (map.has(id)) return false
-      park({ id, cwd, title, deadline: now() + UNDO_WINDOW_MS, state: 'pending' })
+      park({ id, cwd, title, force: force === true ? true : undefined, deadline: now() + UNDO_WINDOW_MS, state: 'pending' })
       notify()
       return true
     },

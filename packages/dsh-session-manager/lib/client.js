@@ -40,8 +40,10 @@ window.__ModuleLoader__.load({
 		*   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
 		*   an empty string. Pass `undefined`/omit to skip.
 		* @param title - display title for the trash record (identify-in-trash only).
-		* @param force - force-delete a running/live session (host moves the dir to the
-		*   recycle bin). Omitted/false → host still returns `session-running`.
+		* @param force - set true only when the user already confirmed at click time that
+		*   a RUNNING session should be deleted (`byId.running === true`). The host no
+		*   longer uses it to gate deletion (running is a client-side judgment), but it
+		*   is still forwarded for compatibility. Omitted/false → a plain delete.
 		*/
 		function smDelete(id, cwd, title, force) {
 			return post("/delete", {
@@ -155,28 +157,19 @@ window.__ModuleLoader__.load({
 				}, Math.max(0, entry.deadline - now()));
 				timers.set(entry.id, cancel);
 			};
-			/** Fire one entry: move it past its window by invoking the host. A
-			*  `session-running` result may be force-retried once after a user confirm. */
+			/** Fire one entry: move it past its window by invoking the host. A `force`
+			*  captured at request time (the user confirmed a running session) is
+			*  forwarded as `force:true`; otherwise the fire carries no force. */
 			async function fire(id) {
 				if (!map.has(id)) return void 0;
 				const entry = map.get(id);
 				if (entry.state === "failed") return void 0;
 				drop(id);
-				const base = {
+				const outcome = await callFire({
 					id: entry.id,
 					cwd: entry.cwd,
 					title: entry.title
-				};
-				let outcome = await callFire(base);
-				if (!outcome.ok && outcome.code === "session-running" && deps.confirmForceDelete) {
-					let confirmed = false;
-					try {
-						confirmed = await deps.confirmForceDelete(entry.id, entry.title);
-					} catch {
-						confirmed = false;
-					}
-					if (confirmed) outcome = await callFire(base, { force: true });
-				}
+				}, entry.force ? { force: true } : void 0);
 				if (!outcome.ok) {
 					const failed = {
 						id: entry.id,
@@ -220,12 +213,13 @@ window.__ModuleLoader__.load({
 				return fire(id);
 			}
 			return {
-				requestDelete(id, cwd, title) {
+				requestDelete(id, cwd, title, force) {
 					if (map.has(id)) return false;
 					park({
 						id,
 						cwd,
 						title,
+						force: force === true ? true : void 0,
 						deadline: now() + UNDO_WINDOW_MS,
 						state: "pending"
 					});
@@ -274,7 +268,6 @@ window.__ModuleLoader__.load({
 		*/
 		const pendingDeletes = createPendingDeletes({
 			fire: (entry, opts) => smDelete(entry.id, entry.cwd, entry.title, opts?.force),
-			confirmForceDelete: (id, title) => window.confirm(`「${title}」该会话当前正在使用中，强制删除？（文件将移入回收站，可恢复）`),
 			onChange: () => {},
 			storage: {
 				load: () => {
@@ -348,33 +341,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"dismiss": "FPsCja_dismiss",
-			"undo": "FPsCja_undo",
-			"label": "FPsCja_label",
-			"row": "FPsCja_row",
-			"trashBar": "FPsCja_trashBar",
-			"trashButton": "FPsCja_trashButton",
-			"item": "FPsCja_item",
-			"trashCount": "FPsCja_trashCount",
-			"entryButton": "FPsCja_entryButton",
-			"divider": "FPsCja_divider",
-			"backdrop": "FPsCja_backdrop",
-			"rail": "FPsCja_rail",
-			"add": "FPsCja_add",
-			"close": "FPsCja_close",
-			"countdown": "FPsCja_countdown",
-			"head": "FPsCja_head",
-			"deleteBtn": "FPsCja_deleteBtn",
 			"rowTitle": "FPsCja_rowTitle",
-			"danger": "FPsCja_danger",
-			"action": "FPsCja_action",
 			"empty": "FPsCja_empty",
-			"list": "FPsCja_list",
 			"rail-in": "FPsCja_rail-in",
+			"item": "FPsCja_item",
+			"entryButton": "FPsCja_entryButton",
+			"label": "FPsCja_label",
+			"close": "FPsCja_close",
+			"danger": "FPsCja_danger",
+			"backdrop": "FPsCja_backdrop",
+			"trashBar": "FPsCja_trashBar",
+			"undo": "FPsCja_undo",
+			"head": "FPsCja_head",
+			"divider": "FPsCja_divider",
+			"countdown": "FPsCja_countdown",
+			"rail": "FPsCja_rail",
+			"errorBanner": "FPsCja_errorBanner",
+			"deleteBtn": "FPsCja_deleteBtn",
 			"title": "FPsCja_title",
 			"failed": "FPsCja_failed",
-			"errorBanner": "FPsCja_errorBanner",
-			"overlay": "FPsCja_overlay"
+			"overlay": "FPsCja_overlay",
+			"list": "FPsCja_list",
+			"dismiss": "FPsCja_dismiss",
+			"row": "FPsCja_row",
+			"action": "FPsCja_action",
+			"trashCount": "FPsCja_trashCount",
+			"add": "FPsCja_add",
+			"trashButton": "FPsCja_trashButton"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -433,7 +426,7 @@ window.__ModuleLoader__.load({
 				btn.type = "button";
 				btn.dataset.dshSmDelete = "true";
 				btn.className = rail_module_css_default.deleteBtn;
-				btn.title = action.running ? "删除会话（当前正在使用中，将提示强制删除）" : "删除会话";
+				btn.title = action.running ? "删除会话（会话正在运行任务，将提示确认）" : "删除会话";
 				btn.setAttribute("aria-label", `删除会话 ${action.title}`);
 				btn.innerHTML = TRASH_SVG;
 				btn.style.display = "none";
@@ -781,8 +774,13 @@ window.__ModuleLoader__.load({
 				wide: props.wide
 			}));
 			const controller = createDeleteController(() => ctx, (action, row) => {
-				const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title);
-				console.debug("[dsh-session-manager] delete click -> requestDelete=", parked, "id=", action.id, "cwd=", action.cwd);
+				let force;
+				if (action.running === true) {
+					if (!window.confirm(`「${action.title}」会话正在运行任务，确认删除？（文件将移入回收站）`)) return;
+					force = true;
+				}
+				const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title, force);
+				console.debug("[dsh-session-manager] delete click -> requestDelete=", parked, "id=", action.id, "cwd=", action.cwd, "running=", action.running, "force=", force);
 			});
 			/** Hide/restore rows whose ids are parked vs active in the park table.
 			*  `rowById` is maintained by the injection controller (each injected button

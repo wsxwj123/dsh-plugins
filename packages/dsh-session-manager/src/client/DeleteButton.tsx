@@ -116,7 +116,7 @@ export function createDeleteController(
     btn.type = 'button'
     btn.dataset.dshSmDelete = 'true'
     btn.className = css.deleteBtn
-    btn.title = action.running ? '删除会话（当前正在使用中，将提示强制删除）' : '删除会话'
+    btn.title = action.running ? '删除会话（会话正在运行任务，将提示确认）' : '删除会话'
     btn.setAttribute('aria-label', `删除会话 ${action.title}`)
     // Static, trusted SVG (no user input) — do not concatenate anything here.
     btn.innerHTML = TRASH_SVG
@@ -127,9 +127,9 @@ export function createDeleteController(
       e.preventDefault()
       e.stopPropagation()
       // Re-resolve against the LIVE byId so a rename between injection and
-      // click yields current metadata. RUNNING sessions are NOT hard-blocked
-      // here: the delete is parked and, at fire, the host returns session-running
-      // which the state machine confirms then force-retries (unified UX).
+      // click yields current metadata. The `running` flag travels with the
+      // action; the caller (index.tsx) decides whether to confirm-then-force
+      // (running) or delete plainly (idle).
       const fresh = resolveRowSession(row, getContext().sessions.list.getSnapshot().byId) ?? action
       onDelete({ ...fresh, cwd: fresh.cwd }, row)
     })

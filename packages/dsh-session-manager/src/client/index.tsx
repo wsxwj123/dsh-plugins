@@ -82,11 +82,22 @@ export function apply(ctx: Context): void {
   const controller = createDeleteController(
     () => ctx,
     (action, row) => {
+      // Running judgment = the REAL request state (`byId.running`), not the live
+      // store: `running === true` means the agent is mid-turn (replying / running
+      // tools). An open-but-idle session reports running === false and deletes
+      // with a plain 5s undo (no force, no confirm). A genuinely running session
+      // is confirmed up-front, then parked with force so the fire carries it.
+      let force: boolean | undefined
+      if (action.running === true) {
+        const ok = window.confirm(`「${action.title}」会话正在运行任务，确认删除？（文件将移入回收站）`)
+        if (!ok) return // cancelled → do not park, do not hide the row
+        force = true
+      }
       // Park the deferred deletion; the pendingDeletes subscription below hides
       // the row and handles the countdown/undo. Multi-entry is allowed (P9); a
       // false return only means this identical id already has a window.
-      const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title)
-      console.debug('[dsh-session-manager] delete click -> requestDelete=', parked, 'id=', action.id, 'cwd=', action.cwd)
+      const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title, force)
+      console.debug('[dsh-session-manager] delete click -> requestDelete=', parked, 'id=', action.id, 'cwd=', action.cwd, 'running=', action.running, 'force=', force)
     },
   )
 
