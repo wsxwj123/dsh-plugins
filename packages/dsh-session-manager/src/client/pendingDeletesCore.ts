@@ -114,6 +114,9 @@ export interface PendingDeletes {
    * Park a deletion. Multi-entry allowed (P9): each id rides its own window and
    * its own undo button. Returns `true` when a new entry is parked, and `false`
    * when the SAME id is already parked (idempotent no-op — no double window).
+   * Exception (S-9): a `failed` entry — the row is already back on screen — is
+   * replaced by a fresh window, so re-clicking delete after a failure RETRIES
+   * instead of being silently rejected.
    */
   requestDelete(id: string, cwd: string | undefined, title: string, force?: boolean): boolean
   /**
@@ -326,8 +329,16 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
 
   return {
     requestDelete(id, cwd, title, force) {
-      // Same id already parked -> reject (idempotent no-op; multi-entry, P9).
-      if (map.has(id)) return false
+      // S-9: a `failed` entry is transient (auto-clears after FAILED_RETAIN_MS)
+      // and its row is already back on screen — clicking delete again is a
+      // RETRY, not a double window. Drop the stale failed entry (cancelling its
+      // auto-clear timer) and park a fresh window. `pending` still rejects (a
+      // live window must not double-fire) and `cleanup` still rejects (the file
+      // is already moved; the row stays hidden and the entry resolves only
+      // through retry()).
+      const existing = map.get(id)
+      if (existing !== undefined && existing.state !== 'failed') return false
+      if (existing !== undefined) drop(id)
       park({ id, cwd, title, force: force === true ? true : undefined, deadline: now() + UNDO_WINDOW_MS, state: 'pending' })
       notify()
       return true

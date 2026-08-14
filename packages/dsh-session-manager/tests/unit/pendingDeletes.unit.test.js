@@ -484,3 +484,81 @@ test('I-3c: retry on a non-cleanup entry is a safe no-op', async () => {
   assert.strictEqual(await pd.retry('a'), undefined, 'a pending entry is not retryable')
   assert.strictEqual(await pd.retry('never-parked'), undefined)
 })
+
+// ---- S-9: a failed entry can be re-deleted (retry); pending/cleanup reject ----
+
+test('S-9: requestDelete re-parks on top of a FAILED entry (retry allowed)', async () => {
+  let call = 0
+  const storage = memoryStorage()
+  const { deps, advance } = makeDeps({
+    storage,
+    fire: async () => {
+      call += 1
+      return call === 1 ? { ok: false, code: 'system-error' } : { ok: true }
+    },
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'failed', 'precondition: the first delete failed')
+  // Re-delete while failed: accepted as a FRESH window (the row is visible).
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), true, 're-click after a failure must not be silently rejected')
+  const e = pd.get('a')
+  assert.strictEqual(e?.state, 'pending', 're-parked as a fresh pending window')
+  assert.strictEqual(e?.deadline - deps.now(), UNDO_WINDOW_MS, 'the retry gets a fresh undo window')
+  assert.strictEqual(pd.isDeleted('a'), false, 'nothing was moved by the failed fire')
+  // The fresh window fires normally at its own deadline and succeeds.
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(call, 2, 'the retry fires the host again')
+  assert.strictEqual(pd.get('a'), undefined, 'the retried window completes and clears')
+  assert.strictEqual(pd.isDeleted('a'), true, 'the retry actually deleted the session')
+})
+
+test('S-9: re-park cancels the stale failed auto-clear timer (no leak)', async () => {
+  let cancels = 0
+  const { now, schedule, advance } = makeClockAndScheduler()
+  const deps = {
+    now,
+    schedule: (cb, delay) => {
+      const cancel = schedule(cb, delay)
+      return () => {
+        cancels += 1
+        cancel()
+      }
+    },
+    fire: async () => ({ ok: false, code: 'system-error' }),
+  }
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'failed')
+  const before = cancels
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), true)
+  // The old failed entry's auto-clear timer must be cancelled by the re-park.
+  assert.strictEqual(cancels, before + 1, 're-park must cancel the stale failed auto-clear timer')
+})
+
+test('S-9: a live PENDING entry still rejects a same-id re-delete (no double window)', () => {
+  const { deps } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), true)
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), false, 'pending keeps the idempotent no-op')
+  assert.strictEqual(pd.snapshot().length, 1)
+})
+
+test('S-9: a CLEANUP entry still rejects a re-delete (file already moved; retry() is the path)', async () => {
+  const { deps, advance } = makeDeps({
+    fire: async () => ({ ok: false, code: 'system-error', moved: true }),
+  })
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  advance(UNDO_WINDOW_MS)
+  await flush()
+  assert.strictEqual(pd.get('a')?.state, 'cleanup')
+  assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), false, 'cleanup is not re-parkable')
+  assert.strictEqual(pd.get('a')?.state, 'cleanup', 'the cleanup entry survives the rejected re-delete')
+  assert.strictEqual(pd.isDeleted('a'), true, 'the row stays hidden (file is in the recycle bin)')
+})

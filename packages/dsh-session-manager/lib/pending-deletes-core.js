@@ -190,7 +190,9 @@ function createPendingDeletes(deps) {
 	}
 	return {
 		requestDelete(id, cwd, title, force) {
-			if (map.has(id)) return false;
+			const existing = map.get(id);
+			if (existing !== void 0 && existing.state !== "failed") return false;
+			if (existing !== void 0) drop(id);
 			park({
 				id,
 				cwd,
