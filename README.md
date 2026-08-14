@@ -9,6 +9,24 @@
 | [`dsh-theme-gallery`](packages/theme-gallery) | 提供 15 个精选主题家族，跟随 DSH 原生“浅色 / 深色 / 跟随系统”外观设置。 |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
 
+## 界面预览
+
+### 主题画廊
+
+浅色示例：
+
+![主题画廊浅色示例](assets/screenshots/theme-gallery-blush-light.png)
+
+深色示例：
+
+![主题画廊深色示例](assets/screenshots/theme-gallery-blush-dark.png)
+
+### 对话回合刻度
+
+悬停时会显示对应回合摘要，点击刻度可跳转：
+
+![对话回合刻度示例](assets/screenshots/turn-scrubber.png)
+
 ## 仓库结构
 
 ```text
@@ -33,7 +51,7 @@ packages/
 先克隆仓库：
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/wsxwj123/dsh-plugins
 cd dsh-plugins
 ```
 
@@ -54,6 +72,22 @@ dsh plugin --profile web add "link:$PWD/packages/turn-scrubber"
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
 
 > 安装后请检查 `~/.dsh/profiles/web/node_modules/@deepseek-ai` 是否被创建成真实目录。若是，应按 DSH 本机规则处理，避免 Cordis / Tool Symbol 分裂。相关背景见 [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783)。
+
+## 提交到 DSH Plugins 目录
+
+[dshplugins.com](https://dshplugins.com/) 是独立的社区插件目录，不是 DeepSeek 官方站点。它的收录规则是：
+
+1. 仓库必须是公开 GitHub 仓库；
+2. 提交后进入人工审核队列；
+3. 审核者会检查名称、摘要、安装类型、目标 profile、README 和安装命令；
+4. 通过后才公开显示；
+5. 收录不等于安全背书，用户仍应阅读源码后安装。
+
+本仓库目前适合按“Local checkout”类型提交，目标 profile 为 `web`。提交入口是：
+
+[Submit to DSH Plugins](https://dshplugins.com/submit)
+
+提交页面要求登录。先使用仓库根 URL 做 repository inspect，再选择安装类型并填写简短摘要。建议分别提交两个插件时，使用各自独立 README 的安装路径说明，避免用户把整个 monorepo 误当成单个插件。
 
 ## 本地构建
 

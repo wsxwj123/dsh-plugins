@@ -2,6 +2,12 @@
 
 A fast, curated Client Cordis theme gallery for the DeepSeek Harness Web GUI.
 
+## Preview
+
+![Theme gallery light preview](../../assets/screenshots/theme-gallery-blush-light.png)
+
+![Theme gallery dark preview](../../assets/screenshots/theme-gallery-blush-dark.png)
+
 ## Themes
 
 The public package contains 15 original, source-neutral theme families. Every family includes a complete light and dark palette:
