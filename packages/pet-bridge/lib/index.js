@@ -19,15 +19,25 @@ const { push } = require('./bubble')
 
 function apply(ctx, config) {
   const cfg = normalizeConfig(config)
-  const logger = (ctx && ctx.logger) || (ctx && ctx.base && ctx.base.logger) || null
+  // cordis 的 ctx.logger 是「可调用服务」，.debug 依赖 fiber 上下文（this 绑定）。
+  // 不能把 ctx.logger 存成局部变量跨事件回调使用（会丢 this 抛 this is not a function）；
+  // 这里每次调用都现取 ctx.logger，保持绑定，并把任何异常吞掉（日志丢失不影响主流程）。
+  const debug = (...args) => {
+    try {
+      const lg = ctx && ctx.logger
+      if (lg && typeof lg.debug === 'function') return lg.debug(...args)
+    } catch (_) {
+      /* 静默降级 */
+    }
+  }
   const activeCollector = { current: null }
 
   const send = (kind, toolName, toolInput) => {
     if (cfg.enabled === false) return // enabled=false：零推送
-    push(cfg.port, kind, toolName, toolInput, logger)
+    push(cfg.port, kind, toolName, toolInput, debug)
   }
 
-  const collector = createCollector(cfg, send, logger)
+  const collector = createCollector(cfg, send, debug)
   activeCollector.current = collector
 
   const onCreated = (payload) => {

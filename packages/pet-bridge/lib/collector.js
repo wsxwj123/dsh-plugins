@@ -15,9 +15,9 @@ const { createWatcher } = require('./agentWatcher')
 /**
  * @param {object} cfg      归一化配置 { port, pollInterval, enabled }
  * @param {(kind:string, toolName?:string, toolInput?:object|null)=>void} send  单条推送出口
- * @param {{debug?:Function}} [logger]
+ * @param {(...args:any[])=>void} [debug]  日志函数（现取的 ctx.logger 绑定）
  */
-function createCollector(cfg, send, logger) {
+function createCollector(cfg, send, debug) {
   const watchers = new Map() // agent -> watcher 句柄
 
   return {
@@ -28,7 +28,7 @@ function createCollector(cfg, send, logger) {
         agent,
         cfg,
         (kind, toolName, toolInput) => send(kind, toolName, toolInput),
-        logger,
+        debug,
       )
       watchers.set(agent, w)
     },

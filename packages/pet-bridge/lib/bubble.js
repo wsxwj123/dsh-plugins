@@ -30,13 +30,12 @@ function buildPayload(kind, toolName, toolInput) {
  * @param {string} kind
  * @param {string|null|undefined} toolName   原始工具名（仅 pre 场景有值，其余 null）
  * @param {object|null|undefined} toolInput  精简摘要对象（仅 pre 场景，其余 null）
- * @param {{debug?: Function}} logger 默认静默；传入则降级时打 debug
+ * @param {(...args: any[]) => void} [debug] 日志函数（调用方现取 ctx.logger 绑定后传入；
+ *   不传或抛错都静默降级——推送通道绝不影响主流程）
  * @returns {void} 立即返回，不 await 结果
  */
-function push(port, kind, toolName, toolInput, logger) {
-  // cordis 的 ctx.logger 是可调用服务且依赖 fiber 上下文，存下来跨事件调用会丢 this。
-  // 这里仅在存在可调用的 debug 时调用，并把任何异常吞掉（推送通道绝不影响主流程）。
-  const debug = (...args) => { try { if (logger && typeof logger.debug === 'function') return logger.debug(...args) } catch (_) { /* 静默降级 */ } }
+function push(port, kind, toolName, toolInput, debug) {
+  const safeDebug = (...args) => { try { if (typeof debug === 'function') return debug(...args) } catch (_) { /* 静默降级 */ } }
   const url = `http://127.0.0.1:${port}/bubble`
   const payload = JSON.stringify(buildPayload(kind, toolName, toolInput))
 
@@ -51,7 +50,7 @@ function push(port, kind, toolName, toolInput, logger) {
       (res) => {
         // 非 2xx：静默降级（debug 日志，不重试）
         if (!(res.statusCode >= 200 && res.statusCode < 300)) {
-          debug(`dsh-pet-bridge: POST /bubble ${kind} -> non-2xx ${res.statusCode}`)
+          safeDebug(`dsh-pet-bridge: POST /bubble ${kind} -> non-2xx ${res.statusCode}`)
         }
         // fire-and-forget：收到响应立即销毁连接，避免 socket 堆积
         res.destroy()
@@ -59,13 +58,13 @@ function push(port, kind, toolName, toolInput, logger) {
     )
     req.on('error', (err) => {
       // 网络错误 / ECONNREFUSED：静默降级，不重试、不抛出
-      debug(`dsh-pet-bridge: POST /bubble ${kind} failed: ${err.code || err.message}`)
+      safeDebug(`dsh-pet-bridge: POST /bubble ${kind} failed: ${err.code || err.message}`)
     })
     req.write(payload)
     req.end()
   } catch (err) {
     // 同步异常（如非法 URL）不会由 req 触发，绝不外抛到 apply 之外
-    debug(`dsh-pet-bridge: POST /bubble ${kind} threw: ${err.message}`)
+    safeDebug(`dsh-pet-bridge: POST /bubble ${kind} threw: ${err.message}`)
   }
 }
 

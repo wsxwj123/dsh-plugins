@@ -27,12 +27,12 @@ const { summarizeToolInput } = require('./toolLabels')
  * @param {object} agent            agent 实例（agent.session.events 只读）
  * @param {{port:number, pollInterval:number, enabled:boolean}} cfg
  * @param {(kind:string, toolName?:string, toolInput?:object|null)=>void} emit  一次推送的出口
- * @param {{debug?:Function}} logger
+ * @param {(...args:any[])=>void} [debug]  日志函数（现取的 ctx.logger 绑定；内部再包一层安全降级）
  * @returns {{ dispose:Function, finalStop:Function }} dispose 停轮询；finalStop 在 agent/disposed 时补发 stop 并彻底停用
  */
-function createWatcher(agent, cfg, emit, logger) {
+function createWatcher(agent, cfg, emit, debug) {
   // 同 bubble.js：logger 是依赖 fiber 上下文的可调用服务，调用包 try 防 this 绑定丢失
-  const debug = (...args) => { try { if (logger && typeof logger.debug === 'function') return logger.debug(...args) } catch (_) { /* 静默 */ } }
+  const safeDebug = (...args) => { try { if (typeof debug === 'function') return debug(...args) } catch (_) { /* 静默 */ } }
   let position = 0 // 位置游标：下一个待处理事件的数组下标
   let dead = false
   let interval = null
@@ -80,7 +80,7 @@ function createWatcher(agent, cfg, emit, logger) {
       // 长驻 timer 不 hold 进程；卸载/销毁时显式 clearInterval
       if (interval && typeof interval.unref === 'function') interval.unref()
     } catch (err) {
-      debug(`dsh-pet-bridge: setInterval failed ${err.message}`)
+      safeDebug(`dsh-pet-bridge: setInterval failed ${err.message}`)
     }
   }
 
