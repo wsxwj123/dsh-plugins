@@ -91,3 +91,66 @@ test('records() ignores non-json / corrupt metadata', () => {
   assert.deepStrictEqual(store.records(), [])
   fs.rmSync(base, { recursive: true, force: true })
 })
+
+test('moveToTrash: rename failure rolls the record back — no orphan, no dangling record', () => {
+  // I-2: the record is the commit point. If the rename fails after the record
+  // write, the record must be rolled back so system-error still means "host
+  // changed nothing" — never a moved-but-unrecorded orphan.
+  const base = tmpdir()
+  const src = path.join(base, 'src')
+  const session = makeSession(src, 's1')
+  const store = new TrashStore(path.join(base, 'trash'))
+  // Occupy the trash destination with a non-empty dir so renameSync fails
+  // (ENOTEMPTY — rename never overwrites a non-empty target).
+  const occupied = path.join(store.root, 's1')
+  fs.mkdirSync(path.join(occupied, 'blk'), { recursive: true })
+  fs.writeFileSync(path.join(occupied, 'blk', 'x'), '1')
+  assert.throws(() => store.moveToTrash(session, { id: 's1', originalDir: session, title: 'T', projectKey: 'src' }))
+  assert.strictEqual(store.hasRecord('s1'), false, 'record rolled back')
+  assert.ok(fs.existsSync(path.join(session, SESSION_MARKER)), 'source dir untouched')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('moveToTrash: record-first ordering — crash window (record without move) is self-healing', () => {
+  // I-2: a crash between the record write and the rename leaves a record whose
+  // dir is still in place. That state must be self-healing: a re-delete
+  // overwrites the record and completes the move; a restore refuses with
+  // restore-target-exists (dir occupied) rather than clobbering.
+  const base = tmpdir()
+  const src = path.join(base, 'src')
+  const session = makeSession(src, 's1')
+  const store = new TrashStore(path.join(base, 'trash'))
+  // Simulate the crash window: record written, rename never happened.
+  store.writeRecord({ id: 's1', originalDir: session, title: 'OLD', projectKey: 'src', deletedAt: 111 })
+  assert.ok(store.hasRecord('s1'))
+  assert.ok(fs.existsSync(session), 'dir still in place during the window')
+  // Re-delete overwrites the stale record and completes the move.
+  store.moveToTrash(session, { id: 's1', originalDir: session, title: 'NEW', projectKey: 'src' })
+  assert.ok(store.hasItem('s1'), 'item moved')
+  assert.strictEqual(fs.existsSync(session), false)
+  const rec = store.readRecord('s1')
+  assert.strictEqual(rec.title, 'NEW', 'stale record overwritten (self-healed)')
+  assert.ok(rec.deletedAt > 111, 'fresh timestamp')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('restoreItem: record-removal failure degrades — restore still succeeds, no throw', () => {
+  // I-2: the restore rename is the committed truth; a failure to remove the
+  // record afterwards must not surface as a system-error on a successful
+  // restore (and must not orphan anything — the item is safely back).
+  const base = tmpdir()
+  const src = path.join(base, 'src')
+  const session = makeSession(src, 's1')
+  const store = new TrashStore(path.join(base, 'trash'))
+  store.moveToTrash(session, { id: 's1', originalDir: session, title: null, projectKey: 'src' })
+  const rec = store.readRecord('s1') // capture BEFORE breaking the record path
+  // Make deleteRecord fail: replace the record file with a non-empty directory
+  // (rmSync without recursive refuses directories).
+  const recPath = store.recordPath('s1')
+  fs.rmSync(recPath, { force: true })
+  fs.mkdirSync(path.join(recPath, 'blk'), { recursive: true })
+  fs.writeFileSync(path.join(recPath, 'blk', 'x'), '1')
+  assert.doesNotThrow(() => store.restoreItem(rec))
+  assert.ok(fs.existsSync(path.join(session, SESSION_MARKER)), 'item restored despite record-cleanup failure')
+  fs.rmSync(base, { recursive: true, force: true })
+})

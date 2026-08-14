@@ -81,15 +81,32 @@ var TrashStore = class {
 	* Move a whole session directory into the trash and write its durable
 	* record. Throws on IO failure (caller maps to system-error); on success the
 	* idempotent truth "the directory is no longer at originalDir" is real.
+	*
+	* Ordering (I-2): the durable record is written FIRST and is the commit
+	* point; the rename comes second. A rename failure rolls the record back, so
+	* system-error keeps its contract meaning "host changed no committed
+	* persistent state". (The old rename-then-record order could leave a MOVED
+	* directory with NO record: invisible in /sm/trash, unreachable by restore,
+	* and permanently deleted by emptyTrash — an unrecoverable orphan.) The crash
+	* window between record write and rename is self-healing: a re-delete
+	* overwrites the record, and a restore refuses with restore-target-exists
+	* because the dir is still at its original location.
 	*/
 	moveToTrash(fromDir, rec) {
 		const dest = this.itemPath(rec.id);
 		fs.mkdirSync(path.dirname(dest), { recursive: true });
-		fs.renameSync(fromDir, dest);
 		this.writeRecord({
 			...rec,
 			deletedAt: Date.now()
 		});
+		try {
+			fs.renameSync(fromDir, dest);
+		} catch (err) {
+			try {
+				this.deleteRecord(rec.id);
+			} catch {}
+			throw err;
+		}
 	}
 	/**
 	* Item directory exists under the trash root.
@@ -108,12 +125,20 @@ var TrashStore = class {
 	* has already decided (order matters, INTERFACE §3.2) whether the record
 	* exists, whether the original dir is free, and that the item dir exists.
 	* This just performs the move and clears the record.
+	*
+	* Record cleanup is best-effort AFTER the restore rename (I-2): the restore
+	* itself is the committed truth, so a record-removal failure must not turn a
+	* successful restore into a contract-violating system-error ("host changed no
+	* persistent state" — the dir already moved back). A leftover record is
+	* harmless and self-healing: emptyTrash purges records whose item dir is gone.
 	*/
 	restoreItem(rec) {
 		const from = this.itemPath(rec.id);
 		fs.mkdirSync(path.dirname(rec.originalDir), { recursive: true });
 		fs.renameSync(from, rec.originalDir);
-		this.deleteRecord(rec.id);
+		try {
+			this.deleteRecord(rec.id);
+		} catch {}
 	}
 	/**
 	* Empty every real trash item (skips the metadata dir), removing records
