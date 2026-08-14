@@ -65,11 +65,13 @@ Body: { kind, agent_source, tool_name, tool_input, caller_pid }
 | `tool/call` | `pre` | `"dsh"` | `toolLabels(ev.data.name)` | `null` |
 | `tool/result` | `post` | `"dsh"` | `null` | `null` |
 | `turn/end` | `stop` | `"dsh"` | `null` | `null` |
+| `agent/disposed`（进程退出兜底） | `stop` | `"dsh"` | `null` | `null` |
 | `assistant/message` | 不推送 | — | — | — |
 
 **规则说明**
 - `tool_name`：永远是 `toolLabels(ev.data.name)` 的**中文文案**，且**恒为字符串**（映射兜底「执行中」，见 §2.3）。
 - `tool_input`：**恒为 `null`（所有事件）**——气泡只需要工具名文案，任何参数（命令全文/路径/密钥）一概不上外发路径，不外发即无泄漏面。
+- **进程退出兜底（`agent/disposed`）**：agent 销毁（含 headless 一次性场景进程退出前）时，插件必须监听 `agent/disposed`（payload `{agent}`，与 `agent/created` 同源），对销毁的 agent **补发一条 `kind:"stop"`**（与 `turn/end` 的 stop **相同 payload**），并清理该 agent 的轮询 timer 与 seq 游标。目的：轮询可能来不及捕获最后一个 `turn/end` 就随进程退出，漏发 stop 会让 pet 气泡残留；`agent/disposed` 兜底保证销毁前至少补发一次 stop。
 - 未列事件（如 `assistant/message`）**不产生任何推送**。
 - 敏感隔离：只发工具**名**映射文案；`tool_input` 恒 `null`，不发送任何参数、凭据/密钥/文件内容/settings.yaml 数据。
 

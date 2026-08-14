@@ -63,3 +63,52 @@ test('多次 apply + 卸载不泄漏：各自推送独立、卸载后全停', as
   await new Promise((r) => setTimeout(r, 200))
   assert.strictEqual(fake.requests.length, 3, '全部卸载后不得再推')
 })
+
+test('agent/disposed（created 后无任何 turn 事件）：补发一条 kind=stop，payload 与 turn/end→stop 完全一致', async () => {
+  const fake = await startFakePet()
+  const ctx = makeCtx()
+  const { agent } = makeAgent() // 不推任何事件，直接销毁
+  const dispose = plugin.apply(ctx, { port: fake.port, pollInterval: 5 })
+  ctx._emitAgentCreated(agent)
+  try {
+    // created 后立刻 disposed，不带任何 turn 事件
+    ctx._emit('agent/disposed', { agent })
+    await serverReceived(fake, 1)
+
+    const b = fake.requests[0].body
+    assert.strictEqual(b.kind, 'stop')
+    // 与 turn/end→stop 相同的 payload（§2.2 映射表）
+    assert.deepStrictEqual(b, {
+      kind: 'stop',
+      agent_source: 'dsh',
+      tool_name: null,
+      tool_input: null,
+      caller_pid: process.pid,
+    })
+  } finally {
+    dispose()
+    await fake.stop()
+  }
+})
+
+test('agent/disposed 后：该 agent 不再产生任何推送、轮询资源已清理', async () => {
+  const fake = await startFakePet()
+  const ctx = makeCtx()
+  const h = makeAgent()
+  const dispose = plugin.apply(ctx, { port: fake.port, pollInterval: 5 })
+  ctx._emitAgentCreated(h.agent)
+  try {
+    // 销毁时补发一条 stop
+    ctx._emit('agent/disposed', { agent: h.agent })
+    await serverReceived(fake, 1)
+    const first = fake.requests.length
+
+    // 销毁后同一 agent 再来事件，不得再推（轮询已解绑）
+    h.push(toolCall(2, 'bash_after_dispose', '{}'))
+    await new Promise((r) => setTimeout(r, 250)) // 多次轮询窗口
+    assert.strictEqual(fake.requests.length, first, '销毁后该 agent 不得再推送任何事件')
+  } finally {
+    dispose()
+    await fake.stop()
+  }
+})

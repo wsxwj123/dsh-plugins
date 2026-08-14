@@ -69,9 +69,10 @@ assistant/message             增量(seq 游标, 250ms)               气泡显�
 |---|---|
 | pet 未运行 / 7779 无监听 | `http.request` error（ECONNREFUSED）→ 只记一次 debug 日志，不重试，不抛异常，不影响事件处理 |
 | 推送失败（网络 / 非 2xx） | 同样静默降级；配置 `logger`（默认 dsh logger），按 debug 级别打 |
-| 工具参数含敏感内容 | 见 §0 敏感面；只发工具**名**，参数截断 200 字符，仅本地回环 |
+| 工具参数含敏感内容 | 见 §4.1 敏感面；只发工具**名**文案，`tool_input` 恒 `null`，参数一概不上外发路径 |
 | 插件热重载 | cordis 卸载时 `ctx.offAll()` + 清全部 timer；重载重建，无残留 |
 | `agent.session.events` 为 undefined | 该 tick 跳过（已有 guard），不再深挖结构 |
+| **进程退出兜底（`agent/disposed`）** | 监听 `agent/disposed`（payload `{agent}`，与 `agent/created` 同源）；对销毁的 agent 补发一条 `kind:"stop"`（与 turn/end 相同 payload），并清理其轮询 timer/seq 游标。headless 一次性场景轮询可能来不及捕到最后的 turn/end 就退出，此兜底保证销毁前补发 stop，杜绝 pet 气泡残留 |
 
 ### 1.6 插件形态
 
@@ -125,7 +126,7 @@ build.mjs
         M6 bubble 推送  ←─────────── M4/M5 的输出 ─────────────┘
         bubble.ts(POST+降级)
               │
-  M7 装配 index.ts (apply/inject/热卸载/多会话注册)
+  M7 装配 index.ts (apply/inject/agent/created+disposed/热卸载/多会话注册)
               │
   M8 打包与产物校验 + 真机端到端(web profile 跑任务看 pet)
 ```
@@ -157,6 +158,7 @@ build.mjs
 | **M6 bubble 推送** | pet 未运行→ECONNREFUSED→若未 catch 会抛异步异常，污染 dsh 进程（违反「不影响 dsh」） | http request error 事件全部 `catch(()=>debug log)`；发送用 fire-and-forget，不 await 返回值；配置可关 |
 | **M5 collector 并发** | 多会话同时活跃，选「最新活跃」逻辑若只按事件序而非时间序，可能取到旧会话覆盖新会话气泡 | 「最新活跃」按会话的最近事件时间戳排序取最大；推送后固化该会话时间戳，避免同 tick 抖动 |
 | **M7 装配** | 插件热重载时 `agent/created` 对旧 agent 仍挂着观察者 → 重复推送或残留 | 卸载回调里对每个 agent 调 `disposeWatcher`；重载幂等（重跑 apply） |
+| **M7 装配（`agent/disposed` 兜底）** | headless 一次性场景进程退出前轮询捕不到最后的 `turn/end` → stop 漏发、pet 气泡残留 | 必监听 `agent/disposed`（payload `{agent}`，与 created 同源），对销毁 agent 补发 `stop`（同 payload）并清其轮询 timer/seq 游标；若销毁前 stop 已发，补发 stop 是幂等无害的 |
 | **M8 部署/卸载** | 卸载后 profile 仍引用插件、node_modules symlink 残留 | 卸载 = 移除 bundle patch 条目 + `mv` 掉 symlink（保留可回退）；凡删除用 `mv` 而非 `rm -rf`，符合全局规则 |
 
 ### 4.3 待 spike 项（不当作已验证事实）
