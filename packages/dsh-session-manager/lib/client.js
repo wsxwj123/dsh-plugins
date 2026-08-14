@@ -190,7 +190,8 @@ window.__ModuleLoader__.load({
 			}
 			return {
 				requestDelete(id, cwd, title) {
-					if (map.has(id)) return;
+					if (map.has(id)) return false;
+					for (const e of map.values()) if (e.state === "pending") return false;
 					park({
 						id,
 						cwd,
@@ -199,6 +200,7 @@ window.__ModuleLoader__.load({
 						state: "pending"
 					});
 					notify();
+					return true;
 				},
 				undo(id) {
 					const entry = map.get(id);
@@ -285,7 +287,7 @@ window.__ModuleLoader__.load({
 		const ARCHIVE_SVG = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\"/><path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\"/><path d=\"M10 12h4\"/></svg>";
 		//#endregion
 		//#region \0dsh-css:src/client/rail.module.css.mjs
-		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;bottom:18px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary,#c8c8d299);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_deleteBtn svg{width:16px;height:16px;display:block}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}.FPsCja_trashBar{border-top:1px solid var(--dsw-alias-border-l2,#80808038);align-items:center;gap:10px;padding:8px 12px;display:flex}.FPsCja_trashButton{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:4px 11px;font-family:inherit;font-size:12px}.FPsCja_trashButton:disabled{cursor:default;opacity:.45;color:var(--dsw-alias-label-tertiary,#c8c8d299)}.FPsCja_trashCount{color:var(--dsw-alias-label-tertiary,#c8c8d29e);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:12px;overflow:hidden}";
+		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;top:12px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary,#c8c8d299);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_deleteBtn svg{width:16px;height:16px;display:block}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_backdrop{z-index:2147481999;pointer-events:auto;background:#0000002e;position:fixed;inset:0}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}.FPsCja_trashBar{border-top:1px solid var(--dsw-alias-border-l2,#80808038);align-items:center;gap:10px;padding:8px 12px;display:flex}.FPsCja_trashButton{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:4px 11px;font-family:inherit;font-size:12px}.FPsCja_trashButton:disabled{cursor:default;opacity:.45;color:var(--dsw-alias-label-tertiary,#c8c8d299)}.FPsCja_trashCount{color:var(--dsw-alias-label-tertiary,#c8c8d29e);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:12px;overflow:hidden}";
 		const tagId = "dsh-session-manager/rail.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -295,32 +297,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"rail-in": "FPsCja_rail-in",
-			"divider": "FPsCja_divider",
-			"undo": "FPsCja_undo",
-			"list": "FPsCja_list",
-			"row": "FPsCja_row",
-			"rowTitle": "FPsCja_rowTitle",
-			"label": "FPsCja_label",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"trashBar": "FPsCja_trashBar",
-			"head": "FPsCja_head",
-			"empty": "FPsCja_empty",
-			"rail": "FPsCja_rail",
-			"trashButton": "FPsCja_trashButton",
-			"item": "FPsCja_item",
 			"dismiss": "FPsCja_dismiss",
+			"list": "FPsCja_list",
+			"danger": "FPsCja_danger",
+			"head": "FPsCja_head",
 			"close": "FPsCja_close",
 			"action": "FPsCja_action",
 			"add": "FPsCja_add",
-			"danger": "FPsCja_danger",
-			"errorBanner": "FPsCja_errorBanner",
-			"trashCount": "FPsCja_trashCount",
-			"title": "FPsCja_title",
-			"entryButton": "FPsCja_entryButton",
 			"overlay": "FPsCja_overlay",
+			"rail-in": "FPsCja_rail-in",
+			"entryButton": "FPsCja_entryButton",
+			"backdrop": "FPsCja_backdrop",
+			"empty": "FPsCja_empty",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"countdown": "FPsCja_countdown",
+			"errorBanner": "FPsCja_errorBanner",
+			"rowTitle": "FPsCja_rowTitle",
+			"trashButton": "FPsCja_trashButton",
+			"undo": "FPsCja_undo",
+			"item": "FPsCja_item",
+			"label": "FPsCja_label",
 			"failed": "FPsCja_failed",
-			"countdown": "FPsCja_countdown"
+			"divider": "FPsCja_divider",
+			"row": "FPsCja_row",
+			"title": "FPsCja_title",
+			"rail": "FPsCja_rail",
+			"trashBar": "FPsCja_trashBar",
+			"trashCount": "FPsCja_trashCount"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -416,6 +419,8 @@ window.__ModuleLoader__.load({
 		*/
 		const getSnapshot = () => pendingDeletes.snapshot();
 		const subscribe = (listener) => pendingDeletes.subscribe(listener);
+		/** Countdown tick cadence: re-renders the rail so `Date.now()`-derived seconds refresh. */
+		const TICK_MS = 500;
 		/** One entry row. `now` is passed by the parent tick so all rows share a clock. */
 		function EntryRow({ entry, now }) {
 			if (entry.state === "failed") return (0, react.createElement)("div", { className: rail_module_css_default.item }, (0, react.createElement)("span", {
@@ -430,12 +435,18 @@ window.__ModuleLoader__.load({
 				type: "button",
 				className: rail_module_css_default.undo,
 				onClick: () => {
-					pendingDeletes.undo(entry.id);
+					if (!pendingDeletes.undo(entry.id)) window.alert("该删除已生效，无法撤销");
 				}
 			}, "撤销"));
 		}
 		function UndoRail() {
 			const entries = (0, react.useSyncExternalStore)(subscribe, getSnapshot, getSnapshot);
+			const [, setTick] = (0, react.useState)(0);
+			(0, react.useEffect)(() => {
+				if (entries.length === 0) return;
+				const id = setInterval(() => setTick((n) => n + 1), TICK_MS);
+				return () => clearInterval(id);
+			}, [entries.length]);
 			if (entries.length === 0) return null;
 			const now = Date.now();
 			const items = entries.map((entry, i) => {
@@ -605,7 +616,11 @@ window.__ModuleLoader__.load({
 					onEmptyTrash(canEmpty ? trashCount : 0);
 				}
 			}, "清空回收站"), (0, react.createElement)("span", { className: rail_module_css_default.trashCount }, countLabel));
-			return (0, react.createElement)("div", {
+			return (0, react.createElement)(react.Fragment, null, (0, react.createElement)("div", {
+				className: rail_module_css_default.backdrop,
+				"aria-hidden": true,
+				onClick: () => setArchiveOpen(false)
+			}), (0, react.createElement)("div", {
 				className: rail_module_css_default.overlay,
 				role: "dialog",
 				"aria-label": "归档会话"
@@ -617,7 +632,7 @@ window.__ModuleLoader__.load({
 			}, "✕")), trashError && (0, react.createElement)("div", {
 				className: rail_module_css_default.errorBanner,
 				role: "alert"
-			}, trashError), body, trashBar);
+			}, trashError), body, trashBar));
 		}
 		/** Remove a session id from the archive set via /sm/unarchive. */
 		async function unarchive(ctx, id) {
@@ -627,10 +642,11 @@ window.__ModuleLoader__.load({
 				console.error("[dsh-session-manager] 取消归档失败：", res.code ?? res.message);
 			}
 		}
-		/** Park a deferred delete for an archived session (host two-step on fire). */
+		/** Park a deferred delete for an archived session (host two-step on fire).
+		*  P4: only one undoable delete at a time — a rejected park is surfaced. */
 		function requestArchivedDelete(_ctx, row) {
 			const label = row.title ?? row.displayTitle;
-			pendingDeletes.requestDelete(row.id, row.cwd, label);
+			if (!pendingDeletes.requestDelete(row.id, row.cwd, label)) window.alert("已有待撤销的删除，请先处理后再删除");
 		}
 		//#endregion
 		//#region src/client/index.tsx
@@ -707,7 +723,10 @@ window.__ModuleLoader__.load({
 				wide: props.wide
 			}));
 			const controller = createDeleteController(() => ctx, (action, row) => {
-				pendingDeletes.requestDelete(action.id, action.cwd, action.title);
+				if (!pendingDeletes.requestDelete(action.id, action.cwd, action.title)) {
+					window.alert("已有待撤销的删除，请先处理后再删除");
+					return;
+				}
 			});
 			/** Hide/restore rows whose ids are parked vs active in the park table.
 			*  `rowById` is maintained by the injection controller (each injected button

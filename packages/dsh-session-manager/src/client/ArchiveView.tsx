@@ -12,7 +12,7 @@
  * Rows whose id is currently parked for deletion are hidden from this list;
  * a failed fire un-parks them and they reappear.
  */
-import { createElement, type ReactNode } from 'react'
+import { createElement, Fragment, type ReactNode } from 'react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import {
   type Context,
@@ -165,21 +165,33 @@ export function ArchiveView({
   )
 
   return createElement(
-    'div',
-    { className: css.overlay, role: 'dialog', 'aria-label': '归档会话' },
+    Fragment,
+    null,
+    // Backdrop: click outside the panel closes the archive view (P5). It is a
+    // full-viewport transparent layer BELOW the panel; panel clicks never reach
+    // it because the panel (higher z-index) sits on top.
+    createElement('div', {
+      className: css.backdrop,
+      'aria-hidden': true,
+      onClick: () => setArchiveOpen(false),
+    }),
     createElement(
       'div',
-      { className: css.head },
-      createElement('span', null, '归档'),
+      { className: css.overlay, role: 'dialog', 'aria-label': '归档会话' },
       createElement(
-        'button',
-        { type: 'button', className: css.close, 'aria-label': '关闭归档视图', onClick: () => setArchiveOpen(false) },
-        '✕',
+        'div',
+        { className: css.head },
+        createElement('span', null, '归档'),
+        createElement(
+          'button',
+          { type: 'button', className: css.close, 'aria-label': '关闭归档视图', onClick: () => setArchiveOpen(false) },
+          '✕',
+        ),
       ),
+      trashError && createElement('div', { className: css.errorBanner, role: 'alert' }, trashError),
+      body,
+      trashBar,
     ),
-    trashError && createElement('div', { className: css.errorBanner, role: 'alert' }, trashError),
-    body,
-    trashBar,
   )
 }
 
@@ -197,8 +209,12 @@ async function unarchive(ctx: Context, id: string): Promise<void> {
   // updates archivedSessionIds and this list re-renders.
 }
 
-/** Park a deferred delete for an archived session (host two-step on fire). */
+/** Park a deferred delete for an archived session (host two-step on fire).
+ *  P4: only one undoable delete at a time — a rejected park is surfaced. */
 function requestArchivedDelete(_ctx: Context, row: ArchivedRow): void {
   const label = row.title ?? row.displayTitle
-  pendingDeletes.requestDelete(row.id, row.cwd, label)
+  const parked = pendingDeletes.requestDelete(row.id, row.cwd, label)
+  if (!parked) {
+    window.alert('已有待撤销的删除，请先处理后再删除')
+  }
 }

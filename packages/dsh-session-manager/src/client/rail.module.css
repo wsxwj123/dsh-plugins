@@ -1,11 +1,12 @@
-/* Undo rail — fixed overlay strip at the bottom-center of the viewport.
+/* Undo rail — fixed overlay strip at the TOP-center of the viewport (sits
+ * over the conversation header area; user asked for "会话窗口正中上方").
  * Follows the DSW theme aliases so light/dark follows the app; every rule here
  * is intentionally shallow (the rail is appended to document.body). */
 
 .rail {
   position: fixed;
   left: 50%;
-  bottom: 18px;
+  top: 12px;
   transform: translateX(-50%);
   z-index: 2147483000;
   display: flex;
@@ -194,6 +195,19 @@
   font-family: var(--dsw-font-body, system-ui, sans-serif);
   overflow: hidden;
   /* The parent overlay wrapper is click-through; this panel opts back in. */
+  pointer-events: auto;
+}
+
+/* Backdrop behind the archive panel: clicking anywhere OUTSIDE the panel
+ * closes the view (P5). Slightly dimmed but not modal-semantic — the panel is
+ * one z-level above it, so panel clicks never reach here. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147481999;
+  background: rgba(0, 0, 0, 0.18);
+  /* The parent overlay wrapper is click-through; this layer opts back in so a
+     click on empty space hits the backdrop and closes. */
   pointer-events: auto;
 }
 
