@@ -4,17 +4,18 @@
 //
 // Cordis semantics we model:
 //   - core ctx properties (logger/on/emit/base/get/has/effect) resolve normally
-//   - a service property NOT reachable through inject throws when bare-accessed
-//     (reflect Proxy: "cannot get property \"X\" without inject")
-//   - ctx.get('service') returns the service if provided, else undefined
-//     (opt-in read, never throws)
-//   - a service absent from the profile must NOT block plugin activation — the
-//     plugin reads everything via ctx.get (empty inject), so activation never
-//     waits on a service.
+//   - bare access to an INJECT-DECLARED service property resolves (red line #1:
+//     inject declares the service, so bare access is legal) — mirrors the
+//     aionui-panel pattern this plugin now follows
+//   - bare access to a service NOT in inject throws ("cannot get property ...")
+//   - ctx.get('service') returns the provided value or undefined (never throws)
 //
-// We assert apply() reads services ONLY through ctx.get (never bare), applies
-// the documented degradation when storageDomain/sessions/webServer are missing,
-// and does not attach the /sm route unless a web server is present.
+// The plugin's `inject` is now `['webServer','storageDomain','sessions']`, so
+// cordis BLOCKS activation until all three are present (they all exist in the
+// web profile; a headless profile lacking one leaves the plugin `pending`,
+// which is accepted — the plugin is only ever installed in the web profile).
+// Therefore apply() reads services BARE (legal via inject) and, given a fully
+// provided ctx, MUST mount the /sm route on ctx.webServer.
 import { test } from 'node:test'
 import assert from 'node:assert'
 import path from 'node:path'
@@ -28,16 +29,16 @@ const { createSmHandler } = await import(path.join(root, 'lib', 'handler.js'))
 const { TrashStore } = await import(path.join(root, 'lib', 'trash.js'))
 
 const CORE = new Set(['logger', 'on', 'emit', 'base', 'has', 'effect', 'get', 'plugin', 'set', 'provide', 'root'])
+/** Service names the plugin declares in `inject` — bare access is legal for these. */
+const INJECTED = new Set(['webServer', 'storageDomain', 'sessions'])
 
 /**
- * A fake cordis ctx that enforces the access model. Services are ONLY readable
- * through ctx.get (returning a provided value or undefined); a bare-access to
- * any service property throws the exact cordis wording. This proves apply()
- * never relies on inject-bare access.
+ * A fake cordis ctx that enforces the access model. Bare access to an
+ * INJECTED service resolves; bare access to anything else throws the exact
+ * cordis wording. ctx.get returns the provided value or undefined.
  */
-function makeCordisCtx({ services = {}, rootServices = {} } = {}) {
+function makeCordisCtx({ services = {} } = {}) {
   const provided = new Map(Object.entries(services))
-  const rootProvided = new Map(Object.entries(rootServices))
   const warnLog = []
   const ctx = {
     logger: {
@@ -56,25 +57,21 @@ function makeCordisCtx({ services = {}, rootServices = {} } = {}) {
     has(name) { return provided.has(name) },
     get(name) { return provided.get(name) },
   }
-  // `root` is a real cordis Context member; the plugin's P7 root-fallback reads
-  // `ctx.root.get(name)`. Simulate the isolated-ctx condition: services provided
-  // at root resolve via ctx.root.get, while current-ctx get() does not see them
-  // unless also listed in `services`.
-  ctx.root = {
-    get(name) { return rootProvided.has(name) ? rootProvided.get(name) : provided.get(name) },
-  }
   return {
     ctx: new Proxy(ctx, {
       get(target, prop, receiver) {
         if (typeof prop !== 'string') return Reflect.get(target, prop, receiver)
-        if (CORE.has(prop)) return Reflect.get(target, prop, receiver)
-        // Bare access to a service (any service) is the crash we must avoid.
+        // core members + injected services resolve
+        if (CORE.has(prop) || INJECTED.has(prop)) return Reflect.get(target, prop, receiver)
         throw new Error(`cannot get property "${prop}" without inject`)
       },
       set(target, prop, value) { return Reflect.set(target, prop, value) },
     }),
     warnLog,
-    notify(name) { return provided.get(name) },
+    // Put the injected services onto the ctx object so bare access yields them.
+    provide(services) {
+      for (const [k, v] of Object.entries(services)) ctx[k] = v
+    },
   }
 }
 
@@ -86,81 +83,54 @@ function roots() {
   return { base, sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') }
 }
 
-test('cordis model: bare service access throws; ctx.get absent -> undefined', () => {
-  const { ctx } = makeCordisCtx()
-  assert.throws(() => ctx.storageDomain, /cannot get property "storageDomain" without inject/)
-  assert.throws(() => ctx.sessions, /cannot get property "sessions" without inject/)
-  assert.strictEqual(ctx.get('storageDomain'), undefined)
-  assert.strictEqual(ctx.get('sessions'), undefined)
-  assert.strictEqual(ctx.get('webServer'), undefined)
+test('cordis model: bare access to an UN-injected service throws; an injected one resolves', () => {
+  const { ctx, provide } = makeCordisCtx()
+  // Injected services never throw on bare access (they resolve to the value, or
+  // undefined before provide). An UN-injected service always throws.
+  assert.throws(() => ctx.unknownService, /cannot get property "unknownService" without inject/)
+  assert.strictEqual(ctx.webServer, undefined, 'injected-but-not-yet-provided step resolves to undefined (no throw)')
+  provide({ webServer: { register: () => () => {} } })
+  assert.strictEqual(typeof ctx.webServer.register, 'function', 'injected service bare-access resolves after provide')
+  assert.strictEqual(ctx.get('missing'), undefined, 'ctx.get absent -> undefined')
 })
 
-test('apply with NO services present: activates (no throw, no hang) and logs degradation', () => {
-  // This reproduces the e2e crash condition: headless profile lacking
-  // storageDomain/sessions. apply must not throw and not stay pending — it
-  // merely logs the degradation and skips route mounting.
-  const { ctx, warnLog } = makeCordisCtx()
+test('plugin inject declares exactly webServer/storageDomain/sessions (aionui-panel wiring)', () => {
+  assert.ok(Array.isArray(plugin.inject))
+  assert.deepStrictEqual([...plugin.inject], ['webServer', 'storageDomain', 'sessions'],
+    'inject must declare the three services that are then bare-accessed')
+})
+
+test('apply with all three injected services: mounts the /sm route via bare ctx.webServer', () => {
+  let registered = false
+  const { ctx, provide } = makeCordisCtx()
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: () => { registered = true; return () => {} } },
+  })
   const { base } = roots()
-  const warnBefore = warnLog.length
+  // apply must bare-access ctx.webServer (injected) and register the route.
   assert.doesNotThrow(() => {
     plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
   })
-  const degraded = warnLog.slice(warnBefore).join('\n')
-  assert.match(degraded, /storageDomain service unavailable/)
-  assert.match(degraded, /sessions service unavailable/)
-  assert.match(degraded, /webServer service unavailable/)
+  assert.ok(registered, 'ctx.webServer.register called (the /sm route mounts on a live profile)')
   fs.rmSync(base, { recursive: true, force: true })
 })
 
-test('apply with storageDomain+sessions present but webServer absent: degrades route, no throw', () => {
-  const { ctx, warnLog } = makeCordisCtx({
-    services: {
-      storageDomain: { get: () => null },
-      sessions: { get: () => undefined },
-    },
+test('apply with webServer absent (partial profile): degrades route mount, does not throw', () => {
+  // Real cordis would keep this plugin `pending` and never call apply without
+  // webServer; this test defends the internal guard, not the activation gate.
+  const { ctx, provide, warnLog } = makeCordisCtx()
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    // webServer deliberately not provided
   })
   const { base } = roots()
   assert.doesNotThrow(() => {
     plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
   })
   assert.ok(warnLog.some((m) => /webServer service unavailable/.test(String(m))))
-  fs.rmSync(base, { recursive: true, force: true })
-})
-
-test('apply with all services present: mounts the /sm route via ctx.get webServer', () => {
-  let registered = false
-  const { ctx } = makeCordisCtx({
-    services: {
-      storageDomain: { get: () => null },
-      sessions: { get: () => undefined },
-      webServer: { register: () => { registered = true; return () => {} } },
-    },
-  })
-  const { base } = roots()
-  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
-  assert.ok(registered, 'webServer.register called when the service is present')
-  fs.rmSync(base, { recursive: true, force: true })
-})
-
-test('apply P7: a webServer provided ONLY at ROOT isolate is still found and mounted', () => {
-  // Regression for the real 405: services are provided into the ROOT ctx's
-  // isolate, but a plugin's apply(ctx) runs on its own isolated ctx whose get()
-  // does NOT see them. The root fallback (ctx.root.get ?? ctx.get) must reach
-  // an active root-only service.
-  let registered = false
-  const { ctx } = makeCordisCtx({
-    services: {
-      storageDomain: { get: () => null },
-      sessions: { get: () => undefined },
-    },
-    rootServices: {
-      webServer: { register: () => { registered = true; return () => {} } },
-    },
-  })
-  const { base } = roots()
-  assert.strictEqual(ctx.get('webServer'), undefined, 'current-ctx get does not see a root-only service')
-  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
-  assert.ok(registered, 'root-isolate webServer is reached via ctx.root.get and the /sm route mounts')
   fs.rmSync(base, { recursive: true, force: true })
 })
 
@@ -205,9 +175,4 @@ test('handler: sessions missing skips running guard and delete proceeds', () => 
   assert.strictEqual(res.json.ok, true, 'delete proceeds when sessions service is absent')
   assert.strictEqual(fs.existsSync(path.join(projectDir, 's1')), false, 'dir moved to trash')
   fs.rmSync(base, { recursive: true, force: true })
-})
-
-test('cordis model: empty inject list is exported (no hard activation dependency)', () => {
-  assert.ok(Array.isArray(plugin.inject))
-  assert.strictEqual(plugin.inject.length, 0, 'inject must be empty so no service blocks activation')
 })

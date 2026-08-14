@@ -6,18 +6,22 @@
  *     loopback trust fence, with recycle-bin file operations
  *     (delete/restore/emptyTrash/trash) and the workspace archive-set write
  *     (delete-archived step-2 / unarchive).
- *  2. Use ONLY core ctx members (logger/get/effect/on/emit). Every service
- *     (storageDomain / sessions / webServer) is read through `ctx.get` (never
- *     bare), so a missing service degrades to a logged no-op instead of
- *     blocking plugin activation.
+ *  2. Services are declared in `inject` (webServer / storageDomain / sessions)
+ *     and accessed BARE (cordis red line #1: an inject-declared service may be
+ *     bare-accessed). The web profile shines all three, so route mounting works
+ *     reliably — this mirrors the aionui-panel pattern (`inject: [webServer,
+ *     ...]` + `ctx.webServer.register(...)`), which demonstrably mounts its
+ *     routes on the real web profile.
  *
- * Cordis access discipline (the dsh-pet-bridge crash lesson): we never touch a
- * service property bare — `ctx.<service>` outside the inject list throws
- * "cannot get property without inject". And this plugin deliberately keeps its
- * `inject` EMPTY so it never becomes a hard activation dependency: cordis waits
- * on injected services, so injecting one that a headless profile lacks leaves
- * the plugin `pending` forever and fails the whole profile load (the e2e
- * startup crash). Everything is an optional `ctx.get`, presence-gated.
+ * P7 note: an earlier attempt read services via `ctx.get` (and a
+ * `ctx.root.get ?? ctx.get` fallback) with an EMPTY inject, on the premise that
+ * absent services should degrade gracefully. It never mounted /sm (POST 405):
+ * `get` walks the current ctx's isolate and the plugin's isolated ctx did not
+ * carry the service symbols. Injecting the services (like aionui-panel) is the
+ * correct, proven path. Cordis treats inject entries as hard activation
+ * deps: a profile lacking these services leaves the plugin `pending` rather
+ * than crashing load — acceptable, because this plugin is only installed in the
+ * web profile where they all exist.
  */
 
 import path from 'node:path'
@@ -25,10 +29,10 @@ import os from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { TrashStore } from './trash.js'
-import { createSmHandler, archiveFromGlobal, type SmHandlerDeps } from './handler.js'
+import { createSmHandler, archiveFromGlobal, type SmHandlerDeps, type ArchiveDomain } from './handler.js'
 import { isTrustedSmRequest } from './trust-fence.js'
 
-/** Minimal web-server service surface we depend on (via optional ctx.get). */
+/** Minimal web-server service surface we depend on (injected => bare access). */
 interface WebServerService {
   register(route: {
     kind: string
@@ -37,27 +41,26 @@ interface WebServerService {
   }): () => void
 }
 
-/** storage-domain facility shape read via ctx.get (optional). */
-interface StorageDomainService {
-  get(name: string): { global: { get(): unknown; set(value: unknown): unknown } } | null | undefined
-}
-
-/** node SessionStore shape read via ctx.get (optional). */
-interface SessionsService {
-  get(id: string): unknown
-}
-
 export const name = 'dsh-session-manager'
 
 /**
- * Deliberately empty. Cordis treats inject entries as hard activation
- * dependencies (absent service → plugin `.pending` forever → whole profile load
- * fails). To survive headless profiles that lack storageDomain/sessions, every
- * service is read optionally via ctx.get instead. Presence is checked at
- * apply() time; a missing service degrades the affected endpoints (documented
- * on each) without crashing or hanging activation.
+ * Services this plugin needs. Injecting them makes them BARE-accessible (red
+ * line #1 allows bare access to inject-declared services) and makes cordis
+ * block activation until they're all active — the same wiring the aionui-panel
+ * plugin uses to mount its routes reliably. `connection` is NOT needed: the
+ * /sm route is a raw prefix route mounted directly on webServer (not a
+ * connection.rpc envelope).
  */
-export const inject: readonly string[] = []
+export const inject: readonly string[] = ['webServer', 'storageDomain', 'sessions']
+
+/** The host services this plugin injects. Bare access is legal because each is
+ *  declared in `inject` (cordis injects them into the fiber scope). */
+interface InjectedServices {
+  webServer: WebServerService
+  storageDomain: { get(name: string): ArchiveDomain | null | undefined }
+  sessions: { get(id: string): unknown }
+}
+type InjectedCtx = Context & InjectedServices
 
 export interface SessionManagerConfig {
   /** Sessions root; defaults to `~/.dsh/sessions`. */
@@ -88,7 +91,7 @@ export function makeHandler(
   return createSmHandler(deps)
 }
 
-export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
+export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void {
   const { sessionsRoot, trashRoot } = resolveRoots(config)
   // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
   // sit inside the sessions root, or the host session scan would re-discover
@@ -100,22 +103,10 @@ export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
     return
   }
 
-  // All services are optional reads. Each degrades independently:
-  //   storageDomain missing -> unarchive => workspace-domain-unavailable,
-  //                             delete-archived step-2 => system-error (partial)
-  //   sessions     missing -> delete running-session guard skipped
-  //   webServer    missing -> /sm routes not mounted (logged)
-  //
-  // P7: services are PROVIDED into the ROOT ctx's isolate (cordis provide writes
-  // `ctx.root[symbols.isolate][name]`), but a plugin's `apply(ctx)` runs on its
-  // own (possibly isolated) ctx, whose isolate may NOT carry the service symbol.
-  // A bare `ctx.get(name)` on that ctx then returns undefined even though the
-  // service is live — which is exactly why /sm never mounted. We therefore read
-  // from the ROOT ctx first (`ctx.root.get` walks the root isolate) and fall
-  // back to the current ctx, so an active service is reached regardless.
-  const rootGet = (name: string): unknown => ctx.root.get(name) ?? ctx.get(name)
-  const storageDomain = rootGet('storageDomain') as StorageDomainService | undefined
-  const sessions = rootGet('sessions') as SessionsService | undefined
+  // Injected services are guaranteed present on the web profile; bare access is
+  // cordis-legal because they're all declared in `inject`.
+  const storageDomain = ctx.storageDomain
+  const sessions = ctx.sessions
 
   if (!storageDomain) {
     ctx.logger.warn(
@@ -154,10 +145,11 @@ export function apply(ctx: Context, config: SessionManagerConfig = {}): void {
   }
   const handler = createSmHandler(deps)
 
-  // Recycle-bin enables a raw /sm/* route. We fetch the web server optionally
-  // (never bare) so that if it is absent we degrade gracefully. Root fallback
-  // (P7) so an ACTIVE webServer is found even from an isolated plugin ctx.
-  const webServer = rootGet('webServer') as WebServerService | undefined
+  // Mount the raw /sm/* route on the injected web server. BARE access is legal
+  // (webServer is declared in `inject`) — this is the aionui-panel wiring that
+  // reliably mounts routes on the web profile. cordis blocks apply() until the
+  // injected services are active, so webServer is present here by construction.
+  const webServer = ctx.webServer
 
   if (!webServer || typeof webServer.register !== 'function') {
     ctx.logger.warn('[session-manager] webServer service unavailable; /sm routes are not mounted')
