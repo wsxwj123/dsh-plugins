@@ -86,7 +86,6 @@ function createSmHandler(deps) {
 		if (!isStableSegment(id)) return fail("path-out-of-bounds", "id escapes segment encoding");
 		const targetDir = sessionSegment(proj.projectDir, id);
 		if (!isInsideOrEqual(deps.sessionsRoot, targetDir)) return fail("path-out-of-bounds", "target outside sessions root");
-		if (liveSession && force !== true) return fail("session-running", "session is running");
 		if (!fs.existsSync(targetDir)) {
 			if (deps.trash.hasItem(id)) return doArchivedCleanup(id);
 			if (liveSession) return doArchivedCleanup(id);

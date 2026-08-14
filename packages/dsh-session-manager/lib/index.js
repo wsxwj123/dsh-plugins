@@ -68,7 +68,7 @@ function apply(ctx, config = {}) {
 	const storageDomain = ctx.storageDomain;
 	const sessions = ctx.sessions;
 	if (!storageDomain) ctx.logger.warn("[session-manager] storageDomain service unavailable; archive write (unarchive / delete-of-archived) will degrade to workspace-domain-unavailable / system-error");
-	if (!sessions) ctx.logger.warn("[session-manager] sessions service unavailable; running-session guard is skipped and deletes proceed");
+	if (!sessions) ctx.logger.warn("[session-manager] sessions service unavailable; host-authoritative cwd resolution is skipped and deletes use the client-supplied cwd");
 	const trash = new TrashStore(trashRoot);
 	/** Read the current workspace global object; {} when the domain is absent. */
 	const readGlobal = () => {

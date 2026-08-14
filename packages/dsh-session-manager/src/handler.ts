@@ -37,18 +37,25 @@ export interface SmHandlerDeps {
   /** The recycle-bin store (its root must be OUTSIDE sessionsRoot). */
   trash: TrashStore
   /**
-   * Optional Node SessionStore (`ctx.sessions`). When it returns a live
-   * `Session` object for the id, that object is BOTH:
-   *   1. the running-session guard input (truthy ⇒ live), and
-   *   2. the HOST-AUTHORITATIVE source of the session's cwd — `session.header.cwd`
-   *      (dsh-session's immutable SessionHeader) is the absolute working directory
-   *      the session was created with, which we prefer over the client-supplied
-   *      `cwd`. A freshly-created (just-messaged) session's client snapshot can
-   *      carry an absent/empty `byId.cwd`, but the live header never does.
-   * When absent (headless profiles without a session service), the running-session
-   * guard is skipped and delete proceeds — the guard is a safety enhancement, not
-   * a functional requirement (INTERFACE §4), so we degrade to "run without it"
-   * rather than refuse to delete.
+   * Optional Node SessionStore (`ctx.sessions`). Its ONLY use is the
+   * HOST-AUTHORITATIVE source of the session's cwd — `session.header.cwd`
+   * (dsh-session's immutable SessionHeader) is the absolute working directory
+   * the session was created with, which we prefer over the client-supplied
+   * `cwd`. A freshly-created (just-messaged) session's client snapshot can
+   * carry an absent/empty `byId.cwd`, but the live header never does.
+   *
+   * We deliberately do NOT use the live store to gate deletion on "running".
+   * A live SessionStore entry means "the session has been opened/loaded", which
+   * stays true long after the agent has finished — it is NOT the same as "the
+   * AI is currently running a turn". That judgment lives on the client
+   * (`byId.running` = the agent's `status === 'running'`), where it is precise;
+   * the host simply deletes whatever the client asked to delete (the recycle-bin
+   * move is recoverable, so a mid-turn session deleted by an API caller that
+   * bypasses the client is a recoverable, accepted risk — see the delete guard
+   * comment in doDelete).
+   *
+   * When absent (headless profiles without a session service), cwd resolution
+   * simply falls back to the client-supplied `cwd`.
    */
   sessions?: { get(id: string): { header?: { cwd?: string } } | null | undefined }
   /**
@@ -138,18 +145,22 @@ export function createSmHandler(deps: SmHandlerDeps): {
       }
     }
     // `force` must be a boolean when provided (otherwise the request is malformed).
+    // It is now a COMPATIBILITY no-op: the running-in-progress judgment moved to
+    // the client (`byId.running`), so the host no longer uses force to gate
+    // deletion. We still validate the type so a malformed caller is refused
+    // (contract-stable), but a well-typed `force` has no effect on the outcome.
     if (force !== undefined && typeof force !== 'boolean') {
       return bad('invalid-force', 'invalid force')
     }
 
     // Host-authoritative cwd. Read the live Session (once) from the injected
-    // store: it drives BOTH the running-session guard truthiness and the
-    // project-dir resolution. A live session's `header.cwd` is the absolute
-    // cwd it was created with (dsh-session SessionHeader), which is more
-    // trustworthy than the client-supplied `cwd` — a just-created session's
-    // client snapshot may carry an absent/empty byId.cwd. When the session is
-    // not in the store (old session) or its header lacks cwd, we fall back to
-    // the client `cwd` (existing behavior).
+    // store for PROJECT-DIR RESOLUTION ONLY — never as a "running" gate (a live
+    // entry means "opened/loaded", which outlives the agent's actual turn). A
+    // live session's `header.cwd` is the absolute cwd it was created with
+    // (dsh-session SessionHeader), more trustworthy than the client `cwd` — a
+    // just-created session's client snapshot may carry an absent/empty
+    // byId.cwd. When the session is not in the store (old session) or its header
+    // lacks cwd, we fall back to the client `cwd`.
     const liveSession = deps.sessions?.get(id as string)
     const liveCwd =
       liveSession &&
@@ -176,16 +187,18 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return fail('path-out-of-bounds', 'target outside sessions root')
     }
 
-    // Running-session guard (host-side, not only the client). Optional at the
-    // handler level: when no session service is supplied we cannot know if the
-    // target is live, so the guard is skipped (delete proceeds) rather than
-    // crashing — the guard is a safety enhancement, not a hard gate.
-    // `force:true` opts into deleting a live (running) session: the file moves
-    // to the recycle bin anyway (recoverable). WITHOUT force a live session is
-    // still refused with the stable `session-running` code (contract unchanged).
-    if (liveSession && force !== true) {
-      return fail('session-running', 'session is running')
-    }
+    // NOTE (running-session risk): we deliberately do NOT refuse deletion when
+    // `deps.sessions.get(id)` returns a live Session. A live entry means the
+    // session was opened/loaded — it stays live long after the agent finished,
+    // so it cannot distinguish "AI is replying" from "idle". The
+    // running-in-progress judgment lives on the client (`byId.running` =
+    // `agent.status === 'running'`, see the client half), which prompts before
+    // deleting a genuinely running session. If a caller bypasses the client and
+    // hits /sm/delete directly on a session whose agent is mid-turn, the
+    // directory moves to the recycle bin (recoverable) while the agent may still
+    // write to it. That is an accepted, recoverable risk: the recycle-bin move
+    // never destroys the on-disk content, and a mid-turn delete already requires
+    // the client's explicit confirmation.
 
     // Source missing. Three cases:
     //  - already in the trash          → idempotent-complete, run archive step-2
@@ -196,11 +209,9 @@ export function createSmHandler(deps: SmHandlerDeps): {
     //    it. We deliberately do NOT try to detach/dispose the live SessionStore
     //    entry — dsh-session exposes no public remove-by-id API (detach is bound
     //    to the creating fiber's own effect), and the store entry drains on
-    //    process restart anyway. The only residual risk is a live session that is
-    //    genuinely still running an agent with force:true — its dir just hasn't
-    //    been written yet, and the running agent may write it after we return ok.
-    //    That is the already-accepted force contract (user forced a delete of a
-    //    running session), so we proceed rather than block a fresh-session delete.
+    //    process restart anyway. A live-but-not-persisted session that is
+    //    genuinely mid-turn has the same recoverable risk as the persisted case
+    //    above; the client's `byId.running` confirm is the gate.
     //  - neither live nor persisted     → a genuine not-found (unchanged).
     if (!fs.existsSync(targetDir)) {
       if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)

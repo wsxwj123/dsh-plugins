@@ -115,7 +115,7 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
   }
   if (!sessions) {
     ctx.logger.warn(
-      '[session-manager] sessions service unavailable; running-session guard is skipped and deletes proceed',
+      '[session-manager] sessions service unavailable; host-authoritative cwd resolution is skipped and deletes use the client-supplied cwd',
     )
   }
 
@@ -137,7 +137,7 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
   const deps: SmHandlerDeps = {
     sessionsRoot,
     trash,
-    sessions, // optional; handler degrades running-guard when undefined
+    sessions, // optional; cwd resolution falls back to client cwd when undefined
     storageDomain, // optional; handler degrades archive paths when undefined
     readArchived: () => archiveFromGlobal(readGlobal()),
     readWorkspaceGlobal: readGlobal,
