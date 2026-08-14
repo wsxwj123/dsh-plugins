@@ -8,6 +8,7 @@
 |---|---|
 | [`dsh-theme-gallery`](packages/theme-gallery) | 提供 15 个精选主题家族，跟随 DSH 原生“浅色 / 深色 / 跟随系统”外观设置。 |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
+| [`dsh-session-manager`](packages/dsh-session-manager) | 会话删除（5 秒可撤销 + 回收站式硬删）与归档视图（查看/取消归档）。 |
 
 ## 界面预览
 
@@ -27,8 +28,9 @@
 
 ```text
 packages/
-  theme-gallery/   # 主题画廊插件
-  turn-scrubber/   # 对话回合刻度插件
+  theme-gallery/        # 主题画廊插件
+  turn-scrubber/        # 对话回合刻度插件
+  dsh-session-manager/  # 会话删除 + 归档视图插件
 ```
 
 每个插件都有自己的：
@@ -63,6 +65,12 @@ dsh plugin --profile web add "link:$PWD/packages/theme-gallery"
 
 ```bash
 dsh plugin --profile web add "link:$PWD/packages/turn-scrubber"
+```
+
+### 安装会话管理
+
+```bash
+dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
 ```
 
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
