@@ -4,6 +4,10 @@ A Codex-style **turn cluster** for the DeepSeek Harness Web GUI: a block of thin
 
 Ported from [claude-gui](https://github.com/wsxwj123/claude-gui)'s TurnScrubber idea, re-styled as a linear waveform per user preference.
 
+## Preview
+
+<img src="../../assets/screenshots/turn-scrubber.png" alt="Turn scrubber real preview" width="620">
+
 ## Behavior
 
 - **Idle**: a cluster of equal-length short ticks (3–17px, growing gently with turn count), 6px off the window edge, faint — invisible while chatting.
