@@ -183,7 +183,7 @@ function createSkinEngine({
     /** 插件停止时全量回收：卸载皮肤 + 清掉全部已注册皮肤 bundle。 */
     teardownSkins() {
       this.deactivateSkin()
-      teardownBundles(manifest)
+      this.teardownBundles(manifest)
       for (const el of Array.from(document.querySelectorAll('style[data-theme-gallery-skin], style[data-theme-gallery-a11y]'))) {
         el.remove()
       }
@@ -325,7 +325,13 @@ function writeStored(key, value) {
 // window.__DSH_MODULES__ 是 shell 安装的模块系统；皮肤 bundle 需经它 materialize 取 apply。
 const DSH_MODULES = globalThis.__DSH_MODULES__
 const skinEngine = typeof DSH_MODULES !== 'undefined'
-  ? createSkinEngine({ modules: DSH_MODULES, manifest: __SKIN_MANIFEST__, bundles: __SKIN_BUNDLES__ })
+  ? createSkinEngine({
+      modules: DSH_MODULES,
+      manifest: __SKIN_MANIFEST__,
+      bundles: __SKIN_BUNDLES__,
+      // 测试注入面：__TG_EXEC_SCRIPT__ 覆盖默认脚本执行（生产 undefined → 默认 Blob-URL）。
+      executeScript: typeof globalThis.__TG_EXEC_SCRIPT__ === 'function' ? globalThis.__TG_EXEC_SCRIPT__ : undefined,
+    })
   : null
 const a11yInjector = createA11yInjector({ a11y: __SKIN_A11Y__ })
 const SKINS = skinEngine ? skinEngine.getSkins() : []
@@ -395,6 +401,31 @@ const currentSkinState = () => skinEngine ? skinEngine.currentSkinState() : { sk
 const getFamily = () => THEME_FAMILIES.slice()
 const getSkins = () => SKINS.slice()
 
+/** 插件停止时全量回收（供 apply 与测试注入面调用）。 */
+function teardown() {
+  if (skinEngine) skinEngine.teardownSkins()
+  clearThemeOverride()
+}
+
+// 测试注入面：把轨道协调 API 交给外部（生产不定义 __TG_SURFACE__，零污染；仅测试注入）。
+// 这是 INTERFACE §2 的对外接口的测试可断言版本，UI 仍直接调用上面的函数。
+if (typeof globalThis.__TG_SURFACE__ === 'function') {
+  globalThis.__TG_SURFACE__({
+    apply,
+    activateFamily,
+    activateSkin,
+    clearSkin,
+    clearThemeOverride,
+    currentSkinState,
+    getFamily,
+    getSkins,
+    getTrack: () => activeTrack,
+    readStored,
+    writeStored,
+    teardown,
+  })
+}
+
 // 主题 service 引用（apply 阶段注入）
 let activeThemeService = null
 let activeSlots = null
@@ -448,11 +479,8 @@ function apply(ctx) {
   if (initialTrack() === 'skin') { activateFamily(selectedFamily); void restoreSkin() }
   else activateFamily(selectedFamily)
 
-  // 插件停止：清退皮肤全部副作用（内置 + a11y + 模块表）。
-  ctx.effect(() => () => {
-    if (skinEngine) skinEngine.teardownSkins()
-    if (removeOverride) removeOverride()
-  })
+  // 插件停止：清退皮肤全部副作用（内置 + a11y + 模块表）与主题 override。
+  ctx.effect(() => () => teardown())
 
   function Gallery() {
     const [track, setTrack] = React.useState(activeTrack)

@@ -171,7 +171,7 @@ export function createSkinEngine({
     /** 插件停止时全量回收：卸载皮肤 + 清掉全部已注册皮肤 bundle。 */
     teardownSkins() {
       this.deactivateSkin()
-      teardownBundles(manifest)
+      this.teardownBundles(manifest)
       for (const el of Array.from(document.querySelectorAll('style[data-theme-gallery-skin], style[data-theme-gallery-a11y]'))) {
         el.remove()
       }
