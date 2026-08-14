@@ -1,0 +1,13 @@
+{
+  "name": "dsh-plugins",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A monorepo of independent plugins for DeepSeek Harness.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check"
+  },
+  "packageManager": "pnpm@10.6.5",
+  "license": "MIT"
+}
