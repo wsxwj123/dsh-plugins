@@ -14,10 +14,10 @@
 
 - DSH 底层**已有**归档和删除 API：
   - `ctx.sessions.archiveSession(sessionId)` —— 归档会话进 registry-global archive set（`dsh-client-runtime/lib/client.js` 9626 行）
-  - `ctx.sessions.delete(sessionId)` —— 删除会话（`dsh-client-runtime/lib/client.js` 7930 行）
+  - ~~`ctx.sessions.delete(sessionId)`~~ —— **不是删除 API**（`dsh-client-runtime/lib/client.js` 7930 行实为 SessionManager.drop() 清内存缓存；host 持久化文档明言 "the seam has no deletion API"）。真删必须 node 半插件移动磁盘文件（用户已拍板回收站式硬删）。
 - 归档会话看不见的**根因**：官方 `sessionVisible()` 硬性过滤 `!archived.has(session.id)`（`dsh-client-ui-workspace/lib/client.js` 100 行），归档会话在所有视图（分组/平铺/搜索）被直接剔除，UI 无任何显示归档会话的地方，也没有取消归档入口。
 - 删除：侧栏会话列表 UI 没有删除入口。
-- 结论：纯 client 插件（注入 UI）可完成，不碰 node 侧存储文件。
+- 结论：**双端插件**（client 注入 UI + node 半插件做回收站文件操作与归档域写入），不修改官方源码。
 
 ## 3. 功能清单（每条"输入 X → 得到 Y"）
 
