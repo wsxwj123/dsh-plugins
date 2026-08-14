@@ -14,7 +14,7 @@ const { createWatcher } = require('./agentWatcher')
 
 /**
  * @param {object} cfg      归一化配置 { port, pollInterval, enabled }
- * @param {(kind:string, toolName?:string)=>void} send  单条推送出口
+ * @param {(kind:string, toolName?:string, toolInput?:object|null)=>void} send  单条推送出口
  * @param {{debug?:Function}} [logger]
  */
 function createCollector(cfg, send, logger) {
@@ -27,7 +27,7 @@ function createCollector(cfg, send, logger) {
       const w = createWatcher(
         agent,
         cfg,
-        (kind, toolName) => send(kind, toolName),
+        (kind, toolName, toolInput) => send(kind, toolName, toolInput),
         logger,
       )
       watchers.set(agent, w)

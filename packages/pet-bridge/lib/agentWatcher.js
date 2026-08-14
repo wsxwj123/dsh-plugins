@@ -11,7 +11,7 @@
  *     只从上次位置向后推进，游标只增。
  *   - 事件 -> kind/文案 映射：
  *         turn/start      -> user
- *         tool/call       -> pre（tool_name = toolLabels(data.name)）
+ *         tool/call       -> pre（tool_name = 原始工具名 ev.data.name；tool_input = summarizeToolInput）
  *         tool/result     -> post
  *         turn/end        -> stop
  *         agent/disposed  -> stop（由装配层调 disposeWatcher 补发）
@@ -20,13 +20,13 @@
  *   - 卸载/销毁后：停 interval、置 dead，不再产生任何推送；stop 幂等无害。
  */
 
-const { toolLabels } = require('./toolLabels')
+const { summarizeToolInput } = require('./toolLabels')
 
 /**
  * 建立对一个 agent 的轮询观察。
  * @param {object} agent            agent 实例（agent.session.events 只读）
  * @param {{port:number, pollInterval:number, enabled:boolean}} cfg
- * @param {(kind:string, toolName?:string)=>void} emit  一次推送的出口
+ * @param {(kind:string, toolName?:string, toolInput?:object|null)=>void} emit  一次推送的出口
  * @param {{debug?:Function}} logger
  * @returns {{ dispose:Function, finalStop:Function }} dispose 停轮询；finalStop 在 agent/disposed 时补发 stop 并彻底停用
  */
@@ -52,8 +52,11 @@ function createWatcher(agent, cfg, emit, logger) {
           emit('user')
           break
         case 'tool/call': {
+          // 原始工具名（可能缺 name）；随 raw name 一起提取 tool_input 精简摘要
           const name = ev.data && typeof ev.data.name === 'string' ? ev.data.name : undefined
-          emit('pre', toolLabels(name))
+          const argsJSON = ev.data && typeof ev.data.arguments === 'string' ? ev.data.arguments : undefined
+          const summary = summarizeToolInput(name, argsJSON)
+          emit('pre', name, summary)
           break
         }
         case 'tool/result':

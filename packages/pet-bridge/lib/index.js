@@ -22,9 +22,9 @@ function apply(ctx, config) {
   const logger = (ctx && ctx.logger) || (ctx && ctx.base && ctx.base.logger) || null
   const activeCollector = { current: null }
 
-  const send = (kind, toolName) => {
+  const send = (kind, toolName, toolInput) => {
     if (cfg.enabled === false) return // enabled=false：零推送
-    push(cfg.port, kind, toolName, logger)
+    push(cfg.port, kind, toolName, toolInput, logger)
   }
 
   const collector = createCollector(cfg, send, logger)
