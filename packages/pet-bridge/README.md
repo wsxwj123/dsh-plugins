@@ -72,9 +72,14 @@ cordis 插件配置（默认值即可用）：
 ## 测试
 
 ```bash
-node --test --test-force-exit 'tests/acceptance/*.test.js'   # 验收测试（43 条）
+node --test --test-force-exit 'tests/acceptance/*.test.js'   # 契约验收测试（43 条，快）
 node --test 'tests/unit/*.test.js'                           # 白盒单测（26 条）
+node --test 'tests/e2e/*.test.mjs'                           # 真实 cordis 环境 e2e（约 11 秒，改代码后必跑）
 ```
+
+> e2e 在真实 dsh headless 里加载插件跑任务（含真实模型调用），断言推送 payload 与
+> 推送失败不崩——测试替身模拟不到的 cordis 语义（inject 约束、callable logger this 绑定）
+> 由它把关。前置：本机 dsh 可用、`~/.dsh/profiles/node_modules/dsh-pet-bridge` symlink 存在。
 
 ## 工作原理（简版）
 
