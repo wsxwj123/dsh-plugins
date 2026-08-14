@@ -1,0 +1,190 @@
+/**
+ * Node half of dsh-session-manager — a Cordis plugin.
+ *
+ * Responsibilities (PLAN §4 T2/T3):
+ *  1. Mount the raw /sm/* RPC surface on the web server, protected by the
+ *     loopback trust fence, with recycle-bin file operations
+ *     (delete/restore/emptyTrash/trash) and the workspace archive-set write
+ *     (delete-archived step-2 / unarchive).
+ *  2. Use ONLY core ctx members (logger/get/effect/on/emit) plus exactly the
+ *     injected services `connection`, `storageDomain`, `sessions`; the HTTP
+ *     server is reached via `ctx.get('webServer')` (optional, never bare).
+ *
+ * Cordis access discipline (the dsh-pet-bridge crash lesson): we never touch a
+ * non-injected service property bare — `ctx.<service>` outside the inject list
+ * throws "cannot get property without inject". Every service is either in the
+ * inject list or read through `ctx.get` (which returns undefined rather than
+ * throwing).
+ */
+
+import path from 'node:path'
+import os from 'node:os'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Context } from 'cordis'
+import { TrashStore } from './trash.js'
+import { createSmHandler, archiveFromGlobal, type ArchiveDomain, type SmHandlerDeps } from './handler.js'
+import { isTrustedSmRequest } from './trust-fence.js'
+
+/** Minimal web-server service surface we depend on (via optional ctx.get). */
+interface WebServerService {
+  register(route: {
+    kind: string
+    path: string
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  }): () => void
+}
+
+/**
+ * The host services this plugin injects. Typed here (not on `Context`) because
+ * cordis injects them into the fiber scope at runtime; the bare `ctx.<name>`
+ * reads below are legal precisely because they are declared in `inject`.
+ */
+interface InjectedServices {
+  connection: unknown
+  storageDomain: { get(name: string): ArchiveDomain | null | undefined }
+  sessions: { get(id: string): unknown }
+}
+type InjectedCtx = Context & InjectedServices
+
+export const name = 'dsh-session-manager'
+
+/**
+ * Inject the three host services the handler needs. `webServer` is deliberately
+ * NOT injected (PLAN §9.1): it is read optionally via ctx.get so registration
+ * degrades to a logged no-op when the server is unavailable instead of
+ * crashing startup.
+ */
+export const inject = ['connection', 'storageDomain', 'sessions']
+
+export interface SessionManagerConfig {
+  /** Sessions root; defaults to `~/.dsh/sessions`. */
+  sessionsRoot?: string
+  /** Recycle-bin root; must be OUTSIDE sessionsRoot. Env SM_TRASH_ROOT wins. */
+  trashRoot?: string
+}
+
+/** Resolve effective roots: CLI/config -> env override -> DSH defaults. */
+export function resolveRoots(config: SessionManagerConfig) {
+  const home = os.homedir()
+  const sessionsRoot = config.sessionsRoot ?? path.join(home, '.dsh', 'sessions')
+  const trashRoot =
+    process.env.SM_TRASH_ROOT?.trim() ||
+    config.trashRoot ||
+    path.join(home, '.dsh', 'session-manager-trash')
+  return { sessionsRoot, trashRoot }
+}
+
+/**
+ * Build the /sm dispatch with a production storage-domain facility. Kept as a
+ * separate exported function so tests can wire a real handler without booting
+ * cordis, and so the archive read helpers stay in one place.
+ */
+export function makeHandler(
+  deps: SmHandlerDeps,
+): ReturnType<typeof createSmHandler> {
+  return createSmHandler(deps)
+}
+
+export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void {
+  const { sessionsRoot, trashRoot } = resolveRoots(config)
+  // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
+  // sit inside the sessions root, or the host session scan would re-discover
+  // moved sessions and "resurrect" them. We enforce it at startup.
+  if (isTrashInside(sessionsRoot, trashRoot)) {
+    ctx.logger.warn(
+      `[session-manager] trash root ${trashRoot} is inside sessions root ${sessionsRoot}; refusing to enable recycle bin`,
+    )
+    return
+  }
+
+  const trash = new TrashStore(trashRoot)
+
+  const storageDomain = ctx.storageDomain // injected
+  /** Read the current workspace global object; null when the domain is absent. */
+  const readGlobal = (): Record<string, unknown> => {
+    const domain = storageDomain.get('workspace')
+    if (!domain || typeof domain.global?.get !== 'function') return {}
+    try {
+      const v = domain.global.get()
+      return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const deps: SmHandlerDeps = {
+    sessionsRoot,
+    trash,
+    sessions: ctx.sessions, // injected
+    storageDomain, // injected
+    readArchived: () => archiveFromGlobal(readGlobal()),
+    readWorkspaceGlobal: readGlobal,
+    log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) },
+  }
+  const handler = createSmHandler(deps)
+
+  // Recycle-bin enables a raw /sm/* route. We fetch the web server optionally
+  // (never bare) so that if it is absent we degrade gracefully.
+  const webServer = ctx.get('webServer') as WebServerService | undefined
+
+  if (!webServer || typeof webServer.register !== 'function') {
+    ctx.logger.warn('[session-manager] webServer service unavailable; /sm routes are not mounted')
+    return
+  }
+
+  const route = {
+    kind: 'prefix',
+    path: '/sm',
+    handler: async (req: IncomingMessage, res: ServerResponse) => {
+      // Loopback trust fence (same guarantees as connection.rpc.handle
+      // authority:'loopback'): refuse non-loopback Host / cross-site / foreign
+      // Origin before any handler work.
+      if (!isTrustedSmRequest(req)) {
+        res.writeHead(403)
+        res.end('forbidden')
+        return
+      }
+
+      const m = /^\/sm\/([^/?#]+)/.exec(req.url ?? '')
+      const method = m ? m[1] : undefined
+      if (!method) {
+        res.writeHead(404)
+        res.end('not found')
+        return
+      }
+
+      // Consume a raw JSON body. Malformed JSON => 400 (contract §0).
+      let raw = ''
+      req.setEncoding('utf8')
+      for await (const chunk of req) raw += chunk
+
+      let body: unknown
+      if (raw.length === 0) {
+        body = undefined
+      } else {
+        try {
+          body = JSON.parse(raw)
+        } catch {
+          res.writeHead(400, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, code: 'bad-request', message: 'invalid JSON' }))
+          return
+        }
+      }
+
+      const result = handler.handle(method, req, body)
+      res.writeHead(result.status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(result.json))
+    },
+  }
+
+  // Register the route under this plugin fiber; dispose on teardown.
+  const dispose = webServer.register(route)
+  ctx.effect(() => dispose)
+}
+
+/** Whether one root resolves inside another (startup guard). */
+function isTrashInside(sessionsRoot: string, trashRoot: string): boolean {
+  const s = path.resolve(sessionsRoot)
+  const t = path.resolve(trashRoot)
+  return t === s || t.startsWith(s + path.sep)
+}

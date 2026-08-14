@@ -1,0 +1,275 @@
+/**
+ * Core /sm handler — the executable surface that the cordis node half mounts
+ * (src/index.ts) and that the acceptance bridge tests drive. This factory
+ * reproduces, match-for-match, the contract image in tests/acceptance/helpers.js
+ * (same per-endpoint判定顺序, same idempotency truth values, same error codes,
+ * same HTTP/JSON shape).
+ *
+ * Wire note (important): the /sm surface here is a RAW HTTP route — it returns
+ * `{ ok: true, … }` directly and accepts a RAW body `{ id, cwd, title }`. That
+ * is exactly what the locked acceptance suite asserts and what the browser
+ * client half speaks. The official `connection.rpc.handle` envelope
+ * (`{ type, rpcId, method, payload }` → `{ type, rpcId, result }`) is NOT the
+ * /sm contract, so this plugin mounts its own raw prefix route and applies the
+ * same loopback trust fence (src/trust-fence.ts). See the final report for the
+ * plan-interface conflict this resolves.
+ */
+
+import fs from 'node:fs'
+import path from 'node:path'
+import { TrashStore } from './trash.js'
+import {
+  assertValidId,
+  isStableSegment,
+  lookupProjectDir,
+  isInsideOrEqual,
+  sessionSegment,
+} from './paths.js'
+
+export interface ArchiveDomain {
+  global: { get(): unknown; set(value: unknown): unknown }
+}
+
+export interface SmHandlerDeps {
+  /** Absolute path of the sessions root (`~/.dsh/sessions`). */
+  sessionsRoot: string
+  /** The recycle-bin store (its root must be OUTSIDE sessionsRoot). */
+  trash: TrashStore
+  /** Node SessionStore: truthy when the id is currently running / live. */
+  sessions: { get(id: string): unknown | null | undefined }
+  /**
+   * storage-domain facility: `get('workspace')` returns the live, already-open
+   * workspace DomainImpl (null/undefined → domain unavailable).
+   */
+  storageDomain: { get(name: string): ArchiveDomain | null | undefined }
+  /** Read the current archivedSessionIds set (never touches the write domain). */
+  readArchived(): string[]
+  /** Read the current workspace global object `{initialized, workspaceIds, archivedSessionIds}`. */
+  readWorkspaceGlobal(): Record<string, unknown>
+  /** Optional logger for the partial-failure / boundary paths. */
+  log?: { warn(msg: string): void }
+}
+
+export interface SmResponse {
+  status: number
+  json: Record<string, unknown>
+}
+
+function ok(): SmResponse {
+  return { status: 200, json: { ok: true } }
+}
+
+function fail(code: string, message: string): SmResponse {
+  return { status: 200, json: { ok: false, code, message } }
+}
+
+function bad(code: string, message: string): SmResponse {
+  return { status: 400, json: { ok: false, code, message } }
+}
+
+function bodyIsObject(body: unknown): body is Record<string, unknown> {
+  return typeof body === 'object' && body !== null && !Array.isArray(body)
+}
+
+/**
+ * Create the /sm handler. `handle(method, req, body)` returns the HTTP status
+ * + JSON to send for one request. The loopback trust fence is applied by the
+ * route owner (src/index.ts); this function operates on already-trusted input.
+ */
+export function createSmHandler(deps: SmHandlerDeps): {
+  handle(method: string | null | undefined, req: unknown, body: unknown): SmResponse
+} {
+  const log = deps.log ?? { warn: () => {} }
+
+  // ---- /sm/delete ----
+  function doDelete(_req: unknown, body: unknown): SmResponse {
+    if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
+
+    const { id, cwd, title } = body as { id?: unknown; cwd?: unknown; title?: unknown }
+
+    // 400-level input validation (INTERFACE §3.1).
+    if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
+    if (cwd !== undefined && cwd !== null && typeof cwd !== 'string') {
+      return bad('invalid-cwd', 'invalid cwd')
+    }
+    if (title !== undefined && title !== null) {
+      if (typeof title !== 'string' || title.length > 256) {
+        return bad('invalid-title', 'invalid title')
+      }
+    }
+
+    // Locate the project dir.
+    const proj = lookupProjectDir(deps.sessionsRoot, cwd)
+    if (proj.kind === 'invalid') return bad('invalid-cwd', 'invalid cwd')
+    if (proj.kind === 'not-found') return fail('session-dir-not-found', 'project dir not found')
+
+    // Boundary gates (200-level). An id that is not a stable literal segment,
+    // or a target resolving outside the sessions root, is refused with NO
+    // move.
+    if (!isStableSegment(id as string)) {
+      return fail('path-out-of-bounds', 'id escapes segment encoding')
+    }
+    const targetDir = sessionSegment(proj.projectDir, id as string)
+    if (!isInsideOrEqual(deps.sessionsRoot, targetDir)) {
+      return fail('path-out-of-bounds', 'target outside sessions root')
+    }
+
+    // Running-session guard (host-side, not only the client).
+    if (deps.sessions.get(id as string)) return fail('session-running', 'session is running')
+
+    // Source missing: if already in the trash → idempotent-complete, run the
+    // archive step-2; else a genuine not-found.
+    if (!fs.existsSync(targetDir)) {
+      if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)
+      return fail('session-dir-not-found', 'session dir not found')
+    }
+
+    // Move the whole directory into the trash.
+    try {
+      deps.trash.moveToTrash(targetDir, {
+        id: id as string,
+        originalDir: targetDir,
+        title: typeof title === 'string' ? title : null,
+        projectKey: path.basename(proj.projectDir),
+      })
+    } catch (err) {
+      return fail('system-error', String(err))
+    }
+
+    return doArchivedCleanup(id as string)
+  }
+
+  // Delete-step-2 for archived sessions: drop the id from the archive set.
+  // Reads the archive set independently of the write domain (so an otherwise
+  // non-archived delete stays a pure no-op), then requires the write domain.
+  // Partial failure → system-error while the file is already moved (retryable).
+  function doArchivedCleanup(id: string): SmResponse {
+    if (!deps.readArchived().includes(id)) return ok()
+
+    const domain = deps.storageDomain.get('workspace')
+    if (domain === null || domain === undefined) {
+      log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
+      return fail('system-error', 'archive cleanup failed; file already moved, retry to complete')
+    }
+    try {
+      const current = deps.readWorkspaceGlobal()
+      const next = deps.readArchived().filter((x) => x !== id)
+      domain.global.set({ ...current, archivedSessionIds: next })
+      return ok()
+    } catch (err) {
+      log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
+      return fail('system-error', String(err))
+    }
+  }
+
+  // ---- /sm/restore ----
+  function doRestore(_req: unknown, body: unknown): SmResponse {
+    if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
+    const { id } = body as { id?: unknown }
+    if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
+
+    const rec = deps.trash.readRecord(id as string)
+    // Judgment order per INTERFACE §3.2: no record → not-in-trash; record
+    // present but original dir occupied → restore-target-exists (refuse, never
+    // overwrite); otherwise move it back.
+    if (rec === null) return fail('not-in-trash', 'no such trash entry')
+    if (fs.existsSync(rec.originalDir)) {
+      return fail('restore-target-exists', 'original dir occupied; refusing to overwrite')
+    }
+    if (!deps.trash.hasItem(rec.id)) {
+      return fail('system-error', 'trash entry dir missing')
+    }
+    try {
+      deps.trash.restoreItem(rec)
+      return ok()
+    } catch (err) {
+      return fail('system-error', String(err))
+    }
+  }
+
+  // ---- /sm/emptyTrash ----
+  function doEmptyTrash(_req: unknown, body: unknown): SmResponse {
+    if (!bodyIsObject(body) || body.confirm !== true) {
+      return bad('confirmation-required', 'confirm:true required')
+    }
+    try {
+      const failed = deps.trash.empty()
+      if (failed.length > 0) {
+        log.warn(`emptyTrash partial failure on: ${failed.join(', ')}`)
+        return fail('system-error', `could not remove: ${failed.join(', ')}`)
+      }
+      return ok()
+    } catch (err) {
+      return fail('system-error', String(err))
+    }
+  }
+
+  // ---- /sm/unarchive ----
+  function doUnarchive(_req: unknown, body: unknown): SmResponse {
+    if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
+    const { id } = body as { id?: unknown }
+    if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
+
+    // Domain availability is checked FIRST, before reading the set.
+    const domain = deps.storageDomain.get('workspace')
+    if (domain === null || domain === undefined) {
+      return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
+    }
+    const archived = deps.readArchived()
+    if (!archived.includes(id as string)) return ok() // idempotent no-op
+
+    try {
+      const current = deps.readWorkspaceGlobal()
+      const next = archived.filter((x) => x !== id)
+      domain.global.set({ ...current, archivedSessionIds: next })
+      return ok()
+    } catch (err) {
+      return fail('system-error', String(err))
+    }
+  }
+
+  // ---- /sm/trash ----
+  function doTrash(): SmResponse {
+    return {
+      status: 200,
+      json: {
+        ok: true,
+        items: deps.trash.records().map((r) => ({
+          id: r.id,
+          title: r.title ?? undefined,
+          deadline: r.deletedAt,
+        })),
+      },
+    }
+  }
+
+  return {
+    handle(method, _req, body): SmResponse {
+      switch (method) {
+        case 'delete':
+          return doDelete(_req, body)
+        case 'restore':
+          return doRestore(_req, body)
+        case 'emptyTrash':
+          return doEmptyTrash(_req, body)
+        case 'unarchive':
+          return doUnarchive(_req, body)
+        case 'trash':
+          return doTrash()
+        default:
+          return { status: 404, json: { ok: false, error: 'not found' } }
+      }
+    },
+  }
+}
+
+/**
+ * Data helpers for the workspace archive domain, so src/index.ts can wire a
+ * production storage-domain facility into the handler without re-deriving the
+ * field names.
+ */
+export function archiveFromGlobal(global: Record<string, unknown> | null | undefined): string[] {
+  if (!global || typeof global !== 'object') return []
+  const a = (global as Record<string, unknown>).archivedSessionIds
+  return Array.isArray(a) ? (a as string[]) : []
+}
