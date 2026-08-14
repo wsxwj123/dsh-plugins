@@ -2,7 +2,7 @@
   "name": "dsh-pet-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "DSH server plugin: push dsh session status to the claude-pets desktop pet bubble in real time.",
+  "description": "DSH server plugin: push dsh session status to the cc-pet desktop pet bubble in real time.",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",

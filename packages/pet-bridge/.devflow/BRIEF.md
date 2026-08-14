@@ -1,11 +1,11 @@
 # dsh-pet-bridge
 
-让 claude-pets 桌面宠物的气泡实时显示 dsh（DeepSeek Harness）会话状态。
+让 cc-pet 桌面宠物的气泡实时显示 dsh（DeepSeek Harness）会话状态。
 
 ## 需求（BRIEF 定稿）
 
 ### 要解决的问题
-用户同时使用 dsh web（网页 GUI 干开发/写作）和 claude-pets（桌面宠物）。
+用户同时使用 dsh web（网页 GUI 干开发/写作）和 cc-pet（桌面宠物）。
 dsh 干活时（读文件、跑命令、搜索、思考），pet 气泡无任何显示——两者没有通道。
 用户要求：dsh 跑任务时，pet 头顶气泡实时显示 dsh 正在干什么。
 
@@ -39,6 +39,6 @@ dsh 干活时（读文件、跑命令、搜索、思考），pet 气泡无任何
 - headless profile 可作测试环境（每次新进程，不打断 web）
 
 ### 边界与约束
-- 运行环境：macOS，本机 dsh（~/.dsh/profiles/web）+ claude-pets（/Applications/claude-pets.app）
+- 运行环境：macOS，本机 dsh（~/.dsh/profiles/web）+ cc-pet（/Applications/cc-pet.app）
 - 插件部署：`~/Desktop/claude/dsh-plugins/packages/pet-bridge`，link 进 web profile（参照 dsh-turn-scrubber 的部署方式），改 profile package.json 属配置文件修改，需用户同意
 - pet 未运行 / 7779 无监听时：插件静默降级（不报错、不影响 dsh），可配置开关

@@ -1,6 +1,6 @@
 # dsh-pet-bridge
 
-把 dsh 会话状态实时推送到 claude-pets 桌面宠物气泡。
+把 dsh 会话状态实时推送到 cc-pet 桌面宠物气泡。
 
 ## 阶段进度
 

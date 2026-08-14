@@ -1,13 +1,13 @@
 # dsh-pet-bridge 方案定稿
 
-让 claude-pets 桌面宠物的气泡实时显示 dsh（DeepSeek Harness）会话状态。本方案基于 spike 已实证事实（见 BRIEF「技术事实」），不引入未验证假设；关键未验证点列为「待 spike 项」。
+让 cc-pet 桌面宠物的气泡实时显示 dsh（DeepSeek Harness）会话状态。本方案基于 spike 已实证事实（见 BRIEF「技术事实」），不引入未验证假设；关键未验证点列为「待 spike 项」。
 
 ## 1. 架构
 
 单进程内一条单向数据流水线，dsh 是唯一源，pet 是唯一汇：
 
 ```
-dsh agent loop                     pet-bridge 插件                     claude-pets
+dsh agent loop                     pet-bridge 插件                     cc-pet
 ─────────────────                ────────────────                    ───────────
 turn/start / tool/call    →   ctx.on("agent/created")           →   HookServer 7779
 tool/result / turn/end       采集 agent → 轮询 session.events      POST /bubble
