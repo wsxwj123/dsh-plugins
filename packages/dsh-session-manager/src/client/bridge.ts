@@ -8,35 +8,19 @@
  *
  * Every call is a JSON POST (GET-free), so the browser sends `Sec-Fetch-Site`
  * same-origin and the loopback Host the node fence requires.
+ *
+ * All transport logic (including the review I-5 network-error catch) lives in
+ * the pure, node-testable `bridgeCore`; this module only wires the `/sm` base
+ * path to it.
  */
+import { postJson, type SmResult } from './bridgeCore.ts'
 
-/** A successful or failed JSON response from the host. */
-export interface SmResult {
-  ok: boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any
-}
+export type { SmResult } from './bridgeCore.ts'
 
 const BASE = '/sm'
 
-async function post(path: string, body: unknown): Promise<SmResult> {
-  const res = await fetch(BASE + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  })
-  // 4xx/5xx are contract violations (bad-input / untrusted-origin); surface
-  // them as a structured failure so the caller can branch without swallowing.
-  if (!res.ok) {
-    return { ok: false, code: `http-${res.status}`, message: `request failed with status ${res.status}` }
-  }
-  let json: unknown
-  try {
-    json = await res.json()
-  } catch {
-    return { ok: false, code: 'invalid-response', message: 'host returned a non-JSON body' }
-  }
-  return json as SmResult
+function post(path: string, body: unknown): Promise<SmResult> {
+  return postJson(BASE + path, body)
 }
 
 /**

@@ -6,14 +6,33 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 		let react_dom_client = require("react-dom/client");
-		//#region src/client/bridge.ts
-		const BASE = "/sm";
-		async function post(path, body) {
-			const res = await fetch(BASE + path, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body ?? {})
-			});
+		//#region src/client/bridgeCore.ts
+		/**
+		* POST one JSON RPC call and normalize every failure mode into a structured
+		* `SmResult`. This function NEVER rejects:
+		*   - transport/network errors  → `{ ok:false, code:'network-error' }` (I-5)
+		*   - HTTP error status         → `{ ok:false, code:'http-<status>' }`
+		*   - non-JSON success body     → `{ ok:false, code:'invalid-response' }`
+		*   - 200 JSON body             → passed through untouched.
+		* @param path - the full request path (e.g. `/sm/delete`).
+		* @param body - JSON-serializable payload (`{}` when absent).
+		* @param fetchImpl - platform fetch by default; tests inject a stub.
+		*/
+		async function postJson(path, body, fetchImpl = fetch) {
+			let res;
+			try {
+				res = await fetchImpl(path, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(body ?? {})
+				});
+			} catch (err) {
+				return {
+					ok: false,
+					code: "network-error",
+					message: err instanceof Error ? err.message : String(err)
+				};
+			}
 			if (!res.ok) return {
 				ok: false,
 				code: `http-${res.status}`,
@@ -30,6 +49,27 @@ window.__ModuleLoader__.load({
 				};
 			}
 			return json;
+		}
+		//#endregion
+		//#region src/client/bridge.ts
+		/**
+		* client→host bridge: raw fetch over the same-origin `/sm/*` RPC surface.
+		*
+		* Wiring note (matches the node half's own decision, see src/handler.ts): the
+		* `/sm` prefix route is a RAW HTTP JSON surface — it returns `{ ok:true, … }`
+		* directly and accepts a raw `{ id, cwd, title }` body, guarded by the node
+		* half's loopback trust fence. This file is the client's thin typed caller.
+		*
+		* Every call is a JSON POST (GET-free), so the browser sends `Sec-Fetch-Site`
+		* same-origin and the loopback Host the node fence requires.
+		*
+		* All transport logic (including the review I-5 network-error catch) lives in
+		* the pure, node-testable `bridgeCore`; this module only wires the `/sm` base
+		* path to it.
+		*/
+		const BASE = "/sm";
+		function post(path, body) {
+			return postJson(BASE + path, body);
 		}
 		/**
 		* Delete a session (recycle-bin move + optional archive-set cleanup). Fired
@@ -389,33 +429,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"trashCount": "FPsCja_trashCount",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"rail": "FPsCja_rail",
-			"title": "FPsCja_title",
-			"add": "FPsCja_add",
-			"backdrop": "FPsCja_backdrop",
-			"head": "FPsCja_head",
-			"close": "FPsCja_close",
-			"danger": "FPsCja_danger",
-			"overlay": "FPsCja_overlay",
 			"rail-in": "FPsCja_rail-in",
-			"list": "FPsCja_list",
-			"row": "FPsCja_row",
-			"action": "FPsCja_action",
-			"errorBanner": "FPsCja_errorBanner",
-			"trashBar": "FPsCja_trashBar",
-			"failed": "FPsCja_failed",
-			"undo": "FPsCja_undo",
-			"trashButton": "FPsCja_trashButton",
-			"dismiss": "FPsCja_dismiss",
-			"countdown": "FPsCja_countdown",
 			"divider": "FPsCja_divider",
-			"entryButton": "FPsCja_entryButton",
+			"rail": "FPsCja_rail",
+			"undo": "FPsCja_undo",
+			"overlay": "FPsCja_overlay",
+			"failed": "FPsCja_failed",
+			"backdrop": "FPsCja_backdrop",
+			"add": "FPsCja_add",
+			"head": "FPsCja_head",
 			"item": "FPsCja_item",
-			"label": "FPsCja_label",
+			"close": "FPsCja_close",
+			"list": "FPsCja_list",
 			"rowTitle": "FPsCja_rowTitle",
-			"empty": "FPsCja_empty"
+			"empty": "FPsCja_empty",
+			"trashCount": "FPsCja_trashCount",
+			"countdown": "FPsCja_countdown",
+			"errorBanner": "FPsCja_errorBanner",
+			"danger": "FPsCja_danger",
+			"dismiss": "FPsCja_dismiss",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"label": "FPsCja_label",
+			"row": "FPsCja_row",
+			"trashBar": "FPsCja_trashBar",
+			"action": "FPsCja_action",
+			"entryButton": "FPsCja_entryButton",
+			"title": "FPsCja_title",
+			"trashButton": "FPsCja_trashButton"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -663,14 +703,16 @@ window.__ModuleLoader__.load({
 			const sessionsSnap = (0, react.useSyncExternalStore)((l) => sessionsFeed.subscribe(l), () => sessionsFeed.getSnapshot(), () => sessionsFeed.getSnapshot());
 			const workspacesSnap = (0, react.useSyncExternalStore)((l) => workspacesFeed.subscribe(l), () => workspacesFeed.getSnapshot(), () => workspacesFeed.getSnapshot());
 			const [trashCount, setTrashCount] = (0, react.useState)(null);
-			const [trashError, setTrashError] = (0, react.useState)(null);
+			const [error, setError] = (0, react.useState)(null);
 			(0, react.useEffect)(() => {
 				if (!open) return;
 				let cancelled = false;
 				smTrash().then((res) => {
 					if (cancelled) return;
 					if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0);
-					else setTrashError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
+					else setError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
+				}).catch((err) => {
+					if (!cancelled) setError(`读取回收站失败：${err instanceof Error ? err.message : String(err)}`);
 				});
 				return () => {
 					cancelled = true;
@@ -680,17 +722,39 @@ window.__ModuleLoader__.load({
 			/** Confirm-then-empty the recycle bin (unrecoverable) — defined in-component
 			*  so it captures the trash state setters. `window.confirm` is a genuine
 			*  modal; we call /sm/emptyTrash with confirm:true on confirmation. Failures
-			*  are surfaced, never swallowed; the count is re-read so the UI re-syncs. */
+			*  are surfaced, never swallowed; the count is re-read so the UI re-syncs.
+			*  The try/catch guarantees no await-site rejection escapes as unhandled
+			*  (I-5). */
 			const onEmptyTrash = async (count) => {
 				if (!window.confirm(`将永久删除回收站中的 ${count} 个会话，此操作不可撤销。确定继续？`)) return;
-				const res = await smEmptyTrash(true);
-				if (!res.ok) {
-					setTrashError(`清空回收站失败：${res.code ?? res.message ?? "unknown"}`);
-					return;
+				try {
+					const res = await smEmptyTrash(true);
+					if (!res.ok) {
+						setError(`清空回收站失败：${res.code ?? res.message ?? "unknown"}`);
+						return;
+					}
+					setError(null);
+					const t = await smTrash();
+					if (t.ok) setTrashCount(Array.isArray(t.items) ? t.items.length : 0);
+					else setError(`读取回收站失败：${t.code ?? t.message ?? "unknown"}`);
+				} catch (err) {
+					setError(`清空回收站失败：${err instanceof Error ? err.message : String(err)}`);
 				}
-				setTrashError(null);
-				const t = await smTrash();
-				if (t.ok) setTrashCount(Array.isArray(t.items) ? t.items.length : 0);
+			};
+			/** Remove a session id from the archive set via /sm/unarchive. Failures are
+			*  surfaced on the error banner (never silently logged away — I-5) and we
+			*  fall back to a host re-pull (PLAN §5.1 risk 4 sub-state B) so a missed
+			*  broadcast still converges. The row stays visible. */
+			const onUnarchive = async (id) => {
+				try {
+					const res = await smUnarchive(id);
+					if (!res.ok) {
+						setError(`取消归档失败：${res.code ?? res.message ?? "unknown"}`);
+						ctx.workspaces.refresh();
+					}
+				} catch (err) {
+					setError(`取消归档失败：${err instanceof Error ? err.message : String(err)}`);
+				}
 			};
 			const byId = sessionsSnap.byId;
 			const parked = new Set(pending.filter((e) => e.state === "pending").map((e) => e.id));
@@ -712,7 +776,7 @@ window.__ModuleLoader__.load({
 			}, (0, react.createElement)("div", { className: rail_module_css_default.rowTitle }, row.title ?? row.displayTitle), (0, react.createElement)("button", {
 				type: "button",
 				className: rail_module_css_default.action,
-				onClick: () => void unarchive(ctx, row.id)
+				onClick: () => void onUnarchive(row.id)
 			}, "取消归档"), (0, react.createElement)("button", {
 				type: "button",
 				className: rail_module_css_default.danger,
@@ -742,18 +806,10 @@ window.__ModuleLoader__.load({
 				className: rail_module_css_default.close,
 				"aria-label": "关闭归档视图",
 				onClick: () => setArchiveOpen(false)
-			}, "✕")), trashError && (0, react.createElement)("div", {
+			}, "✕")), error && (0, react.createElement)("div", {
 				className: rail_module_css_default.errorBanner,
 				role: "alert"
-			}, trashError), body, trashBar));
-		}
-		/** Remove a session id from the archive set via /sm/unarchive. */
-		async function unarchive(ctx, id) {
-			const res = await smUnarchive(id);
-			if (!res.ok) {
-				ctx.workspaces.refresh();
-				console.error("[dsh-session-manager] 取消归档失败：", res.code ?? res.message);
-			}
+			}, error), body, trashBar));
 		}
 		/** Park a deferred delete for an archived session (host two-step on fire).
 		*  Multi-entry allowed (P9); a false return only means the id is already parked. */

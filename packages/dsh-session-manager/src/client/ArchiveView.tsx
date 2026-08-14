@@ -55,17 +55,25 @@ export function ArchiveView({
   )
 
   // Recycle-bin entry count for the 「清空回收站」 control. Refreshed on open and
-  // after each empty so the count/disabled state tracks the host truth.
+  // after each empty so the count/disabled state tracks the host truth. The
+  // error banner (`error`) surfaces EVERY host failure visibly — read, empty,
+  // unarchive — never silently (review I-5).
   const [trashCount, setTrashCount] = useState<number | null>(null)
-  const [trashError, setTrashError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    void smTrash().then((res) => {
-      if (cancelled) return
-      if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
-      else setTrashError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
-    })
+    void smTrash()
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+        else setError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
+      })
+      .catch((err) => {
+        // I-5 belt-and-suspenders: even if the bridge ever rejects again, the
+        // failure stays visible instead of an unhandled rejection.
+        if (!cancelled) setError(`读取回收站失败：${err instanceof Error ? err.message : String(err)}`)
+      })
     return () => {
       cancelled = true
     }
@@ -76,19 +84,43 @@ export function ArchiveView({
   /** Confirm-then-empty the recycle bin (unrecoverable) — defined in-component
    *  so it captures the trash state setters. `window.confirm` is a genuine
    *  modal; we call /sm/emptyTrash with confirm:true on confirmation. Failures
-   *  are surfaced, never swallowed; the count is re-read so the UI re-syncs. */
+   *  are surfaced, never swallowed; the count is re-read so the UI re-syncs.
+   *  The try/catch guarantees no await-site rejection escapes as unhandled
+   *  (I-5). */
   const onEmptyTrash = async (count: number): Promise<void> => {
     const ok = window.confirm(`将永久删除回收站中的 ${count} 个会话，此操作不可撤销。确定继续？`)
     if (!ok) return
-    const res = await smEmptyTrash(true)
-    if (!res.ok) {
-      setTrashError(`清空回收站失败：${res.code ?? res.message ?? 'unknown'}`)
-      return
+    try {
+      const res = await smEmptyTrash(true)
+      if (!res.ok) {
+        setError(`清空回收站失败：${res.code ?? res.message ?? 'unknown'}`)
+        return
+      }
+      setError(null)
+      const t = await smTrash()
+      if (t.ok) {
+        setTrashCount(Array.isArray(t.items) ? t.items.length : 0)
+      } else {
+        setError(`读取回收站失败：${t.code ?? t.message ?? 'unknown'}`)
+      }
+    } catch (err) {
+      setError(`清空回收站失败：${err instanceof Error ? err.message : String(err)}`)
     }
-    setTrashError(null)
-    const t = await smTrash()
-    if (t.ok) {
-      setTrashCount(Array.isArray(t.items) ? t.items.length : 0)
+  }
+
+  /** Remove a session id from the archive set via /sm/unarchive. Failures are
+   *  surfaced on the error banner (never silently logged away — I-5) and we
+   *  fall back to a host re-pull (PLAN §5.1 risk 4 sub-state B) so a missed
+   *  broadcast still converges. The row stays visible. */
+  const onUnarchive = async (id: string): Promise<void> => {
+    try {
+      const res = await smUnarchive(id)
+      if (!res.ok) {
+        setError(`取消归档失败：${res.code ?? res.message ?? 'unknown'}`)
+        void ctx.workspaces.refresh()
+      }
+    } catch (err) {
+      setError(`取消归档失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -119,7 +151,7 @@ export function ArchiveView({
           createElement('div', { className: css.rowTitle }, row.title ?? row.displayTitle),
           createElement(
             'button',
-            { type: 'button', className: css.action, onClick: () => void unarchive(ctx, row.id) },
+            { type: 'button', className: css.action, onClick: () => void onUnarchive(row.id) },
             '取消归档',
           ),
           createElement(
@@ -189,25 +221,11 @@ export function ArchiveView({
           '✕',
         ),
       ),
-      trashError && createElement('div', { className: css.errorBanner, role: 'alert' }, trashError),
+      error && createElement('div', { className: css.errorBanner, role: 'alert' }, error),
       body,
       trashBar,
     ),
   )
-}
-
-/** Remove a session id from the archive set via /sm/unarchive. */
-async function unarchive(ctx: Context, id: string): Promise<void> {
-  const res = await smUnarchive(id)
-  if (!res.ok) {
-    // Do not swallow the failure: surface it and fall back to a host re-pull
-    // (PLAN §5.1 risk 4 sub-state B) so a missed broadcast still converges.
-    // The row stays visible; the error is clearly logged for the user.
-    void ctx.workspaces.refresh()
-    console.error('[dsh-session-manager] 取消归档失败：', res.code ?? res.message)
-  }
-  // On success the host broadcasts or the workspace feed re-pulls; either path
-  // updates archivedSessionIds and this list re-renders.
 }
 
 /** Park a deferred delete for an archived session (host two-step on fire).

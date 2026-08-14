@@ -31,7 +31,7 @@
   "scripts": {
     "build": "node build.mjs",
     "check": "node node_modules/typescript/bin/tsc --noEmit && node node_modules/typescript/bin/tsc -p tsconfig.client.json --noEmit",
-    "test:unit": "node --test tests/unit/handler.unit.test.js tests/unit/trash.unit.test.js tests/unit/paths-and-fence.unit.test.js tests/unit/cordis-access.unit.test.js tests/unit/pendingDeletes.unit.test.js tests/unit/sessionRowMatch.unit.test.js tests/unit/client-cordis-discipline.unit.test.js",
+    "test:unit": "node --test tests/unit/handler.unit.test.js tests/unit/trash.unit.test.js tests/unit/paths-and-fence.unit.test.js tests/unit/cordis-access.unit.test.js tests/unit/pendingDeletes.unit.test.js tests/unit/sessionRowMatch.unit.test.js tests/unit/client-cordis-discipline.unit.test.js tests/unit/bridge.unit.test.js",
     "test:acceptance": "node --test tests/acceptance/auth.test.js tests/acceptance/delete.test.js tests/acceptance/emptyTrash.test.js tests/acceptance/restore.test.js tests/acceptance/trash.test.js tests/acceptance/unarchive.test.js",
     "test:integration": "node --test tests/integration/acceptance.real.test.js"
   },

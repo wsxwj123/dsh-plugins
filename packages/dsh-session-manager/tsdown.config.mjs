@@ -147,6 +147,9 @@ export default [
       // The client row→session title-matching core (pure, no DOM/react) —
       // built to node ESM so the node unit test can drive it.
       'session-row-match': 'src/client/sessionRowMatch.ts',
+      // The client→host HTTP core (pure, injectable fetch) — built to node ESM
+      // so the node unit test can drive every transport failure (review I-5).
+      'bridge-core': 'src/client/bridgeCore.ts',
     },
     outDir: 'lib',
     format: 'esm',
