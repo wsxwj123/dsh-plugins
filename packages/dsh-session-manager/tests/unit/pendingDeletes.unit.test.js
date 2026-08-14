@@ -68,7 +68,7 @@ function makeDeps(overrides = {}) {
   return { deps, calls, advance }
 }
 
-test('requestDelete parks an entry with a 10s deadline (countdown boundary)', () => {
+test('requestDelete parks an entry with the current undo window deadline (P8: 5s)', () => {
   const { deps, advance } = makeDeps()
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx', 'A')
@@ -108,7 +108,7 @@ test('countdown survives a view switch: firing is driven by module timer, not mo
   assert.strictEqual(calls.length, 1)
 })
 
-test('idempotent: a second requestDelete for a parked id is rejected (no double-park)', () => {
+test('idempotent: a second requestDelete for the SAME parked id is rejected (no double window)', () => {
   const { deps } = makeDeps()
   const pd = createPendingDeletes(deps)
   assert.strictEqual(pd.requestDelete('a', '/ctx', 'A'), true)
@@ -116,33 +116,28 @@ test('idempotent: a second requestDelete for a parked id is rejected (no double-
   assert.strictEqual(pd.snapshot().length, 1)
 })
 
-test('P4: a second, different-pending request is rejected while one is active', () => {
+test('P9: multi-entry — two DIFFERENT ids park independent windows', () => {
   const { deps } = makeDeps()
   const pd = createPendingDeletes(deps)
-  pd.requestDelete('a', '/ctx-a', 'A')
-  // Another session delete while one is mid-countdown -> rejected.
-  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), false)
-  assert.strictEqual(pd.snapshot().length, 1)
-  assert.strictEqual(pd.get('b'), undefined)
+  assert.strictEqual(pd.requestDelete('a', '/ctx-a', 'A'), true)
+  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), true, 'a different id parks alongside')
+  assert.strictEqual(pd.snapshot().length, 2)
+  // Each has an independent undoable window.
+  assert.strictEqual(pd.isPending('a'), true)
+  assert.strictEqual(pd.isPending('b'), true)
 })
 
-test('P4: after undo, a new (different) delete can be parked', () => {
-  const { deps } = makeDeps()
+test('P9: multi-entry — undoing one leaves the other pending and still firing', async () => {
+  const { deps, calls, advance } = makeDeps()
   const pd = createPendingDeletes(deps)
   pd.requestDelete('a', '/ctx-a', 'A')
-  assert.strictEqual(pd.undo('a'), true)
-  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), true, 'slot is free after undo')
-  assert.strictEqual(pd.snapshot().length, 1)
-})
-
-test('P4: after the window fires, a new delete can be parked', async () => {
-  const { deps, advance } = makeDeps()
-  const pd = createPendingDeletes(deps)
-  pd.requestDelete('a', '/ctx-a', 'A')
+  pd.requestDelete('b', '/ctx-b', 'B')
+  assert.strictEqual(pd.undo('b'), true, 'undo b only')
+  assert.strictEqual(pd.isPending('a'), true)
+  assert.strictEqual(pd.isPending('b'), false)
   advance(UNDO_WINDOW_MS)
   await Promise.resolve()
-  assert.strictEqual(pd.requestDelete('b', '/ctx-b', 'B'), true, 'slot is free after a fire')
-  assert.strictEqual(pd.snapshot().length, 1)
+  assert.deepStrictEqual(calls.map((c) => c.id), ['a'], 'a still fires at its own deadline')
 })
 
 test('undo before the deadline removes the entry and never fires', async () => {
@@ -214,25 +209,18 @@ test('snapshot returns the SAME reference while the map is unchanged (React #185
   const s1again = pd.snapshot()
   assert.strictEqual(s1, s1again, 'consecutive reads while unchanged must share a reference')
 
-  // Mutations replace the reference: waste a slot then repark a DIFFERENT id
-  // (P4 keeps at most one live). Each transition must yield a new array ref.
-  pd.undo('a')
+  // A mutation (parking a second entry, multi-entry is allowed) replaces the
+  // reference. Each transition must yield a new array ref.
+  pd.requestDelete('b', '/ctx-b', 'B')
   const s2 = pd.snapshot()
   assert.notStrictEqual(s2, s1)
-  assert.strictEqual(s2.length, 0)
-  // Stable again immediately.
+  assert.strictEqual(s2.length, 2)
   assert.strictEqual(pd.snapshot(), s2)
 
-  pd.requestDelete('b', '/ctx-b', 'B')
+  // Undo replaces the reference once more.
+  pd.undo('a')
   const s3 = pd.snapshot()
   assert.notStrictEqual(s3, s2)
   assert.strictEqual(s3.length, 1)
   assert.strictEqual(pd.snapshot(), s3)
-
-  // Undo replaces the reference once more.
-  pd.undo('b')
-  const s4 = pd.snapshot()
-  assert.notStrictEqual(s4, s3)
-  assert.strictEqual(s4.length, 0)
-  assert.strictEqual(pd.snapshot(), s4)
 })

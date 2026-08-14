@@ -93,8 +93,8 @@ window.__ModuleLoader__.load({
 		* `fire` re-checks presence before executing. Multi-session parallel parking
 		* is a natural Map property — one entry + one timer per id.
 		*/
-		/** The countdown window before a deletion becomes permanent (ms). */
-		const UNDO_WINDOW_MS = 1e4;
+		/** The countdown window before a deletion becomes permanent (ms). P8: 10s → 5s. */
+		const UNDO_WINDOW_MS = 5e3;
 		/** How long a failed-fire entry stays visible in the rail (ms). */
 		const FAILED_RETAIN_MS = 6e3;
 		function createPendingDeletes(deps) {
@@ -191,7 +191,6 @@ window.__ModuleLoader__.load({
 			return {
 				requestDelete(id, cwd, title) {
 					if (map.has(id)) return false;
-					for (const e of map.values()) if (e.state === "pending") return false;
 					park({
 						id,
 						cwd,
@@ -297,33 +296,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"dismiss": "FPsCja_dismiss",
-			"list": "FPsCja_list",
-			"danger": "FPsCja_danger",
 			"head": "FPsCja_head",
-			"close": "FPsCja_close",
-			"action": "FPsCja_action",
-			"add": "FPsCja_add",
-			"overlay": "FPsCja_overlay",
+			"trashBar": "FPsCja_trashBar",
+			"dismiss": "FPsCja_dismiss",
+			"trashCount": "FPsCja_trashCount",
+			"divider": "FPsCja_divider",
 			"rail-in": "FPsCja_rail-in",
-			"entryButton": "FPsCja_entryButton",
+			"failed": "FPsCja_failed",
+			"title": "FPsCja_title",
+			"deleteBtn": "FPsCja_deleteBtn",
 			"backdrop": "FPsCja_backdrop",
 			"empty": "FPsCja_empty",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"countdown": "FPsCja_countdown",
-			"errorBanner": "FPsCja_errorBanner",
+			"label": "FPsCja_label",
+			"close": "FPsCja_close",
+			"list": "FPsCja_list",
 			"rowTitle": "FPsCja_rowTitle",
+			"countdown": "FPsCja_countdown",
+			"add": "FPsCja_add",
+			"rail": "FPsCja_rail",
+			"item": "FPsCja_item",
+			"entryButton": "FPsCja_entryButton",
+			"row": "FPsCja_row",
+			"action": "FPsCja_action",
+			"errorBanner": "FPsCja_errorBanner",
 			"trashButton": "FPsCja_trashButton",
 			"undo": "FPsCja_undo",
-			"item": "FPsCja_item",
-			"label": "FPsCja_label",
-			"failed": "FPsCja_failed",
-			"divider": "FPsCja_divider",
-			"row": "FPsCja_row",
-			"title": "FPsCja_title",
-			"rail": "FPsCja_rail",
-			"trashBar": "FPsCja_trashBar",
-			"trashCount": "FPsCja_trashCount"
+			"overlay": "FPsCja_overlay",
+			"danger": "FPsCja_danger"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -643,10 +642,10 @@ window.__ModuleLoader__.load({
 			}
 		}
 		/** Park a deferred delete for an archived session (host two-step on fire).
-		*  P4: only one undoable delete at a time — a rejected park is surfaced. */
+		*  Multi-entry allowed (P9); a false return only means the id is already parked. */
 		function requestArchivedDelete(_ctx, row) {
 			const label = row.title ?? row.displayTitle;
-			if (!pendingDeletes.requestDelete(row.id, row.cwd, label)) window.alert("已有待撤销的删除，请先处理后再删除");
+			pendingDeletes.requestDelete(row.id, row.cwd, label);
 		}
 		//#endregion
 		//#region src/client/index.tsx
@@ -723,10 +722,7 @@ window.__ModuleLoader__.load({
 				wide: props.wide
 			}));
 			const controller = createDeleteController(() => ctx, (action, row) => {
-				if (!pendingDeletes.requestDelete(action.id, action.cwd, action.title)) {
-					window.alert("已有待撤销的删除，请先处理后再删除");
-					return;
-				}
+				pendingDeletes.requestDelete(action.id, action.cwd, action.title);
 			});
 			/** Hide/restore rows whose ids are parked vs active in the park table.
 			*  `rowById` is maintained by the injection controller (each injected button

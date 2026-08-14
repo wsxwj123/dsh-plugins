@@ -30,8 +30,8 @@
  * is a natural Map property — one entry + one timer per id.
  */
 
-/** The countdown window before a deletion becomes permanent (ms). */
-export const UNDO_WINDOW_MS = 10_000
+/** The countdown window before a deletion becomes permanent (ms). P8: 10s → 5s. */
+export const UNDO_WINDOW_MS = 5_000
 
 /** How long a failed-fire entry stays visible in the rail (ms). */
 export const FAILED_RETAIN_MS = 6_000
@@ -72,10 +72,9 @@ export interface PendingDeleteDeps {
 
 export interface PendingDeletes {
   /**
-   * Park a deletion. At most ONE undoable entry is allowed at a time (P4): the
-   * call returns `true` when the entry is parked, and `false` when it is
-   * rejected — because the id is already parked, or because another session is
-   * already mid-countdown. The caller surfaces the rejection to the user.
+   * Park a deletion. Multi-entry allowed (P9): each id rides its own window and
+   * its own undo button. Returns `true` when a new entry is parked, and `false`
+   * when the SAME id is already parked (idempotent no-op — no double window).
    */
   requestDelete(id: string, cwd: string, title: string): boolean
   /**
@@ -196,14 +195,8 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
 
   return {
     requestDelete(id, cwd, title) {
-      // Same id already parked -> reject (idempotent no-op, caller surfaces it).
+      // Same id already parked -> reject (idempotent no-op; multi-entry, P9).
       if (map.has(id)) return false
-      // At most one undoable window (P4): reject a new park while any pending
-      // entry is live. Failed entries (auto-clearing retain window) are not
-      // undoable, so they don't block.
-      for (const e of map.values()) {
-        if (e.state === 'pending') return false
-      }
       park({ id, cwd, title, deadline: now() + UNDO_WINDOW_MS, state: 'pending' })
       notify()
       return true

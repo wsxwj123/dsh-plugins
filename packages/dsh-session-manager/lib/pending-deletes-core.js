@@ -30,8 +30,8 @@
 * `fire` re-checks presence before executing. Multi-session parallel parking
 * is a natural Map property — one entry + one timer per id.
 */
-/** The countdown window before a deletion becomes permanent (ms). */
-const UNDO_WINDOW_MS = 1e4;
+/** The countdown window before a deletion becomes permanent (ms). P8: 10s → 5s. */
+const UNDO_WINDOW_MS = 5e3;
 /** How long a failed-fire entry stays visible in the rail (ms). */
 const FAILED_RETAIN_MS = 6e3;
 function createPendingDeletes(deps) {
@@ -128,7 +128,6 @@ function createPendingDeletes(deps) {
 	return {
 		requestDelete(id, cwd, title) {
 			if (map.has(id)) return false;
-			for (const e of map.values()) if (e.state === "pending") return false;
 			park({
 				id,
 				cwd,

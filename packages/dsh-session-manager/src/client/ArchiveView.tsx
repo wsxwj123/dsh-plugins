@@ -210,11 +210,8 @@ async function unarchive(ctx: Context, id: string): Promise<void> {
 }
 
 /** Park a deferred delete for an archived session (host two-step on fire).
- *  P4: only one undoable delete at a time — a rejected park is surfaced. */
+ *  Multi-entry allowed (P9); a false return only means the id is already parked. */
 function requestArchivedDelete(_ctx: Context, row: ArchivedRow): void {
   const label = row.title ?? row.displayTitle
-  const parked = pendingDeletes.requestDelete(row.id, row.cwd, label)
-  if (!parked) {
-    window.alert('已有待撤销的删除，请先处理后再删除')
-  }
+  pendingDeletes.requestDelete(row.id, row.cwd, label)
 }
