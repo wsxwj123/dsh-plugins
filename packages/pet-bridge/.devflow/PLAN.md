@@ -13,7 +13,7 @@ turn/start / tool/call    →   ctx.on("agent/created")           →   HookServ
 tool/result / turn/end       采集 agent → 轮询 session.events      POST /bubble
 assistant/message             增量(seq 游标, 250ms)               气泡显示
                               ↓
-                        事件→kind/中文文案映射
+                        事件→kind + tool_input 精简摘要提取
                               ↓
                         http.post 127.0.0.1:7779/bubble
 ```
@@ -37,29 +37,27 @@ assistant/message             增量(seq 游标, 250ms)               气泡显�
 - 不合并、不去重跨会话，不维护会话队列——BRIEF 明确非目标，不提前做。
 - **明示权衡**：若用户正在看的会话 A 在工作、背后会话 B 更晚发生工具调用，气泡会显示 B 的工具名（BRIEF「非目标」已接受此覆盖行为）。collector 单测固定「按最近事件时间戳选唯一源」的选择逻辑，避免实现走样。
 
-### 1.4 工具名→气泡中文文案映射——统一分类机制，禁止枚举硬编码
+### 1.4 tool_input 精简安全摘要提取——按工具分类的规则表
 
-**判断：集合是开放的。** dsh 工具集会持续新增（包持续更新），逐工具枚举硬编码在需求上就已排除（BRIEF「参考实现」要求统一机制）。
+**变更（用户拍板）**：气泡从「中文分类文案」改为「详细工具气泡」（claude codex 同款）——`tool_name` 传**原始工具名** `ev.data.name`，不再中文化；`tool_input` 转为从 arguments 提取的**精简安全摘要**。
 
-采用**分类规则表**：`tool_name → { 正则/前缀匹配 → 中文文案 }`，命中失败回落默认文案。规则面朝「工具类别」而非「具体工具」。
+**判断：工具集合是开放的。** dsh 工具集会持续新增（包持续更新），逐工具枚举硬编码不可取。采用**分类规则表**：`tool_name → { 前缀匹配 → 摘要提取规则 }`，提取对象缺省/类型不符/未命中的分支回 `null`（pet 兜底「运行中」）。规则面朝「工具类别」而非「具体工具」。
 
-分类规则（第一版，按工具名特征匹配，未命中走默认）：
+摘要规则（第一版，按工具名前缀匹配，未命中回 `null`）：
 
-| 工具名特征（正则，均首锚定） | 分类 | 气泡文案 |
+| 工具名前缀 | 提取字段 | 规则 |
 |---|---|---|
-| `^read\|^grep\|^glob\|^list\|^search\|(^\|[_-])search$` | read/搜索 | 读取中 |
-| `^write\|^edit\|^apply_patch\|^insert` | 写文件 | 写入文件 |
-| `^bash\|^exec\|^run\|^command\|^shell` | 命令 | 运行命令 |
-| `^web_search\|^http\|^fetch\|^request\|^curl` | 网络 | 联网检索 |
-| `^subagent\|^agent\|^workflow\|^skill` | 编排 | 编排任务 |
-| 兜底（无条件命中） | 其他 | 执行中 |
-
-> 锚定规范：**所有分支必须词首或带词边界，禁止裸 `\|search` 这类可能 part-match 的写法**（如 `supersearch` 不得命中搜索类）。测试须含「意外 part-match 用例」。
+| `read` | `{ file_path }` | `arguments.file_path` basename |
+| `write`/`edit`/`insert`/`apply_patch` | `{ file_path }` | `arguments.file_path` basename |
+| `bash`/`shell`/`exec` | `{ command }` | `arguments.command` 空格首词 |
+| `grep`/`search` | `{ pattern }` | `arguments.pattern` 截断 24 字符 |
+| `web_search` | `{ query }` | `arguments.query` 截断 22 字符 |
+| 其余（glob/subagent/workflow/skill/未知） | `null` | pet 兜底「运行中」 |
 
 落地要点：
-- 匹配顺序 = 表顺序；表放在独立模块 `toolLabels.ts`，新增工具只改一张表，不碰主流程。
-- **未命中工具给通用文案（如「执行中」）**，绝不因不知道工具名而无输出——气泡从不空白。
-- 规则永远返回字符串（总有兜底），因此映射不扩散到错误路径。
+- 规则表放独立模块 `toolLabels.ts`（职责 = 摘要提取），新增工具只改一张表，不碰主流程。
+- **所有提取值 ≤24 字符**；**完整 `arguments` 从不上外发路径**。
+- `argumentsJSON` 解析失败或对象缺字段 → 回 `null`，不抛错、不扩散到错误路径。
 
 ### 1.5 错误降级策略
 
@@ -69,7 +67,7 @@ assistant/message             增量(seq 游标, 250ms)               气泡显�
 |---|---|
 | pet 未运行 / 7779 无监听 | `http.request` error（ECONNREFUSED）→ 只记一次 debug 日志，不重试，不抛异常，不影响事件处理 |
 | 推送失败（网络 / 非 2xx） | 同样静默降级；配置 `logger`（默认 dsh logger），按 debug 级别打 |
-| 工具参数含敏感内容 | 见 §4.1 敏感面；只发工具**名**文案，`tool_input` 恒 `null`，参数一概不上外发路径 |
+| 工具参数含敏感内容 | 见 §4.1 敏感面；`tool_input` 仅含精简摘要（≤24 字符），`tool_name` 只传工具名，完整 `arguments` 从不上外发路径 |
 | 插件热重载 | cordis 卸载时 `ctx.offAll()` + 清全部 timer；重载重建，无残留 |
 | `agent.session.events` 为 undefined | 该 tick 跳过（已有 guard），不再深挖结构 |
 | **进程退出兜底（`agent/disposed`）** | 监听 `agent/disposed`（payload `{agent}`，与 `agent/created` 同源）；对销毁的 agent 补发一条 `kind:"stop"`（与 turn/end 相同 payload），并清理其轮询 timer/seq 游标。headless 一次性场景轮询可能来不及捕到最后的 turn/end 就退出，此兜底保证销毁前补发 stop，杜绝 pet 气泡残留 |
@@ -92,7 +90,7 @@ packages/pet-bridge/
 │   ├── agentWatcher.ts   # 单 agent：seq 游标 + 增量轮询 → 派发 kind+tool
 │   ├── collector.ts      # 多会话并发：选最新活跃会话作为唯一推送源
 │   ├── bubble.ts         # POST /bubble 构造与发送 + 静默降级
-│   ├── toolLabels.ts     # 工具名→中文文案 分类规则表（开放扩展点）
+│   ├── toolLabels.ts     # tool_input 精简安全摘要提取规则表（开放扩展点）
 │   └── types.ts          # 事件形状 / 推送 payload 类型
 ├── lib/                  # 构建产物（Node 侧 ESM）
 │   ├── index.js
@@ -144,7 +142,7 @@ build.mjs
 | BRIEF 敏感面 | 怎么保证不越权/不泄露 |
 |---|---|
 | 只读事件、只写 7779 | 插件 `apply` 只调用 `ctx.on("agent/created")` + `agent.session.events`（只读）；所有出站网络仅 `bubble.ts` 一个入口，且 URL 固定 `http://127.0.0.1:7779/bubble`（可配置端口默认 7779），不留通用 http 客户端 |
-| 参数可能含敏感内容 | 只发送 `tool_name`（工具名，非参数）；`tool_input` 在 tool/call 时**恒为 `null`**——气泡只需要工具名文案，任何参数（命令/路径/密钥）一概不上外发路径；无 200 字符截断分支（截断本身也不引入，见 INTERFACE §2.2） |
+| 参数可能含敏感内容 | `tool_name` 传工具名；`tool_input` 仅含**精简摘要**（文件名/命令首词/搜索词，≤24 字符）；**完整 `arguments` 从不上外发路径**——摘要提取只在 `toolLabels.ts` 内完成、出站前不再拼回原始参数（见 INTERFACE §2.3） |
 | 不读凭据/密钥/settings.yaml | 插件不访问文件系统、不读任何配置外的文件；只消费内存中的 session events；状态（禁用开关/端口）只来自 dsh config，不落盘敏感内容；`agent_source` 是固定常量 `"dsh"`，无外部输入 |
 | 仅本机回环 | URL 硬编码 127.0.0.1（或本机 127.0.0.1 可配置），无外部地址、无 CORS、无公网监听；pe t 侧同为 127.0.0.1 监听 |
 
@@ -154,7 +152,7 @@ build.mjs
 |---|---|---|
 | **M4 agentWatcher（轮询/seq 游标）** | 会话事件数组在轮询间隙被清空/重排（`events` 引用变化或 seq 回绕），导致漏事件或重复推送 | 处理前先取 `sess.events` 快照引用再遍历；用 `seq` 单调判断 `ev.seq <= lastSeq` 跳过；游标只增。若结构异常（events 为 undefined）该 tick 跳过，见 1.5 |
 | **M4（同上）** | 轮询长驻 timer 在插件卸载后未清理 → 泄漏 + 卸载后仍在推送（违反「无残留」） | `apply` 返回 `dispose` 或 `ctx.offAll()` + 显式 `clearInterval`/`timer.unref`（对照 spike 已用 `timer.unref?.()`）；卸载路径唯一化 |
-| **M3 toolLabels 映射** | 规则误命中：某工具名被分类到错误文案（如 `read` 开头工具实为命令类）；或漏写兜底导致无输出 | 规则顺序固定、每类正则首锚定+词边界（见 §1.4 锚定规范）；**强制兜底「执行中」**保证永不空白；单测覆盖命中、未命中、**意外 part-match**（如 `supersearch` 不应命中搜索类） |
+| **M3 toolLabels（摘要提取）** | 摘要越界：字段名拿错 / basename 或首词切分不当 / 提取值超长 → 泄出过宽参数或气泡文案难看 | 字段名按表固定（file_path/command/pattern/query 的替代 key 兜底），basename 取末段、首词按空格切、所有值再强制 `slice(0,24)`；**完整 `arguments` 从不外发**；单测覆盖 read/bash/web_search/grep + 未知工具 + 非法 JSON |
 | **M6 bubble 推送** | pet 未运行→ECONNREFUSED→若未 catch 会抛异步异常，污染 dsh 进程（违反「不影响 dsh」） | http request error 事件全部 `catch(()=>debug log)`；发送用 fire-and-forget，不 await 返回值；配置可关 |
 | **M5 collector 并发** | 多会话同时活跃，选「最新活跃」逻辑若只按事件序而非时间序，可能取到旧会话覆盖新会话气泡 | 「最新活跃」按会话的最近事件时间戳排序取最大；推送后固化该会话时间戳，避免同 tick 抖动 |
 | **M7 装配** | 插件热重载时 `agent/created` 对旧 agent 仍挂着观察者 → 重复推送或残留 | 卸载回调里对每个 agent 调 `disposeWatcher`；重载幂等（重跑 apply） |

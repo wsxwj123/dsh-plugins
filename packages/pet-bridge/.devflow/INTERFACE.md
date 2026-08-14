@@ -62,37 +62,39 @@ Body: { kind, agent_source, tool_name, tool_input, caller_pid }
 | dest db event | → kind | agent_source | tool_name | tool_input |
 |---|---|---|---|---|
 | `turn/start` | `user` | `"dsh"` | `null` | `null` |
-| `tool/call` | `pre` | `"dsh"` | `toolLabels(ev.data.name)` | `null` |
+| `tool/call` | `pre` | `"dsh"` | `ev.data.name`（原始工具名） | `summarizeToolInput(ev.data.name, ev.data.arguments)` |
 | `tool/result` | `post` | `"dsh"` | `null` | `null` |
 | `turn/end` | `stop` | `"dsh"` | `null` | `null` |
 | `agent/disposed`（进程退出兜底） | `stop` | `"dsh"` | `null` | `null` |
 | `assistant/message` | 不推送 | — | — | — |
 
 **规则说明**
-- `tool_name`：永远是 `toolLabels(ev.data.name)` 的**中文文案**，且**恒为字符串**（映射兜底「执行中」，见 §2.3）。
-- `tool_input`：**恒为 `null`（所有事件）**——气泡只需要工具名文案，任何参数（命令全文/路径/密钥）一概不上外发路径，不外发即无泄漏面。
+- `tool_name`（tool/call）：传**原始工具名** `ev.data.name`（如 `read`/`bash`/`web_search`），**不再翻译成中文分类文案**（claude codex 同款详细工具气泡）。其余事件恒为 `null`。
+- `tool_input`（tool/call）：由 `summarizeToolInput(name, argumentsJSON)` 得出**精简安全摘要**（见 §2.3），或该事件无摘要时为 `null`。其余事件恒为 `null`。
 - **进程退出兜底（`agent/disposed`）**：agent 销毁（含 headless 一次性场景进程退出前）时，插件必须监听 `agent/disposed`（payload `{agent}`，与 `agent/created` 同源），对销毁的 agent **补发一条 `kind:"stop"`**（与 `turn/end` 的 stop **相同 payload**），并清理该 agent 的轮询 timer 与 seq 游标。目的：轮询可能来不及捕获最后一个 `turn/end` 就随进程退出，漏发 stop 会让 pet 气泡残留；`agent/disposed` 兜底保证销毁前至少补发一次 stop。
 - 未列事件（如 `assistant/message`）**不产生任何推送**。
-- 敏感隔离：只发工具**名**映射文案；`tool_input` 恒 `null`，不发送任何参数、凭据/密钥/文件内容/settings.yaml 数据。
+- 敏感隔离：`tool_input` 仅含 §2.3 的精简摘要（文件名/命令首词/搜索词，≤24 字符）；**完整 `arguments` 从不上外发路径**。不发送任何凭据/密钥/文件内容/settings.yaml 数据。
 
-### 2.3 工具名 → 中文文案映射规则表（开放集合的统一定义）
+### 2.3 tool_input 精简安全摘要提取规则表
 
-先匹配到即用，未命中给兜底。**禁止逐具体工具枚举。**
+`summarizeToolInput(name, argumentsJSON)` 从 arguments（JSON 字符串）提取 pet 渲染所需的最小字段。**按工具名分类**，未命中给 `null`（pet 兜底「运行中」）。
 
-| 匹配规则（对 `ev.data.name`，**均首锚定+词边界，禁裸分支**） | 结果文案 |
-|---|---|
-| `^read\|^grep\|^glob\|^list\|^search\|(^\|[_-])search$` | `读取中` |
-| `^write\|^edit\|^apply_patch\|^insert` | `写入文件` |
-| `^bash\|^exec\|^run\|^command\|^shell` | `运行命令` |
-| `^web_search\|^http\|^fetch\|^request\|^curl` | `联网检索` |
-| `^subagent\|^agent\|^workflow\|^skill` | `编排任务` |
-| （兜底，无条件命中） | `执行中` |
+| 工具名（`ev.data.name`，前缀/首锚定） | 提取字段 | 规则 |
+|---|---|---|
+| `read` | `{ file_path }` | `arguments.file_path`（或 `.path`）的 **basename** → pet 显示「读取 foo.ts」 |
+| `write` / `edit` / `insert` / `apply_patch` | `{ file_path }` | 同上，`arguments.file_path` 的 basename |
+| `bash` / `shell` / `exec` | `{ command }` | `arguments.command`（或 `.cmd`）**空格切第一个词** |
+| `grep` / `search` | `{ pattern }` | `arguments.pattern`（或 `.query`），**截断 24 字符** |
+| `web_search` | `{ query }` | `arguments.query`，**截断 22 字符** |
+| 其余（glob / subagent / workflow / skill / 未知） | `null` | 无摘要，pet 兜底「运行中」 |
 
-> 锚定规范：所有分支词首或带词边界，**禁止裸 `\|search` 之类可能 part-match 的写法**（如 `supersearch` 不得命中搜索类）。测试须含「意外 part-match 用例」。
+**序列化 / 边界规则**
+- 所有提取值**额外截断到 ≤24 字符**（含 basename / 命令首词 / pattern / query）。
+- basename：`file_path` 取末段（`/a/b/foo.ts` → `foo.ts`）；命令首词 = `command.trim()` 后按空格切第一个词。
+- 提取的对象值缺省 / 非字符串 → 该字段回 `null`。
+- 按工具名**前缀匹配**，命中即用；未命中表项 → `null`。
 
-序列化规则：正则**按表从上到下**做 `new RegExp(...).test(name)`；首个命中即返回对应文案；**恒有兜底**，因此 `tool_name` 永远非空字符串。
-
-**错误契约**：任何 name 都返回非空字符串，不抛错、不返回 `undefined`。
+**错误契约**：任何 `(name, argumentsJSON)` 组合都返回 `object | null`（摘要对象或 `null`），不抛错。`argumentsJSON` 解析失败（非法 JSON）→ 返回 `null`。**绝不外发完整 `arguments`**。
 
 ### 2.4 错误降级契约
 
@@ -146,8 +148,11 @@ Body: { kind, agent_source, tool_name, tool_input, caller_pid }
 
 - `apply` 返回类型是函数（可调用）。
 - `config.pollInterval≤0` 装载失败；`enabled=false` 装载成功且零推送。
-- 对 `{agent:{session:{events:[{seq:1,type:'tool/call',data:{name:'bash_bar' ,arguments:'{}'}},{seq:2,...}]}}}` 的 agent 喂入：产生一次 `pre` 推送、`tool_name`=「运行命令」。
-- 未知工具名（如 `frobnicateX`）推送 `tool_name`=「执行中」。
-- **意外 part-match**：`supersearch`、`nonsearch` 不命中搜索类（走兜底「执行中」）；`run_all` 命中命令类「运行命令」。
-- 所有事件推送的 `tool_input` 恒为 `null`（含 `tool/call`）。
+- 对 `{agent:{session:{events:[{seq:1,type:'tool/call',data:{name:'bash_bar' ,arguments:'{"command":"ls -la"}'}},{seq:2,type:'turn/end',...}]}}}` 的 agent 喂入：产生一次 `pre` 推送、`tool_name`=`'bash_bar'`（原始名）、`tool_input`=`{command:'ls'}`。
+- `read` + `arguments:'{"file_path":"/a/b/foo.ts"}'` → `tool_input`=`{file_path:'foo.ts'}`。
+- `web_search` + `arguments:'{"query":"<23 字符>"}'` → `tool_input`=`{query:'<截断 22 字符>'}`。
+- 未知工具名（如 `frobnicateX`）→ `tool_name`=`'frobnicateX'`，`tool_input`=`null`。
+- 非法 JSON 的 `arguments` → `tool_input`=`null`，不抛错。
+- 非 tool/call 事件（turn/start/result/end/disposed）`tool_input` 恒 `null`；`tool_name` 恒 `null`。
+- 所有外发字段 ≤24 字符；**完整 `arguments` 从不出现**在外发 payload。
 - 无监听端口时推送不抛异常到调用方。

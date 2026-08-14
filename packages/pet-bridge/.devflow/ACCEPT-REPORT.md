@@ -1,5 +1,7 @@
 # dsh-pet-bridge 验收判定报告
 
+> ⚠️ **本报告已过期（旧契约）**：判定针对的是**旧版工具气泡契约**（tool_name=中文分类文案、tool_input 恒 null）。需求已变更为「详细工具气泡」（tool_name=原始工具名 + tool_input=精简安全摘要，见 INTERFACE §2.2/§2.3 与 PLAN §1.4）。**本报告的通过结论不再代表当前需求验收**，转测试/验收阶段请以更新后的 TEST-PLAN.md 为准，勿据此判定当前行为通过。
+
 > 判定者：独立验收裁判（仅依据 BRIEF / TEST-PLAN / test-output 三份文件）
 > 判定日期：本会话
 > 范围声明：只读取 `.devflow/BRIEF.md`、`.devflow/TEST-PLAN.md`、`.devflow/test-output.txt` 三份文件，未查看其他项目文件、git 历史或 .devflow 其他产物。
