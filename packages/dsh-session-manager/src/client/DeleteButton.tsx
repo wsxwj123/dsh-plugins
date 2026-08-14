@@ -147,11 +147,11 @@ export function createDeleteController(
         if (!action) {
           // Diagnostic for the "ungrouped not deletable" report: a row that IS
           // a session row (single non-ours labelled button) but failed title
-          // resolution. Logs what would have been needed so the cause is
-          // visible in Console without a browser-side debugger.
+          // resolution. S-13 / SECURITY S4: only the row index and the byId
+          // count are logged — never the aria-label (it embeds the session
+          // title) nor the title list, which could carry sensitive wording.
           if (labels[i] !== null) {
-            console.debug('[dsh-session-manager] session row not resolvable:',
-              { ariaLabel: labels[i], byIdCount: Object.keys(byId).length, byIdTitles: Object.keys(byId).map((k) => byId[k]?.title ?? byId[k]?.displayTitle) })
+            console.debug('[dsh-session-manager] session row not resolvable:', { rowIndex: i, byIdCount: Object.keys(byId).length })
           }
           return
         }

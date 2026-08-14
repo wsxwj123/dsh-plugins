@@ -98,3 +98,22 @@ test('S-11: archive trash count re-reads with the park table and success clears 
     'the read-success branch must clear any stale error banner (S-11)',
   )
 })
+
+test('S-13: client debug logging never leaks cwd paths or session titles (SECURITY S4)', () => {
+  // S-13 / SECURITY S4: the browser console must not receive full cwd paths or
+  // session-title text (aria-labels embed titles; titles may carry sensitive
+  // business wording). Lock the redaction statically over the client sources.
+  const files = fs.readdirSync(clientDir)
+  for (const f of files) {
+    if (!/\.(ts|tsx)$/.test(f)) continue
+    const src = fs.readFileSync(path.join(clientDir, f), 'utf8')
+    assert.ok(
+      !/console\.debug\([^)]*cwd/.test(src),
+      `no console.debug may leak a cwd path in ${f} (S-13/SECURITY S4)`,
+    )
+    assert.ok(
+      !src.includes('byIdTitles') && !/console\.debug\([^)]*ariaLabel/.test(src),
+      `no console.debug may leak session titles in ${f} (S-13/SECURITY S4)`,
+    )
+  }
+})

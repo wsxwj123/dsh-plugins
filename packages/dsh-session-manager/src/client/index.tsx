@@ -106,7 +106,10 @@ export function apply(ctx: Context): void {
       // the row and handles the countdown/undo. Multi-entry is allowed (P9); a
       // false return only means this identical id already has a window.
       const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title, force)
-      console.debug('[dsh-session-manager] delete click -> requestDelete=', parked, 'id=', action.id, 'cwd=', action.cwd, 'running=', action.running, 'force=', force)
+      // S-13 / SECURITY S4: never log the full cwd path or session titles to
+      // the browser console (paths/titles may carry sensitive wording). Only
+      // the id (opaque) and the request flags are diagnostic-safe.
+      console.debug('[dsh-session-manager] delete click -> requestDelete=', parked, 'id=', action.id, 'running=', action.running, 'force=', force)
     },
   )
 
