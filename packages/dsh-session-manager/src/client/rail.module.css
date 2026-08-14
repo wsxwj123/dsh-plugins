@@ -1,0 +1,298 @@
+/* Undo rail — fixed overlay strip at the bottom-center of the viewport.
+ * Follows the DSW theme aliases so light/dark follows the app; every rule here
+ * is intentionally shallow (the rail is appended to document.body). */
+
+.rail {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  max-width: min(520px, calc(100vw - 24px));
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-alias-bg-overlay, rgba(24, 24, 28, 0.96));
+  box-shadow: var(--dsw-shadow-lv3, 0 8px 28px rgba(0, 0, 0, 0.4));
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  font-family: var(--dsw-font-body, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.4;
+  animation: rail-in 0.16s ease-out;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* The parent overlay wrapper is click-through; this strip opts back in so
+     Undo/Dismiss remain interactive. */
+  pointer-events: auto;
+}
+
+@keyframes rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 500;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.countdown {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+}
+
+.add {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+}
+
+.undo {
+  flex: none;
+  cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35));
+  background: var(--dsw-alias-button-elevated-fill, rgba(255, 255, 255, 0.06));
+  color: var(--dsw-alias-state-business-primary, #4f8cff);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.undo:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.1));
+}
+
+.failed {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  min-width: 0;
+}
+
+.dismiss {
+  flex: none;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.dismiss:hover {
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+}
+
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
+}
+
+/* Delete button injected into the official session-row `.rowActions` cell. */
+.deleteBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.deleteBtn:hover {
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.1));
+  opacity: 1;
+}
+
+/* Archive-entry button rendered in the sidebar footer actions. */
+.entryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-secondary, rgba(230, 230, 236, 0.82));
+  font-family: var(--dsw-font-body, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 20px;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.entryButton:hover {
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+/* Archive view — overlay panel anchored to the sidebar foot region. */
+.overlay {
+  position: fixed;
+  bottom: 56px;
+  left: 12px;
+  z-index: 2147482000;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(480px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-alias-bg-overlay, rgba(24, 24, 28, 0.98));
+  box-shadow: var(--dsw-shadow-lv3, 0 8px 28px rgba(0, 0, 0, 0.4));
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  font-family: var(--dsw-font-body, system-ui, sans-serif);
+  overflow: hidden;
+  /* The parent overlay wrapper is click-through; this panel opts back in. */
+  pointer-events: auto;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.close {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.close:hover {
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.rowTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action {
+  flex: none;
+  cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35));
+  background: var(--dsw-alias-button-elevated-fill, rgba(255, 255, 255, 0.05));
+  color: var(--dsw-alias-label-secondary, rgba(230, 230, 236, 0.82));
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.09));
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+}
+
+.danger {
+  flex: none;
+  cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35));
+  background: var(--dsw-alias-button-elevated-fill, rgba(255, 255, 255, 0.05));
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.danger:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.09));
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+}
+
+.empty {
+  padding: 20px 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+  font-size: 13px;
+}
+
+.errorBanner {
+  padding: 8px 12px;
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  font-size: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));
+}
