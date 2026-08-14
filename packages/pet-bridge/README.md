@@ -1,11 +1,11 @@
 # dsh-pet-bridge
 
-**dsh（DeepSeek Harness）↔ [claude-pets](https://github.com/wsxwj123/claude-pet) 桌面宠物状态桥**
+**dsh（DeepSeek Harness）↔ [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物状态桥**
 
 让桌面宠物头顶的气泡实时显示 dsh 正在干什么——和 claude code / codex 一样的效果：
 
 ```
-dsh 会话事件流 ──► pet-bridge 插件 ──► claude-pets HookServer (127.0.0.1:7779) ──► 宠物气泡
+dsh 会话事件流 ──► pet-bridge 插件 ──► cc-pet HookServer (127.0.0.1:7779) ──► 宠物气泡
    turn/start        (挂在 dsh 进程里)        POST /bubble                       dsh · 读取 README.md
    tool/call
    turn/end
@@ -13,9 +13,9 @@ dsh 会话事件流 ──► pet-bridge 插件 ──► claude-pets HookServer
 
 ## 这是给谁用的
 
-本插件**是 claude-pets 项目（桌面宠物）的配套**：pet 本身不认识 dsh，这个插件在 dsh 侧监听会话事件、翻译成 pet 能懂的推送协议，把状态送到宠物气泡上。
+本插件**是 cc-pet 项目（桌面宠物）的配套**：pet 本身不认识 dsh，这个插件在 dsh 侧监听会话事件、翻译成 pet 能懂的推送协议，把状态送到宠物气泡上。
 
-- 前置条件：本机已安装 **claude-pets**（`/Applications/claude-pets.app`，监听 `127.0.0.1:7779`）+ **dsh**
+- 前置条件：本机已安装 **cc-pet**（`/Applications/cc-pet.app`，监听 `127.0.0.1:7779`）+ **dsh**
 - pet 端代码**不需要任何修改**（HookServer 是通用接口）
 - 本插件只装在 dsh 侧，卸载不影响 pet
 

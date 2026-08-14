@@ -8,7 +8,7 @@
 |---|---|
 | [`dsh-theme-gallery`](packages/theme-gallery) | 提供 15 个精选主题家族，跟随 DSH 原生“浅色 / 深色 / 跟随系统”外观设置。 |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
-| [`dsh-pet-bridge`](packages/pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [claude-pets](https://github.com/wsxwj123/claude-pet) 桌面宠物气泡。 |
+| [`dsh-pet-bridge`](packages/pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物气泡。 |
 
 ## 界面预览
 
@@ -30,7 +30,7 @@
 packages/
   theme-gallery/   # 主题画廊插件
   turn-scrubber/   # 对话回合刻度插件
-  pet-bridge/      # 桌面宠物状态桥插件（配合 claude-pets 使用）
+  pet-bridge/      # 桌面宠物状态桥插件（配合 cc-pet 使用）
 ```
 
 每个插件都有自己的：
@@ -67,13 +67,13 @@ dsh plugin --profile web add "link:$PWD/packages/theme-gallery"
 dsh plugin --profile web add "link:$PWD/packages/turn-scrubber"
 ```
 
-### 安装桌面宠物状态桥（需要先装 claude-pets）
+### 安装桌面宠物状态桥（需要先装 cc-pet）
 
 ```bash
 dsh plugin --profile web add "link:$PWD/packages/pet-bridge"
 ```
 
-> 前置条件：本机需已安装 [claude-pets](https://github.com/wsxwj123/claude-pet) 桌面宠物（它监听 `127.0.0.1:7779` 接收状态推送）。pet 端代码无需任何修改。详见 [packages/pet-bridge/README.md](packages/pet-bridge/README.md)。
+> 前置条件：本机需已安装 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物（它监听 `127.0.0.1:7779` 接收状态推送）。pet 端代码无需任何修改。详见 [packages/pet-bridge/README.md](packages/pet-bridge/README.md)。
 
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
 
