@@ -6,7 +6,7 @@ Independent plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepse
 
 | Package | Purpose |
 |---|---|
-| [`dsh-theme-gallery`](packages/theme-gallery) | A fast gallery of 13 curated theme families that follows DSH's native Light, Dark, and Follow system modes. |
+| [`dsh-theme-gallery`](packages/theme-gallery) | A fast gallery of 15 curated theme families that follows DSH's native Light, Dark, and Follow system modes. |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | Codex-style turn cluster: a short, uniform tick per user turn on the right edge; hover ripples it like a waveform, click jumps to that turn. |
 
 ## Repository layout
