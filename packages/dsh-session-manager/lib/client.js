@@ -97,10 +97,6 @@ window.__ModuleLoader__.load({
 		const UNDO_WINDOW_MS = 1e4;
 		/** How long a failed-fire entry stays visible in the rail (ms). */
 		const FAILED_RETAIN_MS = 6e3;
-		/** Map values in insertion (request) order. */
-		function toEntries(map) {
-			return Array.from(map.values());
-		}
 		function createPendingDeletes(deps) {
 			const now = deps.now ?? (() => Date.now());
 			const schedule = deps.schedule ?? ((cb, delay) => {
@@ -112,6 +108,18 @@ window.__ModuleLoader__.load({
 			/** One active timer per entry (allows parallel per-id windows). */
 			const timers = /* @__PURE__ */ new Map();
 			const listeners = /* @__PURE__ */ new Set();
+			/**
+			* Stable snapshot cache. `snapshot()` must return the SAME array reference
+			* while the map is unchanged: a fresh array each call makes useSyncExternalStore
+			* believe the store changed every render → React error #185 (Maximum update
+			* depth exceeded) → the overlay root that reads it crashes on mount. We
+			* rebuild the array once per mutation and return the cached reference until
+			* the next mutation.
+			*/
+			let cached = null;
+			const invalidateCache = () => {
+				cached = null;
+			};
 			const notify = () => {
 				onChange();
 				for (const l of listeners) l();
@@ -122,10 +130,12 @@ window.__ModuleLoader__.load({
 				timers.get(id)?.();
 				timers.delete(id);
 				map.delete(id);
+				invalidateCache();
 				return entry;
 			};
 			const park = (entry) => {
 				map.set(entry.id, entry);
+				invalidateCache();
 				const cancel = schedule(() => {
 					timers.delete(entry.id);
 					fire(entry.id);
@@ -161,6 +171,7 @@ window.__ModuleLoader__.load({
 						error: outcome.code
 					};
 					map.set(failed.id, failed);
+					invalidateCache();
 					const cancel = schedule(() => {
 						if (map.get(failed.id)?.state === "failed") {
 							drop(failed.id);
@@ -202,7 +213,10 @@ window.__ModuleLoader__.load({
 						listeners.delete(listener);
 					};
 				},
-				snapshot: () => toEntries(map),
+				snapshot: () => {
+					if (cached === null) cached = Array.from(map.values());
+					return cached;
+				},
 				get: (id) => map.get(id),
 				isPending: (id) => map.get(id)?.state === "pending",
 				fireNow
@@ -342,32 +356,32 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"item": "FPsCja_item",
-			"rail-in": "FPsCja_rail-in",
-			"divider": "FPsCja_divider",
-			"undo": "FPsCja_undo",
+			"title": "FPsCja_title",
 			"countdown": "FPsCja_countdown",
-			"list": "FPsCja_list",
+			"rail-in": "FPsCja_rail-in",
+			"errorBanner": "FPsCja_errorBanner",
+			"add": "FPsCja_add",
+			"entryButton": "FPsCja_entryButton",
 			"trashBar": "FPsCja_trashBar",
-			"label": "FPsCja_label",
-			"row": "FPsCja_row",
-			"rowTitle": "FPsCja_rowTitle",
 			"trashButton": "FPsCja_trashButton",
 			"failed": "FPsCja_failed",
-			"title": "FPsCja_title",
-			"entryButton": "FPsCja_entryButton",
-			"overlay": "FPsCja_overlay",
-			"head": "FPsCja_head",
-			"close": "FPsCja_close",
+			"row": "FPsCja_row",
 			"deleteBtn": "FPsCja_deleteBtn",
-			"action": "FPsCja_action",
 			"danger": "FPsCja_danger",
-			"add": "FPsCja_add",
-			"dismiss": "FPsCja_dismiss",
-			"empty": "FPsCja_empty",
-			"errorBanner": "FPsCja_errorBanner",
+			"close": "FPsCja_close",
+			"item": "FPsCja_item",
 			"trashCount": "FPsCja_trashCount",
-			"rail": "FPsCja_rail"
+			"rail": "FPsCja_rail",
+			"dismiss": "FPsCja_dismiss",
+			"divider": "FPsCja_divider",
+			"head": "FPsCja_head",
+			"list": "FPsCja_list",
+			"action": "FPsCja_action",
+			"undo": "FPsCja_undo",
+			"label": "FPsCja_label",
+			"empty": "FPsCja_empty",
+			"rowTitle": "FPsCja_rowTitle",
+			"overlay": "FPsCja_overlay"
 		};
 		//#endregion
 		//#region src/client/UndoRail.tsx

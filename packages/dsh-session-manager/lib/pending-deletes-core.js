@@ -34,10 +34,6 @@
 const UNDO_WINDOW_MS = 1e4;
 /** How long a failed-fire entry stays visible in the rail (ms). */
 const FAILED_RETAIN_MS = 6e3;
-/** Map values in insertion (request) order. */
-function toEntries(map) {
-	return Array.from(map.values());
-}
 function createPendingDeletes(deps) {
 	const now = deps.now ?? (() => Date.now());
 	const schedule = deps.schedule ?? ((cb, delay) => {
@@ -49,6 +45,18 @@ function createPendingDeletes(deps) {
 	/** One active timer per entry (allows parallel per-id windows). */
 	const timers = /* @__PURE__ */ new Map();
 	const listeners = /* @__PURE__ */ new Set();
+	/**
+	* Stable snapshot cache. `snapshot()` must return the SAME array reference
+	* while the map is unchanged: a fresh array each call makes useSyncExternalStore
+	* believe the store changed every render → React error #185 (Maximum update
+	* depth exceeded) → the overlay root that reads it crashes on mount. We
+	* rebuild the array once per mutation and return the cached reference until
+	* the next mutation.
+	*/
+	let cached = null;
+	const invalidateCache = () => {
+		cached = null;
+	};
 	const notify = () => {
 		onChange();
 		for (const l of listeners) l();
@@ -59,10 +67,12 @@ function createPendingDeletes(deps) {
 		timers.get(id)?.();
 		timers.delete(id);
 		map.delete(id);
+		invalidateCache();
 		return entry;
 	};
 	const park = (entry) => {
 		map.set(entry.id, entry);
+		invalidateCache();
 		const cancel = schedule(() => {
 			timers.delete(entry.id);
 			fire(entry.id);
@@ -98,6 +108,7 @@ function createPendingDeletes(deps) {
 				error: outcome.code
 			};
 			map.set(failed.id, failed);
+			invalidateCache();
 			const cancel = schedule(() => {
 				if (map.get(failed.id)?.state === "failed") {
 					drop(failed.id);
@@ -139,7 +150,10 @@ function createPendingDeletes(deps) {
 				listeners.delete(listener);
 			};
 		},
-		snapshot: () => toEntries(map),
+		snapshot: () => {
+			if (cached === null) cached = Array.from(map.values());
+			return cached;
+		},
 		get: (id) => map.get(id),
 		isPending: (id) => map.get(id)?.state === "pending",
 		fireNow

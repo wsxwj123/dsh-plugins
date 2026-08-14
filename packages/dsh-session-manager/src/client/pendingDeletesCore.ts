@@ -90,11 +90,6 @@ export interface PendingDeletes {
   fireNow(id: string): Promise<FireOutcome | undefined>
 }
 
-/** Map values in insertion (request) order. */
-function toEntries(map: Map<string, PendingEntry>): PendingEntry[] {
-  return Array.from(map.values())
-}
-
 export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
   const now = deps.now ?? (() => Date.now())
   const schedule = deps.schedule ?? ((cb, delay) => {
@@ -107,6 +102,19 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
   /** One active timer per entry (allows parallel per-id windows). */
   const timers = new Map<string, () => void>()
   const listeners = new Set<() => void>()
+  /**
+   * Stable snapshot cache. `snapshot()` must return the SAME array reference
+   * while the map is unchanged: a fresh array each call makes useSyncExternalStore
+   * believe the store changed every render → React error #185 (Maximum update
+   * depth exceeded) → the overlay root that reads it crashes on mount. We
+   * rebuild the array once per mutation and return the cached reference until
+   * the next mutation.
+   */
+  let cached: PendingEntry[] | null = null
+
+  const invalidateCache = (): void => {
+    cached = null
+  }
 
   const notify = (): void => {
     onChange()
@@ -119,11 +127,13 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     timers.get(id)?.()
     timers.delete(id)
     map.delete(id)
+    invalidateCache()
     return entry
   }
 
   const park = (entry: PendingEntry): void => {
     map.set(entry.id, entry)
+    invalidateCache()
     const cancel = schedule(() => {
       // Best-effort: remove the timer record, then fire if still live.
       timers.delete(entry.id)
@@ -160,6 +170,7 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
         error: outcome.code,
       }
       map.set(failed.id, failed)
+      invalidateCache() // direct map mutation must also drop the snapshot cache
       const cancel = schedule(() => {
         if (map.get(failed.id)?.state === 'failed') {
           drop(failed.id)
@@ -197,7 +208,12 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
         listeners.delete(listener)
       }
     },
-    snapshot: () => toEntries(map),
+    // Cached: returns the SAME array reference until the map changes, so
+    // useSyncExternalStore getSnapshot is stable between mutations (no #185).
+    snapshot: () => {
+      if (cached === null) cached = Array.from(map.values())
+      return cached
+    },
     get: (id) => map.get(id),
     isPending: (id) => map.get(id)?.state === 'pending',
     fireNow,

@@ -188,3 +188,30 @@ test('notify fires on park, undo, and failed-fire transitions', () => {
   pd.undo('a')
   assert.strictEqual(n, 2)
 })
+
+test('snapshot returns the SAME reference while the map is unchanged (React #185 guard)', () => {
+  // regression for "Maximum update depth exceeded": useSyncExternalStore sees a
+  // fresh array each call → infinite loop. A stable reference between mutations
+  // is mandatory. Every mutation invalidates the cache.
+  const { deps, advance } = makeDeps()
+  const pd = createPendingDeletes(deps)
+  pd.requestDelete('a', '/ctx', 'A')
+  const s1 = pd.snapshot()
+  const s1again = pd.snapshot()
+  assert.strictEqual(s1, s1again, 'consecutive reads while unchanged must share a reference')
+
+  // A mutation replaces the reference (new state observable).
+  pd.requestDelete('b', '/ctx-b', 'B')
+  const s2 = pd.snapshot()
+  assert.notStrictEqual(s2, s1)
+  assert.strictEqual(s2.length, 2)
+  // And it stays stable again after the first read post-mutation.
+  assert.strictEqual(pd.snapshot(), s2)
+
+  // Undo replaces the reference again.
+  pd.undo('a')
+  const s3 = pd.snapshot()
+  assert.notStrictEqual(s3, s2)
+  assert.strictEqual(s3.length, 1)
+  assert.strictEqual(pd.snapshot(), s3)
+})
