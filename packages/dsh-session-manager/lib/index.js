@@ -1,4 +1,5 @@
 import { TrashStore } from "./trash.js";
+import { isInsideOrEqual } from "./paths.js";
 import { createSmHandler } from "./handler.js";
 import { isTrustedSmRequest } from "./trust-fence.js";
 import path from "node:path";
@@ -82,7 +83,7 @@ function sendJson(res, status, json) {
 }
 function apply(ctx, config = {}) {
 	const { sessionsRoot, trashRoot } = resolveRoots(config);
-	if (isTrashInside(sessionsRoot, trashRoot)) {
+	if (isInsideOrEqual(sessionsRoot, trashRoot)) {
 		ctx.logger.warn(`[session-manager] trash root ${trashRoot} is inside sessions root ${sessionsRoot}; refusing to enable recycle bin`);
 		return;
 	}
@@ -177,12 +178,6 @@ function apply(ctx, config = {}) {
 		}
 	});
 	ctx.effect(() => dispose);
-}
-/** Whether one root resolves inside another (startup guard). */
-function isTrashInside(sessionsRoot, trashRoot) {
-	const s = path.resolve(sessionsRoot);
-	const t = path.resolve(trashRoot);
-	return t === s || t.startsWith(s + path.sep);
 }
 //#endregion
 export { apply, inject, makeHandler, name, readRequestBody, resolveRoots };

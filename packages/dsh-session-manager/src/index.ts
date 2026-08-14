@@ -31,6 +31,7 @@ import type { Context } from 'cordis'
 import { TrashStore } from './trash.js'
 import { createSmHandler, type SmHandlerDeps, type ArchiveDomain } from './handler.js'
 import { isTrustedSmRequest } from './trust-fence.js'
+import { isInsideOrEqual } from './paths.js'
 
 /** Minimal web-server service surface we depend on (injected => bare access). */
 interface WebServerService {
@@ -118,8 +119,9 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
   const { sessionsRoot, trashRoot } = resolveRoots(config)
   // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
   // sit inside the sessions root, or the host session scan would re-discover
-  // moved sessions and "resurrect" them. We enforce it at startup.
-  if (isTrashInside(sessionsRoot, trashRoot)) {
+  // moved sessions and "resurrect" them. We enforce it at startup. (S-1: reuse
+  // the shared isInsideOrEqual from paths.ts instead of a duplicated copy.)
+  if (isInsideOrEqual(sessionsRoot, trashRoot)) {
     ctx.logger.warn(
       `[session-manager] trash root ${trashRoot} is inside sessions root ${sessionsRoot}; refusing to enable recycle bin`,
     )
@@ -250,11 +252,4 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
   // Register the route under this plugin fiber; dispose on teardown.
   const dispose = webServer.register(route)
   ctx.effect(() => dispose)
-}
-
-/** Whether one root resolves inside another (startup guard). */
-function isTrashInside(sessionsRoot: string, trashRoot: string): boolean {
-  const s = path.resolve(sessionsRoot)
-  const t = path.resolve(trashRoot)
-  return t === s || t.startsWith(s + path.sep)
 }

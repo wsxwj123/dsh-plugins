@@ -135,6 +135,28 @@ test('apply with webServer absent (partial profile): degrades route mount, does 
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('apply: trash root inside sessions root -> warns and refuses to mount (S-1 shared containment)', () => {
+  // S-1: the startup guard reuses paths.isInsideOrEqual. A trash root under the
+  // sessions root must refuse to enable the recycle bin (route NOT mounted) and
+  // warn — the host session scan would otherwise re-discover moved sessions.
+  const { ctx, provide, warnLog } = makeCordisCtx()
+  let registered = false
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: () => { registered = true; return () => {} } },
+  })
+  const base = tmpdir()
+  const sessionsRoot = path.join(base, 'sessions')
+  const trashRoot = path.join(sessionsRoot, 'sub', 'trash') // inside sessions root
+  assert.doesNotThrow(() => {
+    plugin.apply(ctx, { sessionsRoot, trashRoot })
+  })
+  assert.strictEqual(registered, false, 'route NOT mounted when trash root sits inside sessions root')
+  assert.ok(warnLog.some((m) => /refusing to enable recycle bin/.test(String(m))))
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('handler: storageDomain missing degrades unarchive to workspace-domain-unavailable', () => {
   const base = tmpdir()
   const sessionsRoot = path.join(base, 'sessions')
