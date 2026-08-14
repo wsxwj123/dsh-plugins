@@ -182,6 +182,20 @@ test('delete: same-named dir WITHOUT session marker -> not-a-session, nothing mo
   env.cleanup()
 })
 
+test('delete: title exactly 256 chars ok, 257 -> 400 invalid-title (shared MAX_TITLE_LEN, S-4)', () => {
+  // S-4: the host and the client share MAX_TITLE_LEN from src/constants.ts;
+  // this boundary locks the host enforcement so the two ends cannot drift.
+  const env = makeEnv()
+  env.newSession('main', 'tlen')
+  const ok = env.D({ id: 'tlen', cwd: 'main', title: 't'.repeat(256) })
+  assert.strictEqual(ok.status, 200)
+  assert.strictEqual(ok.json.ok, true, '256-char title accepted (at the limit)')
+  const bad = env.D({ id: 'tlen2', cwd: 'main', title: 't'.repeat(257) })
+  assert.strictEqual(bad.status, 400)
+  assert.strictEqual(bad.json.code, 'invalid-title')
+  env.cleanup()
+})
+
 test('delete: missing dir (not in trash) -> session-dir-not-found', () => {
   const env = makeEnv()
   const res = env.D({ id: 'ghost', cwd: 'main' })

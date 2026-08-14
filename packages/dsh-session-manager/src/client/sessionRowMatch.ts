@@ -25,6 +25,8 @@
  * Kept in its own module so a node unit test can drive it directly (mirrors
  * pendingDeletesCore): no DOM, no react.
  */
+import { MAX_TITLE_LEN } from '../constants.ts'
+
 export interface SessionRowCandidate {
   title?: string
   displayTitle?: string
@@ -41,9 +43,6 @@ export interface MatchedSession {
   title: string
   running: boolean
 }
-
-/** Max title length a candidate may match (mirrors the host's 256 limit). */
-const MAX_TITLE_LEN = 256
 
 /** The longest non-blank title contained in the label (per-row primitive). */
 function bestTitleIn(label: string, byId: Record<string, SessionRowCandidate | undefined>): string | null {

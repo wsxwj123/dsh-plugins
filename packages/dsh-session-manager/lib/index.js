@@ -1,4 +1,5 @@
 import { TrashStore } from "./trash.js";
+import { t as WORKSPACE_DOMAIN } from "./constants-B5ET8slt.js";
 import { isInsideOrEqual } from "./paths.js";
 import { createSmHandler } from "./handler.js";
 import { isTrustedSmRequest } from "./trust-fence.js";
@@ -94,7 +95,7 @@ function apply(ctx, config = {}) {
 	*/
 	const readGlobal = () => {
 		if (!storageDomain) return {};
-		const domain = storageDomain.get("workspace");
+		const domain = storageDomain.get(WORKSPACE_DOMAIN);
 		if (!domain || typeof domain.global?.get !== "function") return {};
 		try {
 			const v = domain.global.get();

@@ -376,8 +376,33 @@ window.__ModuleLoader__.load({
 		});
 		//#endregion
 		//#region src/client/sessionRowMatch.ts
-		/** Max title length a candidate may match (mirrors the host's 256 limit). */
-		const MAX_TITLE_LEN = 256;
+		/**
+		* sessionRowMatch — the pure, DOM-free core of row→session resolution.
+		*
+		* The official session row's ⋮ menu button carries
+		* `aria-label = t("actions.session.aria", { name: title })`, i.e. a localized
+		* string that contains the session's title verbatim (Chinese 「会话"X"的操作」 /
+		* English "Session actions for X"). Given one such label and the `byId` map, we
+		* find the session whose title is contained in the label, preferring the
+		* LONGEST contained title (most specific — avoids a short title matching a
+		* longer one by accident).
+		*
+		* The byId summary has BOTH a raw `title` (present only when the session has
+		* one) and a derived `displayTitle` (always present, equals `title` for a
+		* titled session). We match against `title ?? displayTitle` so either field
+		* works regardless of which the runtime carries.
+		*
+		* Same-title ties (review I-6): DSH does not guarantee unique titles, so two
+		* sessions can render IDENTICAL labels. A per-row match is then ambiguous and
+		* must not silently pick the first byId key — that would bind BOTH rows'
+		* delete buttons to one session (删错目录). The container-level `resolveRows`
+		* resolves ties by aligning DOM row order with the ordered id list: the k-th
+		* row whose label resolves to a shared title binds the k-th same-title id, so
+		* every row gets a DISTINCT id and never another row's session.
+		*
+		* Kept in its own module so a node unit test can drive it directly (mirrors
+		* pendingDeletesCore): no DOM, no react.
+		*/
 		/** The longest non-blank title contained in the label (per-row primitive). */
 		function bestTitleIn(label, byId) {
 			let best = null;
@@ -386,7 +411,7 @@ window.__ModuleLoader__.load({
 				if (!s || s.blank) continue;
 				const candidate = s.title ?? s.displayTitle ?? "";
 				if (!candidate) continue;
-				if (candidate.length === 0 || candidate.length > MAX_TITLE_LEN) continue;
+				if (candidate.length === 0 || candidate.length > 256) continue;
 				if (!label.includes(candidate)) continue;
 				if (best === null || candidate.length > best.length) best = candidate;
 			}
@@ -416,7 +441,7 @@ window.__ModuleLoader__.load({
 				const s = byId[id];
 				if (!s || s.blank) continue;
 				const title = s.title ?? s.displayTitle ?? "";
-				if (!title || title.length === 0 || title.length > MAX_TITLE_LEN) continue;
+				if (!title || title.length === 0 || title.length > 256) continue;
 				const group = idsByTitle.get(title);
 				if (group) group.push(id);
 				else idsByTitle.set(title, [id]);
@@ -465,33 +490,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"rail-in": "FPsCja_rail-in",
-			"errorBanner": "FPsCja_errorBanner",
-			"trashCount": "FPsCja_trashCount",
-			"add": "FPsCja_add",
-			"item": "FPsCja_item",
-			"deleteBtn": "FPsCja_deleteBtn",
+			"list": "FPsCja_list",
+			"danger": "FPsCja_danger",
 			"entryButton": "FPsCja_entryButton",
 			"trashButton": "FPsCja_trashButton",
-			"action": "FPsCja_action",
-			"rowTitle": "FPsCja_rowTitle",
-			"danger": "FPsCja_danger",
-			"title": "FPsCja_title",
-			"countdown": "FPsCja_countdown",
-			"undo": "FPsCja_undo",
 			"rail": "FPsCja_rail",
-			"label": "FPsCja_label",
-			"backdrop": "FPsCja_backdrop",
-			"divider": "FPsCja_divider",
-			"close": "FPsCja_close",
-			"list": "FPsCja_list",
-			"row": "FPsCja_row",
-			"trashBar": "FPsCja_trashBar",
-			"head": "FPsCja_head",
-			"failed": "FPsCja_failed",
+			"errorBanner": "FPsCja_errorBanner",
 			"empty": "FPsCja_empty",
+			"label": "FPsCja_label",
+			"countdown": "FPsCja_countdown",
+			"deleteBtn": "FPsCja_deleteBtn",
+			"rowTitle": "FPsCja_rowTitle",
+			"title": "FPsCja_title",
+			"failed": "FPsCja_failed",
+			"close": "FPsCja_close",
+			"action": "FPsCja_action",
+			"backdrop": "FPsCja_backdrop",
+			"row": "FPsCja_row",
+			"item": "FPsCja_item",
+			"overlay": "FPsCja_overlay",
+			"undo": "FPsCja_undo",
+			"trashBar": "FPsCja_trashBar",
+			"add": "FPsCja_add",
+			"rail-in": "FPsCja_rail-in",
 			"dismiss": "FPsCja_dismiss",
-			"overlay": "FPsCja_overlay"
+			"head": "FPsCja_head",
+			"trashCount": "FPsCja_trashCount",
+			"divider": "FPsCja_divider"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx

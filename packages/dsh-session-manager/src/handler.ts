@@ -18,6 +18,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { TrashStore, SESSION_MARKER } from './trash.js'
+import { MAX_TITLE_LEN, WORKSPACE_DOMAIN } from './constants.js'
 import {
   assertValidId,
   isStableSegment,
@@ -59,7 +60,7 @@ export interface SmHandlerDeps {
    */
   sessions?: { get(id: string): { header?: { cwd?: string } } | null | undefined }
   /**
-   * Optional storage-domain facility: `get('workspace')` returns the live,
+   * Optional storage-domain facility: `get(WORKSPACE_DOMAIN)` returns the live,
    * already-open workspace DomainImpl. When the facility itself is absent the
    * write path degrades: unarchive → workspace-domain-unavailable, delete
    * step-2 → system-error (partial failure, retryable). Absent storageDomain
@@ -146,7 +147,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return bad('invalid-cwd', 'invalid cwd')
     }
     if (title !== undefined && title !== null) {
-      if (typeof title !== 'string' || title.length > 256) {
+      if (typeof title !== 'string' || title.length > MAX_TITLE_LEN) {
         return bad('invalid-title', 'invalid title')
       }
     }
@@ -274,7 +275,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
     const archived = archiveFromGlobal(global)
     if (!archived.includes(id)) return ok()
 
-    const domain = deps.storageDomain?.get('workspace')
+    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
     if (domain === null || domain === undefined) {
       log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
       return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
@@ -338,8 +339,8 @@ export function createSmHandler(deps: SmHandlerDeps): {
 
     // Domain availability is checked FIRST, before reading the set. An absent
     // storageDomain read via ?. yields undefined, so the degradation is the
-    // same "workspace-domain-unavailable" as when get('workspace') returns null.
-    const domain = deps.storageDomain?.get('workspace')
+    // same "workspace-domain-unavailable" as when get(WORKSPACE_DOMAIN) returns null.
+    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
     if (domain === null || domain === undefined) {
       return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
     }

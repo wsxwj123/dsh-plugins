@@ -1,6 +1,31 @@
 //#region src/client/sessionRowMatch.ts
-/** Max title length a candidate may match (mirrors the host's 256 limit). */
-const MAX_TITLE_LEN = 256;
+/**
+* sessionRowMatch — the pure, DOM-free core of row→session resolution.
+*
+* The official session row's ⋮ menu button carries
+* `aria-label = t("actions.session.aria", { name: title })`, i.e. a localized
+* string that contains the session's title verbatim (Chinese 「会话"X"的操作」 /
+* English "Session actions for X"). Given one such label and the `byId` map, we
+* find the session whose title is contained in the label, preferring the
+* LONGEST contained title (most specific — avoids a short title matching a
+* longer one by accident).
+*
+* The byId summary has BOTH a raw `title` (present only when the session has
+* one) and a derived `displayTitle` (always present, equals `title` for a
+* titled session). We match against `title ?? displayTitle` so either field
+* works regardless of which the runtime carries.
+*
+* Same-title ties (review I-6): DSH does not guarantee unique titles, so two
+* sessions can render IDENTICAL labels. A per-row match is then ambiguous and
+* must not silently pick the first byId key — that would bind BOTH rows'
+* delete buttons to one session (删错目录). The container-level `resolveRows`
+* resolves ties by aligning DOM row order with the ordered id list: the k-th
+* row whose label resolves to a shared title binds the k-th same-title id, so
+* every row gets a DISTINCT id and never another row's session.
+*
+* Kept in its own module so a node unit test can drive it directly (mirrors
+* pendingDeletesCore): no DOM, no react.
+*/
 /** The longest non-blank title contained in the label (per-row primitive). */
 function bestTitleIn(label, byId) {
 	let best = null;
@@ -9,7 +34,7 @@ function bestTitleIn(label, byId) {
 		if (!s || s.blank) continue;
 		const candidate = s.title ?? s.displayTitle ?? "";
 		if (!candidate) continue;
-		if (candidate.length === 0 || candidate.length > MAX_TITLE_LEN) continue;
+		if (candidate.length === 0 || candidate.length > 256) continue;
 		if (!label.includes(candidate)) continue;
 		if (best === null || candidate.length > best.length) best = candidate;
 	}
@@ -57,7 +82,7 @@ function resolveRows(labels, byId, ids) {
 		const s = byId[id];
 		if (!s || s.blank) continue;
 		const title = s.title ?? s.displayTitle ?? "";
-		if (!title || title.length === 0 || title.length > MAX_TITLE_LEN) continue;
+		if (!title || title.length === 0 || title.length > 256) continue;
 		const group = idsByTitle.get(title);
 		if (group) group.push(id);
 		else idsByTitle.set(title, [id]);

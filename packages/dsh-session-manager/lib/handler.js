@@ -1,4 +1,5 @@
 import "./trash.js";
+import { t as WORKSPACE_DOMAIN } from "./constants-B5ET8slt.js";
 import { assertValidId, isInsideOrEqual, isStableSegment, lookupProjectDir, sessionSegment } from "./paths.js";
 import path from "node:path";
 import fs from "node:fs";
@@ -114,7 +115,7 @@ function createSmHandler(deps) {
 		}
 		const archived = archiveFromGlobal(global);
 		if (!archived.includes(id)) return ok();
-		const domain = deps.storageDomain?.get("workspace");
+		const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN);
 		if (domain === null || domain === void 0) {
 			log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`);
 			return fail("system-error", "archive cleanup failed; file already moved, retry to complete", { moved: true });
@@ -162,7 +163,7 @@ function createSmHandler(deps) {
 		if (!bodyIsObject(body)) return bad("bad-request", "body must be an object");
 		const { id } = body;
 		if (!assertValidId(id)) return bad("invalid-id", "invalid id");
-		const domain = deps.storageDomain?.get("workspace");
+		const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN);
 		if (domain === null || domain === void 0) return fail("workspace-domain-unavailable", "workspace storage domain unavailable");
 		const global = deps.readWorkspaceGlobal();
 		if (global === void 0) return fail("system-error", "workspace global unreadable; retry");

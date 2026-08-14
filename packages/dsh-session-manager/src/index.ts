@@ -32,6 +32,7 @@ import { TrashStore } from './trash.js'
 import { createSmHandler, type SmHandlerDeps, type ArchiveDomain } from './handler.js'
 import { isTrustedSmRequest } from './trust-fence.js'
 import { isInsideOrEqual } from './paths.js'
+import { WORKSPACE_DOMAIN } from './constants.js'
 
 /** Minimal web-server service surface we depend on (injected => bare access). */
 interface WebServerService {
@@ -145,7 +146,7 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
    */
   const readGlobal = (): Record<string, unknown> | undefined => {
     if (!storageDomain) return {}
-    const domain = storageDomain.get('workspace')
+    const domain = storageDomain.get(WORKSPACE_DOMAIN)
     if (!domain || typeof domain.global?.get !== 'function') return {}
     try {
       const v = domain.global.get()
