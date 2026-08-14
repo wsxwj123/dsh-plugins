@@ -503,33 +503,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"item": "FPsCja_item",
-			"rail-in": "FPsCja_rail-in",
-			"countdown": "FPsCja_countdown",
-			"failed": "FPsCja_failed",
-			"backdrop": "FPsCja_backdrop",
-			"head": "FPsCja_head",
-			"rail": "FPsCja_rail",
-			"entryButton": "FPsCja_entryButton",
-			"overlay": "FPsCja_overlay",
-			"errorBanner": "FPsCja_errorBanner",
-			"divider": "FPsCja_divider",
 			"row": "FPsCja_row",
-			"add": "FPsCja_add",
-			"trashButton": "FPsCja_trashButton",
+			"label": "FPsCja_label",
+			"failed": "FPsCja_failed",
 			"action": "FPsCja_action",
-			"title": "FPsCja_title",
 			"empty": "FPsCja_empty",
 			"undo": "FPsCja_undo",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"close": "FPsCja_close",
-			"rowTitle": "FPsCja_rowTitle",
-			"danger": "FPsCja_danger",
-			"dismiss": "FPsCja_dismiss",
 			"trashBar": "FPsCja_trashBar",
+			"entryButton": "FPsCja_entryButton",
 			"trashCount": "FPsCja_trashCount",
-			"label": "FPsCja_label",
-			"list": "FPsCja_list"
+			"deleteBtn": "FPsCja_deleteBtn",
+			"overlay": "FPsCja_overlay",
+			"item": "FPsCja_item",
+			"rail": "FPsCja_rail",
+			"title": "FPsCja_title",
+			"rail-in": "FPsCja_rail-in",
+			"backdrop": "FPsCja_backdrop",
+			"rowTitle": "FPsCja_rowTitle",
+			"errorBanner": "FPsCja_errorBanner",
+			"dismiss": "FPsCja_dismiss",
+			"add": "FPsCja_add",
+			"danger": "FPsCja_danger",
+			"close": "FPsCja_close",
+			"trashButton": "FPsCja_trashButton",
+			"head": "FPsCja_head",
+			"countdown": "FPsCja_countdown",
+			"list": "FPsCja_list",
+			"divider": "FPsCja_divider"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -606,9 +606,8 @@ window.__ModuleLoader__.load({
 						const action = actions[i];
 						if (!action) {
 							if (labels[i] !== null) console.debug("[dsh-session-manager] session row not resolvable:", {
-								ariaLabel: labels[i],
-								byIdCount: Object.keys(byId).length,
-								byIdTitles: Object.keys(byId).map((k) => byId[k]?.title ?? byId[k]?.displayTitle)
+								rowIndex: i,
+								byIdCount: Object.keys(byId).length
 							});
 							return;
 						}
@@ -807,6 +806,7 @@ window.__ModuleLoader__.load({
 					if (cancelled) return;
 					if (res.ok) {
 						setTrashCount(Array.isArray(res.items) ? res.items.length : 0);
+						setError(null);
 						if (Array.isArray(res.items)) pendingDeletes.reconcileWithTrash(res.items.map((i) => i.id).filter((id) => typeof id === "string"));
 					} else setError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
 				}).catch((err) => {
@@ -815,7 +815,7 @@ window.__ModuleLoader__.load({
 				return () => {
 					cancelled = true;
 				};
-			}, [open]);
+			}, [open, pending]);
 			if (!open) return null;
 			/** Confirm-then-empty the recycle bin (unrecoverable) — defined in-component
 			*  so it captures the trash state setters. `window.confirm` is a genuine
@@ -943,6 +943,13 @@ window.__ModuleLoader__.load({
 		/** The footer action list-cell id (PLAN §9.3: additive, unique). */
 		const FOOTER_ACTION_ID = "dsh-session-manager";
 		/**
+		* MutationObserver debounce window (S-8). The observer fires on EVERY body
+		* mutation (typing, tooltips, React re-renders); running the full
+		* O(rows×sessions) re-scan each time stalls on large lists. Trailing-debounce
+		* collapses bursts of DOM churn into one sync.
+		*/
+		const MO_DEBOUNCE_MS = 100;
+		/**
 		* Error boundary over the fixed overlays. A render crash (e.g. an archive-view
 		* subscription/field mismatch) must NOT silently do nothing — it logs the
 		* stack and shows a dismissible strip instead of blanking the undo rail.
@@ -998,7 +1005,7 @@ window.__ModuleLoader__.load({
 					force = true;
 				}
 				const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title, force);
-				console.debug("[dsh-session-manager] delete click -> requestDelete=", parked, "id=", action.id, "cwd=", action.cwd, "running=", action.running, "force=", force);
+				console.debug("[dsh-session-manager] delete click -> requestDelete=", parked, "id=", action.id, "running=", action.running, "force=", force);
 			});
 			/** Hide/restore rows whose ids are parked vs active in the park table.
 			*  `rowById` is maintained by the injection controller (each injected button
@@ -1035,7 +1042,14 @@ window.__ModuleLoader__.load({
 				controller.sync();
 				reconcileVisibility();
 			};
-			const mo = new MutationObserver(sync);
+			let moTimer;
+			const mo = new MutationObserver(() => {
+				if (moTimer !== void 0) return;
+				moTimer = setTimeout(() => {
+					moTimer = void 0;
+					sync();
+				}, MO_DEBOUNCE_MS);
+			});
 			mo.observe(document.body, {
 				childList: true,
 				subtree: true
@@ -1055,6 +1069,7 @@ window.__ModuleLoader__.load({
 				disposeSlot();
 				offPending();
 				offList();
+				if (moTimer !== void 0) clearTimeout(moTimer);
 				mo.disconnect();
 				controller.dispose();
 				overlays.unmount();
