@@ -49,6 +49,17 @@ window.__ModuleLoader__.load({
 		function smUnarchive(id) {
 			return post("/unarchive", { id });
 		}
+		/** List the confirmed recycle-bin entries (debug/re-read only). */
+		function smTrash() {
+			return post("/trash", {});
+		}
+		/**
+		* Empty the recycle bin. Requires an explicit `confirm:true` payload — the
+		* client prompts a dialog before calling this (unrecoverable action).
+		*/
+		function smEmptyTrash(confirm) {
+			return post("/emptyTrash", { confirm });
+		}
 		//#endregion
 		//#region src/client/pendingDeletesCore.ts
 		/**
@@ -303,7 +314,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:src/client/rail.module.css.mjs
-		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;bottom:18px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-state-error-primary,#ff6b6b);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;font-size:12px;line-height:1;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-state-error-primary,#ff6b6b);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}";
+		const css = ".FPsCja_rail{z-index:2147483000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf5);max-width:min(520px,100vw - 24px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-flow:wrap;justify-content:center;align-items:center;gap:12px;padding:8px 8px 8px 14px;font-size:13px;line-height:1.4;animation:.16s ease-out FPsCja_rail-in;display:flex;position:fixed;bottom:18px;left:50%;transform:translate(-50%)}@keyframes FPsCja_rail-in{0%{opacity:0;transform:translate(-50%)translateY(8px)}to{opacity:1;transform:translate(-50%)translateY(0)}}.FPsCja_item{flex-direction:row;align-items:center;gap:10px;max-width:100%;display:flex}.FPsCja_label{flex-direction:column;min-width:0;display:flex}.FPsCja_title{text-overflow:ellipsis;white-space:nowrap;max-width:200px;font-size:13px;font-weight:500;overflow:hidden}.FPsCja_countdown,.FPsCja_add{color:var(--dsw-alias-label-tertiary,#c8c8d29e);font-size:11px}.FPsCja_undo{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0f);color:var(--dsw-alias-state-business-primary,#4f8cff);border-radius:8px;flex:none;padding:4px 10px;font-family:inherit;font-size:12px;font-weight:500}.FPsCja_undo:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff1a)}.FPsCja_failed{color:var(--dsw-alias-state-error-primary,#ff6b6b);text-align:left;background:0 0;border:none;min-width:0;font-family:inherit;font-size:13px}.FPsCja_dismiss{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;flex:none;padding:2px 4px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_dismiss:hover{color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_divider{background:var(--dsw-alias-border-l2,#80808040);align-self:stretch;width:1px}.FPsCja_deleteBtn{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-state-error-primary,#ff6b6b);opacity:.85;background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;font-size:12px;line-height:1;display:inline-flex}.FPsCja_deleteBtn:hover{color:var(--dsw-alias-state-error-primary,#ff6b6b);background:var(--dsw-alias-interactive-bg-hover,#ffffff1a);opacity:1}.FPsCja_entryButton{cursor:pointer;color:var(--dsw-alias-label-secondary,#e6e6ecd1);font-family:var(--dsw-font-body,system-ui, sans-serif);background:0 0;border:none;border-radius:8px;justify-content:center;align-items:center;gap:6px;padding:6px 10px;font-size:14px;line-height:20px;display:inline-flex}.FPsCja_entryButton:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_overlay{z-index:2147482000;border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cfa);width:min(360px,100vw - 24px);max-height:min(480px,100vh - 120px);box-shadow:var(--dsw-shadow-lv3,0 8px 28px #0006);color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);pointer-events:auto;border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:56px;left:12px;overflow:hidden}.FPsCja_head{border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;font-size:14px;font-weight:600;display:flex}.FPsCja_close{cursor:pointer;color:var(--dsw-alias-label-tertiary,#c8c8d29e);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-family:inherit;font-size:16px;line-height:1}.FPsCja_close:hover{color:var(--dsw-alias-label-primary,#e8e8ec);background:var(--dsw-alias-interactive-bg-hover,#ffffff14)}.FPsCja_list{flex-direction:column;min-height:0;padding:4px;display:flex;overflow-y:auto}.FPsCja_row{border-radius:8px;align-items:center;gap:8px;padding:7px 8px;display:flex}.FPsCja_row:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff0f)}.FPsCja_rowTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:13px;overflow:hidden}.FPsCja_action{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-label-secondary,#e6e6ecd1);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_action:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-label-primary,#e8e8ec)}.FPsCja_danger{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:3px 9px;font-family:inherit;font-size:12px}.FPsCja_danger:hover{background:var(--dsw-alias-interactive-bg-hover,#ffffff17);color:var(--dsw-alias-state-error-primary,#ff6b6b)}.FPsCja_empty{text-align:center;color:var(--dsw-alias-label-tertiary,#c8c8d29e);padding:20px 14px;font-size:13px}.FPsCja_errorBanner{color:var(--dsw-alias-state-error-primary,#ff6b6b);border-bottom:1px solid var(--dsw-alias-border-l2,#80808038);padding:8px 12px;font-size:12px}.FPsCja_trashBar{border-top:1px solid var(--dsw-alias-border-l2,#80808038);align-items:center;gap:10px;padding:8px 12px;display:flex}.FPsCja_trashButton{cursor:pointer;border:1px solid var(--dsw-alias-border-l2,#80808059);background:var(--dsw-alias-button-elevated-fill,#ffffff0d);color:var(--dsw-alias-state-error-primary,#ff6b6b);border-radius:7px;flex:none;padding:4px 11px;font-family:inherit;font-size:12px}.FPsCja_trashButton:disabled{cursor:default;opacity:.45;color:var(--dsw-alias-label-tertiary,#c8c8d299)}.FPsCja_trashCount{color:var(--dsw-alias-label-tertiary,#c8c8d29e);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:12px;overflow:hidden}";
 		const tagId = "dsh-session-manager/rail.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -313,28 +324,31 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"label": "FPsCja_label",
-			"row": "FPsCja_row",
+			"entryButton": "FPsCja_entryButton",
+			"danger": "FPsCja_danger",
 			"undo": "FPsCja_undo",
-			"errorBanner": "FPsCja_errorBanner",
-			"failed": "FPsCja_failed",
-			"close": "FPsCja_close",
-			"action": "FPsCja_action",
-			"head": "FPsCja_head",
+			"deleteBtn": "FPsCja_deleteBtn",
 			"overlay": "FPsCja_overlay",
+			"close": "FPsCja_close",
 			"countdown": "FPsCja_countdown",
-			"rowTitle": "FPsCja_rowTitle",
-			"title": "FPsCja_title",
 			"rail-in": "FPsCja_rail-in",
+			"label": "FPsCja_label",
+			"head": "FPsCja_head",
+			"action": "FPsCja_action",
+			"failed": "FPsCja_failed",
 			"add": "FPsCja_add",
 			"dismiss": "FPsCja_dismiss",
-			"entryButton": "FPsCja_entryButton",
 			"item": "FPsCja_item",
-			"divider": "FPsCja_divider",
-			"rail": "FPsCja_rail",
 			"list": "FPsCja_list",
-			"deleteBtn": "FPsCja_deleteBtn",
-			"danger": "FPsCja_danger",
+			"errorBanner": "FPsCja_errorBanner",
+			"divider": "FPsCja_divider",
+			"trashBar": "FPsCja_trashBar",
+			"trashButton": "FPsCja_trashButton",
+			"rail": "FPsCja_rail",
+			"trashCount": "FPsCja_trashCount",
+			"rowTitle": "FPsCja_rowTitle",
+			"title": "FPsCja_title",
+			"row": "FPsCja_row",
 			"empty": "FPsCja_empty"
 		};
 		//#endregion
@@ -476,7 +490,36 @@ window.__ModuleLoader__.load({
 			const pending = (0, react.useSyncExternalStore)(subscribePending, selectPending, selectPending);
 			const sessionsSnap = (0, react.useSyncExternalStore)((l) => sessionsFeed.subscribe(l), () => sessionsFeed.getSnapshot(), () => sessionsFeed.getSnapshot());
 			const workspacesSnap = (0, react.useSyncExternalStore)((l) => workspacesFeed.subscribe(l), () => workspacesFeed.getSnapshot(), () => workspacesFeed.getSnapshot());
+			const [trashCount, setTrashCount] = (0, react.useState)(null);
+			const [trashError, setTrashError] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				let cancelled = false;
+				smTrash().then((res) => {
+					if (cancelled) return;
+					if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0);
+					else setTrashError(`读取回收站失败：${res.code ?? res.message ?? "unknown"}`);
+				});
+				return () => {
+					cancelled = true;
+				};
+			}, [open]);
 			if (!open) return null;
+			/** Confirm-then-empty the recycle bin (unrecoverable) — defined in-component
+			*  so it captures the trash state setters. `window.confirm` is a genuine
+			*  modal; we call /sm/emptyTrash with confirm:true on confirmation. Failures
+			*  are surfaced, never swallowed; the count is re-read so the UI re-syncs. */
+			const onEmptyTrash = async (count) => {
+				if (!window.confirm(`将永久删除回收站中的 ${count} 个会话，此操作不可撤销。确定继续？`)) return;
+				const res = await smEmptyTrash(true);
+				if (!res.ok) {
+					setTrashError(`清空回收站失败：${res.code ?? res.message ?? "unknown"}`);
+					return;
+				}
+				setTrashError(null);
+				const t = await smTrash();
+				if (t.ok) setTrashCount(Array.isArray(t.items) ? t.items.length : 0);
+			};
 			const byId = sessionsSnap.byId;
 			const parked = new Set(pending.filter((e) => e.state === "pending").map((e) => e.id));
 			const rows = [];
@@ -502,6 +545,17 @@ window.__ModuleLoader__.load({
 				className: rail_module_css_default.danger,
 				onClick: () => requestArchivedDelete(ctx, row)
 			}, "删除"))));
+			const canEmpty = trashCount !== null && trashCount > 0;
+			const countLabel = trashCount === null ? "回收站：未知" : trashCount > 0 ? `${trashCount} 个已删除会话` : "回收站为空";
+			const trashBar = (0, react.createElement)("div", { className: rail_module_css_default.trashBar }, (0, react.createElement)("button", {
+				type: "button",
+				className: rail_module_css_default.trashButton,
+				disabled: !canEmpty,
+				title: canEmpty ? `永久删除回收站中的 ${trashCount} 个会话` : "回收站为空",
+				onClick: () => {
+					onEmptyTrash(canEmpty ? trashCount : 0);
+				}
+			}, "清空回收站"), (0, react.createElement)("span", { className: rail_module_css_default.trashCount }, countLabel));
 			return (0, react.createElement)("div", {
 				className: rail_module_css_default.overlay,
 				role: "dialog",
@@ -511,7 +565,10 @@ window.__ModuleLoader__.load({
 				className: rail_module_css_default.close,
 				"aria-label": "关闭归档视图",
 				onClick: () => setArchiveOpen(false)
-			}, "✕")), body);
+			}, "✕")), trashError && (0, react.createElement)("div", {
+				className: rail_module_css_default.errorBanner,
+				role: "alert"
+			}, trashError), body, trashBar);
 		}
 		/** Remove a session id from the archive set via /sm/unarchive. */
 		async function unarchive(ctx, id) {

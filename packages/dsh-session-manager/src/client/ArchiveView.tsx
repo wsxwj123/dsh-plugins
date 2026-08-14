@@ -13,7 +13,7 @@
  * a failed fire un-parks them and they reappear.
  */
 import { createElement, type ReactNode } from 'react'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import {
   type Context,
   type SessionListFeed,
@@ -22,7 +22,7 @@ import {
 } from './context-types.ts'
 import { pendingDeletes, type PendingEntry } from './pendingDeletes.ts'
 import { setArchiveOpen, getArchiveOpen, subscribeArchive } from './archiveState.ts'
-import { smUnarchive } from './bridge.ts'
+import { smTrash, smUnarchive, smEmptyTrash } from './bridge.ts'
 import css from './rail.module.css'
 
 type ArchivedRow = SessionSummary & { id: string }
@@ -54,7 +54,43 @@ export function ArchiveView({
     () => workspacesFeed.getSnapshot(),
   )
 
+  // Recycle-bin entry count for the 「清空回收站」 control. Refreshed on open and
+  // after each empty so the count/disabled state tracks the host truth.
+  const [trashCount, setTrashCount] = useState<number | null>(null)
+  const [trashError, setTrashError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void smTrash().then((res) => {
+      if (cancelled) return
+      if (res.ok) setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+      else setTrashError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
   if (!open) return null
+
+  /** Confirm-then-empty the recycle bin (unrecoverable) — defined in-component
+   *  so it captures the trash state setters. `window.confirm` is a genuine
+   *  modal; we call /sm/emptyTrash with confirm:true on confirmation. Failures
+   *  are surfaced, never swallowed; the count is re-read so the UI re-syncs. */
+  const onEmptyTrash = async (count: number): Promise<void> => {
+    const ok = window.confirm(`将永久删除回收站中的 ${count} 个会话，此操作不可撤销。确定继续？`)
+    if (!ok) return
+    const res = await smEmptyTrash(true)
+    if (!res.ok) {
+      setTrashError(`清空回收站失败：${res.code ?? res.message ?? 'unknown'}`)
+      return
+    }
+    setTrashError(null)
+    const t = await smTrash()
+    if (t.ok) {
+      setTrashCount(Array.isArray(t.items) ? t.items.length : 0)
+    }
+  }
 
   const byId = sessionsSnap.byId
   // Hide rows only while their deferred-delete window is UNDOABLE (pending). A
@@ -100,6 +136,34 @@ export function ArchiveView({
     )
   }
 
+  // The empty-trash control is enabled only when the recycle bin actually holds
+  // entries (count known non-zero); a disabled button avoids misleading a user
+  // into a confirm-with-nothing flow (TEST-PLAN B6).
+  const canEmpty = trashCount !== null && trashCount > 0
+  const countLabel = trashCount === null
+    ? '回收站：未知'
+    : trashCount > 0
+      ? `${trashCount} 个已删除会话`
+      : '回收站为空'
+  const trashBar = createElement(
+    'div',
+    { className: css.trashBar },
+    createElement(
+      'button',
+      {
+        type: 'button',
+        className: css.trashButton,
+        disabled: !canEmpty,
+        title: canEmpty ? `永久删除回收站中的 ${trashCount} 个会话` : '回收站为空',
+        onClick: () => {
+          void onEmptyTrash(canEmpty ? trashCount as number : 0)
+        },
+      },
+      '清空回收站',
+    ),
+    createElement('span', { className: css.trashCount }, countLabel),
+  )
+
   return createElement(
     'div',
     { className: css.overlay, role: 'dialog', 'aria-label': '归档会话' },
@@ -113,7 +177,9 @@ export function ArchiveView({
         '✕',
       ),
     ),
+    trashError && createElement('div', { className: css.errorBanner, role: 'alert' }, trashError),
     body,
+    trashBar,
   )
 }
 

@@ -296,3 +296,39 @@
   font-size: 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));
 }
+
+/* Recycle-bin footer inside the archive view (TEST-PLAN B6). */
+.trashBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));
+}
+
+.trashButton {
+  flex: none;
+  cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35));
+  background: var(--dsw-alias-button-elevated-fill, rgba(255, 255, 255, 0.05));
+  color: var(--dsw-alias-state-error-primary, #ff6b6b);
+  border-radius: 7px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.trashButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.6));
+}
+
+.trashCount {
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
