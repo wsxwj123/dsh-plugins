@@ -196,6 +196,11 @@ function apply(ctx, config = {}) {
 				res.end("forbidden");
 				return;
 			}
+			if (req.method !== "POST") {
+				res.writeHead(405, { allow: "POST" });
+				res.end("method not allowed");
+				return;
+			}
 			const m = /^\/sm\/([^/?#]+)/.exec(req.url ?? "");
 			const method = m ? m[1] : void 0;
 			if (!method) {

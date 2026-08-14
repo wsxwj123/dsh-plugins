@@ -266,6 +266,62 @@ test('readRequestBody: streamed body over limit -> too-large, byte-accurate (S2)
   assert.deepStrictEqual(await plugin.readRequestBody(oneOver), { ok: false, code: 'too-large' })
 })
 
+test('route: GET (and other non-POST methods) -> HTTP 405 method not allowed (S3)', async () => {
+  // S3: /sm is a POST-only surface. A GET must be refused 405 (with the
+  // allowed method advertised) BEFORE any body read or handler work.
+  const { ctx, provide } = makeCordisCtx()
+  let route = null
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: (r) => { route = r; return () => {} } },
+  })
+  const { base } = roots()
+  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
+  for (const method of ['GET', 'PUT', 'DELETE', 'OPTIONS']) {
+    const req = { headers: { host: '127.0.0.1:3080' }, url: '/sm/trash', method }
+    const res = {
+      headersSent: false,
+      statusCode: null,
+      _headers: null,
+      writeHead(code, headers) { this.headersSent = true; this.statusCode = code; this._headers = headers },
+      end() {},
+    }
+    await route.handler(req, res)
+    assert.strictEqual(res.statusCode, 405, `${method} /sm/trash -> 405`)
+    assert.strictEqual(res._headers.allow, 'POST')
+  }
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('route: POST /sm/trash -> 200 ok (the only accepted method) (S3)', async () => {
+  const { ctx, provide } = makeCordisCtx()
+  let route = null
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: (r) => { route = r; return () => {} } },
+  })
+  const { base } = roots()
+  plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: path.join(base, 'trash') })
+  const req = new Readable({ read() {} })
+  req.headers = { host: '127.0.0.1:3080' }
+  req.url = '/sm/trash'
+  req.method = 'POST'
+  req.push(null) // empty body
+  const res = {
+    headersSent: false,
+    statusCode: null,
+    _body: null,
+    writeHead(code) { this.headersSent = true; this.statusCode = code },
+    end(body) { this._body = body },
+  }
+  await route.handler(req, res)
+  assert.strictEqual(res.statusCode, 200)
+  assert.strictEqual(JSON.parse(res._body).ok, true)
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('route: oversized body -> HTTP 413 payload-too-large (S2)', async () => {
   const { ctx, provide } = makeCordisCtx()
   let route = null
@@ -314,6 +370,7 @@ test('route: body stream interrupted mid-read -> structured 400, async handler n
   const req = new Readable({ read() {} })
   req.headers = { host: '127.0.0.1:3080' } // loopback -> passes the trust fence
   req.url = '/sm/delete'
+  req.method = 'POST' // /sm is POST-only (S3)
   req.push('{"id":"')
   req.destroy(new Error('ECONNRESET: socket hang up'))
   const res = {

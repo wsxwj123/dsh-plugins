@@ -257,6 +257,16 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
         return
       }
 
+      // S3: /sm is a POST-only RPC surface (the browser bridge always POSTs —
+      // bridgeCore.postJson hard-codes method:'POST'). Every other HTTP method
+      // is refused 405 BEFORE any body read or handler work, so a GET/PUT/
+      // OPTIONS can never reach a handler with a side effect.
+      if (req.method !== 'POST') {
+        res.writeHead(405, { allow: 'POST' })
+        res.end('method not allowed')
+        return
+      }
+
       const m = /^\/sm\/([^/?#]+)/.exec(req.url ?? '')
       const method = m ? m[1] : undefined
       if (!method) {
