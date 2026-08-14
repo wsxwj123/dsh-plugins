@@ -1,6 +1,6 @@
+import { isInsideOrEqual } from "./paths.js";
 import { TrashStore } from "./trash.js";
 import { t as WORKSPACE_DOMAIN } from "./constants-B5ET8slt.js";
-import { isInsideOrEqual } from "./paths.js";
 import { createSmHandler } from "./handler.js";
 import { isTrustedSmRequest } from "./trust-fence.js";
 import path from "node:path";
@@ -54,6 +54,48 @@ function resolveRoots(config) {
 	};
 }
 /**
+* Absolute locations that must never serve as the trash root, even if a
+* misconfigured `SM_TRASH_ROOT` / config points at them (SECURITY-REPORT S1).
+* The startup check is the PRIMARY defense: empty() recursively removes the
+* root's contents, so a root aimed at (or containing) user/system data would
+* turn "empty trash" into a destructive delete of unrelated files.
+*/
+const SYSTEM_TRASH_ROOT_DENYLIST = [
+	"/tmp",
+	"/var",
+	"/var/tmp",
+	"/usr",
+	"/etc",
+	"/bin",
+	"/sbin",
+	"/lib",
+	"/opt",
+	"/System",
+	"/Library",
+	"/Applications",
+	"/private",
+	"C:\\Windows",
+	"C:\\Program Files",
+	"C:\\Program Files (x86)",
+	"C:\\ProgramData",
+	"C:\\Users"
+];
+/**
+* Why `trashRoot` is unsafe as the recycle-bin root, or null when it is safe.
+* Rejects: the filesystem root, the home directory, any ANCESTOR of home
+* (e.g. /Users, /home, C:\Users — empty() would reach real user data), the
+* system temp dir, and the known system directories above.
+*/
+function trashRootUnsafeReason(trashRoot, home = os.homedir()) {
+	const resolved = path.resolve(trashRoot);
+	if (resolved === path.parse(resolved).root) return "the filesystem root";
+	if (resolved === path.resolve(home)) return "the home directory";
+	if (isInsideOrEqual(resolved, home)) return "an ancestor of the home directory";
+	if (resolved === path.resolve(os.tmpdir())) return "the system temp directory";
+	for (const sys of SYSTEM_TRASH_ROOT_DENYLIST) if (path.resolve(sys) === resolved) return `the system directory ${sys}`;
+	return null;
+}
+/**
 * Consume the raw request body (I-4). NEVER rejects: a mid-stream failure —
 * client abort (ECONNRESET) or a transport error — resolves to null, which the
 * route maps to a structured 400. The old bare `for await` threw inside the
@@ -78,6 +120,11 @@ function apply(ctx, config = {}) {
 	const { sessionsRoot, trashRoot } = resolveRoots(config);
 	if (isInsideOrEqual(sessionsRoot, trashRoot)) {
 		ctx.logger.warn(`[session-manager] trash root ${trashRoot} is inside sessions root ${sessionsRoot}; refusing to enable recycle bin`);
+		return;
+	}
+	const unsafe = trashRootUnsafeReason(trashRoot);
+	if (unsafe !== null) {
+		ctx.logger.warn(`[session-manager] trash root ${trashRoot} is ${unsafe}; refusing to enable recycle bin`);
 		return;
 	}
 	const storageDomain = ctx.storageDomain;
@@ -173,4 +220,4 @@ function apply(ctx, config = {}) {
 	ctx.effect(() => dispose);
 }
 //#endregion
-export { apply, inject, name, readRequestBody, resolveRoots };
+export { apply, inject, name, readRequestBody, resolveRoots, trashRootUnsafeReason };

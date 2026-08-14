@@ -92,6 +92,46 @@ test('records() ignores non-json / corrupt metadata', () => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('empty: skips non-trash entries under a misconfigured root (S1)', () => {
+  // SECURITY-REPORT S1: empty() must never blind-delete everything under the
+  // root. Entries that fail the delete-side id shape (control chars, `%`-ids
+  // that would collide with the ~XXXX escape, path-like names) are NOT trash
+  // items and must be left untouched even when the root holds unrelated files.
+  const base = tmpdir()
+  const store = new TrashStore(path.join(base, 'trash'))
+  // A real trash item (has a record).
+  const src = path.join(base, 'src')
+  store.moveToTrash(makeSession(src, 'real1'), { id: 'real1', originalDir: path.join(src, 'real1'), title: null, projectKey: 'src' })
+  // Non-trash content that could pre-exist if the root was misconfigured:
+  // control-char name (assertValidId rejects), `%` name (isStableSegment
+  // rejects — the delete-side second gate), and a dotfile.
+  fs.mkdirSync(path.join(store.root, 'a\tb'), { recursive: true }) // tab -> invalid id charset
+  fs.mkdirSync(path.join(store.root, 'x%y'), { recursive: true }) // % -> unstable segment
+  fs.writeFileSync(path.join(store.root, '.DS_Store'), 'x')
+  const failed = store.empty()
+  assert.deepStrictEqual(failed, [])
+  assert.strictEqual(fs.existsSync(path.join(store.root, 'real1')), false, 'real trash item removed')
+  assert.strictEqual(store.hasRecord('real1'), false, 'record purged for removed item')
+  assert.strictEqual(fs.existsSync(path.join(store.root, 'a\tb')), true, 'control-char entry untouched')
+  assert.strictEqual(fs.existsSync(path.join(store.root, 'x%y')), true, '%-entry untouched')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('empty: orphan with valid id shape (record lost) is still removed (S1)', () => {
+  // A moved session dir whose record was lost (crash between the record write
+  // and the rename, or an external deletion) must still be cleaned by empty():
+  // its name passes the same id gates /sm/delete applies, so it is a trash
+  // item, not unrelated data.
+  const base = tmpdir()
+  const store = new TrashStore(path.join(base, 'trash'))
+  const orphan = path.join(store.root, 'orphan-sess-1')
+  fs.mkdirSync(orphan, { recursive: true }) // no record — record lost
+  fs.writeFileSync(path.join(orphan, 'session.jsonl.zstd'), 'x')
+  assert.deepStrictEqual(store.empty(), [])
+  assert.strictEqual(fs.existsSync(orphan), false, 'valid-shape orphan removed')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('readRecord: corrupt record -> null AND a warn trace is left (S-6)', () => {
   // S-6: a broken record silently hid the item from /sm/trash and made restore
   // report not-in-trash. It must still read as missing, but the corruption must

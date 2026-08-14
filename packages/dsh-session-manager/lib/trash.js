@@ -1,3 +1,4 @@
+import { assertValidId, isStableSegment } from "./paths.js";
 import path from "node:path";
 import fs from "node:fs";
 //#region src/trash.ts
@@ -156,12 +157,19 @@ var TrashStore = class {
 	* be removed, so the caller can surface a system-error while keeping the
 	* still-present items restorable. Any rm failure leaves that item's record
 	* intact.
+	*
+	* SECURITY-REPORT S1: only entries that are recognizable trash items may be
+	* removed — those with a durable record, or (orphans whose record was lost)
+	* names that pass the same id gates /sm/delete applies. Everything else
+	* under the root is left untouched, so a misconfigured trash root can never
+	* turn "empty trash" into a blind rm -rf of unrelated content.
 	*/
 	empty() {
 		if (!fs.existsSync(this.root)) return [];
 		const failed = [];
 		for (const entry of fs.readdirSync(this.root)) {
 			if (entry === "_metadata") continue;
+			if (!this.hasRecord(entry) && !isValidTrashItemShape(entry)) continue;
 			try {
 				if (this.rmItem(entry, this.root) === false) {
 					failed.push(entry);
@@ -176,6 +184,14 @@ var TrashStore = class {
 		return failed;
 	}
 };
+/**
+* True when a trash-root entry name could be a trash item id — mirrors the
+* delete-side id gates (assertValidId + isStableSegment) so empty() stays
+* aligned with what records()/moveToTrash actually produce (S1).
+*/
+function isValidTrashItemShape(name) {
+	return assertValidId(name) && isStableSegment(name);
+}
 /** Default removal: recursive, force, absent-safe. */
 function defaultRmItem(id, trashRoot) {
 	fs.rmSync(path.join(trashRoot, id), {

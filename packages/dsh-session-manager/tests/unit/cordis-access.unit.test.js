@@ -157,6 +157,42 @@ test('apply: trash root inside sessions root -> warns and refuses to mount (S-1 
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('trashRootUnsafeReason: rejects home/root/system dirs, allows a normal dedicated dir (S1)', () => {
+  // SECURITY-REPORT S1: the startup guard must refuse trash roots that would
+  // make empty() reach user/system data.
+  const home = os.homedir()
+  assert.match(plugin.trashRootUnsafeReason(home), /home directory/)
+  assert.match(plugin.trashRootUnsafeReason(path.parse(home).root), /filesystem root/)
+  assert.match(plugin.trashRootUnsafeReason(path.dirname(home)), /ancestor of the home directory/)
+  assert.match(plugin.trashRootUnsafeReason(os.tmpdir()), /temp directory/)
+  assert.match(plugin.trashRootUnsafeReason('/etc'), /system directory/)
+  // A dedicated dir under home (the default layout) is safe.
+  assert.strictEqual(plugin.trashRootUnsafeReason(path.join(home, '.dsh', 'session-manager-trash')), null)
+  // A fresh temp-based dedicated dir is safe.
+  assert.strictEqual(plugin.trashRootUnsafeReason(path.join(tmpdir(), 'trash')), null)
+})
+
+test('apply: trash root = home directory -> warns, route NOT mounted, nothing created (S1)', () => {
+  // S1 startup guard: a trash root aimed at the home directory must be refused
+  // BEFORE the TrashStore constructor runs (which would mkdir _metadata inside
+  // home) and before any route mounts.
+  const { ctx, provide, warnLog } = makeCordisCtx()
+  let registered = false
+  provide({
+    storageDomain: { get: () => null },
+    sessions: { get: () => undefined },
+    webServer: { register: () => { registered = true; return () => {} } },
+  })
+  const base = tmpdir()
+  assert.doesNotThrow(() => {
+    plugin.apply(ctx, { sessionsRoot: path.join(base, 'sessions'), trashRoot: os.homedir() })
+  })
+  assert.strictEqual(registered, false, 'route NOT mounted for an unsafe trash root')
+  assert.ok(warnLog.some((m) => /refusing to enable recycle bin/.test(String(m))))
+  assert.strictEqual(fs.existsSync(path.join(os.homedir(), '_metadata')), false, 'trash root not created under home')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('handler: storageDomain missing degrades unarchive to workspace-domain-unavailable', () => {
   const base = tmpdir()
   const sessionsRoot = path.join(base, 'sessions')
