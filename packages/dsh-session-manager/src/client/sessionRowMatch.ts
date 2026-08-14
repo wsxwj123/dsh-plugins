@@ -26,7 +26,8 @@ export interface SessionRowCandidate {
 
 export interface MatchedSession {
   id: string
-  cwd: string
+  /** Undefined when the session has no recorded cwd (host uses `_no-cwd`). */
+  cwd: string | undefined
   title: string
   running: boolean
 }
@@ -39,7 +40,7 @@ export function matchSessionFromLabel(
   let best: string | null = null
   let bestId: string | undefined
   let bestRunning = false
-  let bestCwd = ''
+  let bestCwd: string | undefined
   for (const id of Object.keys(byId)) {
     const s = byId[id]
     if (!s || s.blank) continue
@@ -52,7 +53,9 @@ export function matchSessionFromLabel(
       best = candidate
       bestId = id
       bestRunning = s.running === true
-      bestCwd = String((s as Record<string, unknown>).cwd ?? '')
+      // Preserve ABSENT cwd as undefined (send no cwd → host `_no-cwd`) instead
+      // of coercing to '' (host would return session-dir-not-found).
+      bestCwd = (s as Record<string, unknown>).cwd as string | undefined
     }
   }
   if (best === null || bestId === undefined) return null

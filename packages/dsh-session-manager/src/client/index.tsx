@@ -85,7 +85,8 @@ export function apply(ctx: Context): void {
       // Park the deferred deletion; the pendingDeletes subscription below hides
       // the row and handles the countdown/undo. Multi-entry is allowed (P9); a
       // false return only means this identical id already has a window.
-      pendingDeletes.requestDelete(action.id, action.cwd, action.title)
+      const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title)
+      console.debug('[dsh-session-manager] delete click -> requestDelete=', parked, 'id=', action.id, 'cwd=', action.cwd)
     },
   )
 

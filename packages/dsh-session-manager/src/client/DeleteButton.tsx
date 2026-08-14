@@ -52,8 +52,8 @@ const HOVER_CSS = `[role="treeitem"]:hover > [data-dsh-sm-delete] { display: inl
  */
 export function resolveRowSession(
   row: Element,
-  byId: Record<string, { title?: string; displayTitle?: string; running?: boolean; blank?: boolean } | undefined>,
-): { id: string; cwd: string; title: string; running: boolean } | null {
+  byId: Record<string, { title?: string; displayTitle?: string; running?: boolean; blank?: boolean; cwd?: string } | undefined>,
+): { id: string; cwd: string | undefined; title: string; running: boolean } | null {
   const buttons = row.querySelectorAll<HTMLElement>('button[aria-label]')
   // A session row exposes exactly one labeled action button (the ⋮ menu);
   // project rows expose two (workspace menu + new-session) — skip those.
@@ -79,7 +79,7 @@ export interface DeleteController {
  */
 export function createDeleteController(
   getContext: () => Context,
-  onDelete: (action: { id: string; cwd: string; title: string; running: boolean }, row: HTMLElement) => void,
+  onDelete: (action: { id: string; cwd: string | undefined; title: string; running: boolean }, row: HTMLElement) => void,
 ): DeleteController {
   const rowById = new Map<string, HTMLElement>()
 
@@ -97,7 +97,19 @@ export function createDeleteController(
     const ctx = getContext()
     const byId = ctx.sessions.list.getSnapshot().byId
     const action = resolveRowSession(row, byId)
-    if (!action) return
+    if (!action) {
+      // Diagnostic for the "ungrouped not deletable" report: a row that IS a
+      // session row (exactly one aria-labelled button) but failed title
+      // resolution. Logs what would have been needed so the cause is visible in
+      // Console without a browser-side debugger.
+      const ariaButtons = row.querySelectorAll<HTMLElement>('button[aria-label]')
+      if (ariaButtons.length === 1) {
+        const lbl = ariaButtons[0].getAttribute('aria-label') ?? ''
+        console.debug('[dsh-session-manager] session row not resolvable:',
+          { ariaLabel: lbl, byIdCount: Object.keys(byId).length, byIdTitles: Object.keys(byId).map((i) => byId[i]?.title ?? byId[i]?.displayTitle) })
+      }
+      return
+    }
 
     rowById.set(action.id, row)
     const btn = document.createElement('button')

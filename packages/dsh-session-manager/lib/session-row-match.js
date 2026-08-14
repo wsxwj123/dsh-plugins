@@ -4,7 +4,7 @@ function matchSessionFromLabel(label, byId) {
 	let best = null;
 	let bestId;
 	let bestRunning = false;
-	let bestCwd = "";
+	let bestCwd;
 	for (const id of Object.keys(byId)) {
 		const s = byId[id];
 		if (!s || s.blank) continue;
@@ -16,7 +16,7 @@ function matchSessionFromLabel(label, byId) {
 			best = candidate;
 			bestId = id;
 			bestRunning = s.running === true;
-			bestCwd = String(s.cwd ?? "");
+			bestCwd = s.cwd;
 		}
 	}
 	if (best === null || bestId === void 0) return null;

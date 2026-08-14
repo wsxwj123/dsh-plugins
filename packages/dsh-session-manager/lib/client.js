@@ -33,15 +33,18 @@ window.__ModuleLoader__.load({
 		}
 		/**
 		* Delete a session (recycle-bin move + optional archive-set cleanup). Fired
-		* from the pending-delete state machine when the 10s window expires.
+		* from the pending-delete state machine when the window expires.
 		* @param id - session id.
-		* @param cwd - cwd label used to locate the project dir on the host.
+		* @param cwd - working-directory path used to locate the project dir on the
+		*   host. OMITTED when the session has no recorded cwd, so the host places it
+		*   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
+		*   an empty string. Pass `undefined`/omit to skip.
 		* @param title - display title for the trash record (identify-in-trash only).
 		*/
 		function smDelete(id, cwd, title) {
 			return post("/delete", {
 				id,
-				cwd,
+				...cwd !== void 0 ? { cwd } : {},
 				title
 			});
 		}
@@ -279,7 +282,7 @@ window.__ModuleLoader__.load({
 			let best = null;
 			let bestId;
 			let bestRunning = false;
-			let bestCwd = "";
+			let bestCwd;
 			for (const id of Object.keys(byId)) {
 				const s = byId[id];
 				if (!s || s.blank) continue;
@@ -291,7 +294,7 @@ window.__ModuleLoader__.load({
 					best = candidate;
 					bestId = id;
 					bestRunning = s.running === true;
-					bestCwd = String(s.cwd ?? "");
+					bestCwd = s.cwd;
 				}
 			}
 			if (best === null || bestId === void 0) return null;
@@ -327,33 +330,33 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"failed": "FPsCja_failed",
+			"head": "FPsCja_head",
 			"deleteBtn": "FPsCja_deleteBtn",
+			"row": "FPsCja_row",
 			"close": "FPsCja_close",
+			"action": "FPsCja_action",
+			"trashBar": "FPsCja_trashBar",
 			"countdown": "FPsCja_countdown",
 			"item": "FPsCja_item",
-			"backdrop": "FPsCja_backdrop",
-			"action": "FPsCja_action",
 			"trashButton": "FPsCja_trashButton",
-			"rail-in": "FPsCja_rail-in",
-			"title": "FPsCja_title",
-			"add": "FPsCja_add",
-			"undo": "FPsCja_undo",
-			"row": "FPsCja_row",
-			"danger": "FPsCja_danger",
-			"empty": "FPsCja_empty",
-			"trashCount": "FPsCja_trashCount",
-			"head": "FPsCja_head",
-			"label": "FPsCja_label",
-			"rail": "FPsCja_rail",
-			"dismiss": "FPsCja_dismiss",
-			"entryButton": "FPsCja_entryButton",
 			"overlay": "FPsCja_overlay",
+			"dismiss": "FPsCja_dismiss",
+			"undo": "FPsCja_undo",
+			"failed": "FPsCja_failed",
+			"rail": "FPsCja_rail",
+			"rail-in": "FPsCja_rail-in",
+			"backdrop": "FPsCja_backdrop",
 			"list": "FPsCja_list",
-			"rowTitle": "FPsCja_rowTitle",
+			"empty": "FPsCja_empty",
 			"errorBanner": "FPsCja_errorBanner",
-			"trashBar": "FPsCja_trashBar",
-			"divider": "FPsCja_divider"
+			"trashCount": "FPsCja_trashCount",
+			"divider": "FPsCja_divider",
+			"rowTitle": "FPsCja_rowTitle",
+			"title": "FPsCja_title",
+			"danger": "FPsCja_danger",
+			"label": "FPsCja_label",
+			"entryButton": "FPsCja_entryButton",
+			"add": "FPsCja_add"
 		};
 		//#endregion
 		//#region src/client/DeleteButton.tsx
@@ -395,7 +398,18 @@ window.__ModuleLoader__.load({
 				if (row.querySelector("[data-dsh-sm-delete]") !== null) return;
 				const byId = getContext().sessions.list.getSnapshot().byId;
 				const action = resolveRowSession(row, byId);
-				if (!action) return;
+				if (!action) {
+					const ariaButtons = row.querySelectorAll("button[aria-label]");
+					if (ariaButtons.length === 1) {
+						const lbl = ariaButtons[0].getAttribute("aria-label") ?? "";
+						console.debug("[dsh-session-manager] session row not resolvable:", {
+							ariaLabel: lbl,
+							byIdCount: Object.keys(byId).length,
+							byIdTitles: Object.keys(byId).map((i) => byId[i]?.title ?? byId[i]?.displayTitle)
+						});
+					}
+					return;
+				}
 				rowById.set(action.id, row);
 				const btn = document.createElement("button");
 				btn.type = "button";
@@ -753,7 +767,8 @@ window.__ModuleLoader__.load({
 				wide: props.wide
 			}));
 			const controller = createDeleteController(() => ctx, (action, row) => {
-				pendingDeletes.requestDelete(action.id, action.cwd, action.title);
+				const parked = pendingDeletes.requestDelete(action.id, action.cwd, action.title);
+				console.debug("[dsh-session-manager] delete click -> requestDelete=", parked, "id=", action.id, "cwd=", action.cwd);
 			});
 			/** Hide/restore rows whose ids are parked vs active in the park table.
 			*  `rowById` is maintained by the injection controller (each injected button

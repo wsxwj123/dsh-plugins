@@ -41,13 +41,16 @@ async function post(path: string, body: unknown): Promise<SmResult> {
 
 /**
  * Delete a session (recycle-bin move + optional archive-set cleanup). Fired
- * from the pending-delete state machine when the 10s window expires.
+ * from the pending-delete state machine when the window expires.
  * @param id - session id.
- * @param cwd - cwd label used to locate the project dir on the host.
+ * @param cwd - working-directory path used to locate the project dir on the
+ *   host. OMITTED when the session has no recorded cwd, so the host places it
+ *   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
+ *   an empty string. Pass `undefined`/omit to skip.
  * @param title - display title for the trash record (identify-in-trash only).
  */
-export function smDelete(id: string, cwd: string, title: string): Promise<SmResult> {
-  return post('/delete', { id, cwd, title })
+export function smDelete(id: string, cwd: string | undefined, title: string): Promise<SmResult> {
+  return post('/delete', { id, ...(cwd !== undefined ? { cwd } : {}), title })
 }
 
 /** Restore a session from the recycle bin. */

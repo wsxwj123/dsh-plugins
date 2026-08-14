@@ -41,8 +41,10 @@ export type PendingState = 'pending' | 'failed'
 
 export interface PendingEntry {
   id: string
-  /** cwd label used to locate the session dir on the host. */
-  cwd: string
+  /** Working-directory path used to locate the session dir on the host.
+   *  Undefined when the session has no recorded cwd (host falls back to
+   *  `_no-cwd`, matching real DSH). */
+  cwd: string | undefined
   /** Display title shown in the rail to disambiguate multiple entries. */
   title: string
   /** Epoch ms at which the pending window expires (rail counts down to it). */
@@ -84,7 +86,7 @@ export interface PendingDeletes {
    * its own undo button. Returns `true` when a new entry is parked, and `false`
    * when the SAME id is already parked (idempotent no-op — no double window).
    */
-  requestDelete(id: string, cwd: string, title: string): boolean
+  requestDelete(id: string, cwd: string | undefined, title: string): boolean
   /**
    * Cancel a still-waiting deletion (before its deadline). Only pending
    * entries are undoable; a fired/failing/dead entry returns false.
