@@ -106,7 +106,9 @@ UI 可观察状态复位键：**刷新页面**（重载 DSH web GUI）应把 cli
 > 端点：`/sm/delete`、`/sm/restore`、`/sm/emptyTrash`、`/sm/trash`、`/sm/unarchive`。均经 `authority:'loopback'` 信任 fence（403 兜底）。命名以连接实际挂载为准（channel `/sm` + 方法名拼 `/<method>`）。
 
 ### 3.1 `/sm/delete`
-请求：`{ id: string, cwd?: string, title?: string }`
+请求：`{ id: string, cwd?: string, title?: string, force?: boolean }`
+
+- **`force?: boolean`**：可选。目标会话「运行中/打开中但空闲」时可强制删除。`force !== true`（未传或 false）时，对 live 会话照旧返回 `session-running`（**契约不变，验收 65 条的 session-running 断言保留**）；`force === true` 时**放行移文件**（目录进回收站，可恢复）。`force` 传了但非布尔 → 400 `invalid-force`。删除成功的语义（含归档集第二步/partial-failure/幂等）与不带 force 完全一致。
 
 > **路径解析（真实 DSH 语义）**：node 半按 DSH 的真实磁盘布局定位会话目录，使用官方编码器
 > （`dsh-session-persistence-jsonl`）：

@@ -118,7 +118,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
   function doDelete(_req: unknown, body: unknown): SmResponse {
     if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
 
-    const { id, cwd, title } = body as { id?: unknown; cwd?: unknown; title?: unknown }
+    const { id, cwd, title, force } = body as { id?: unknown; cwd?: unknown; title?: unknown; force?: unknown }
 
     // 400-level input validation (INTERFACE §3.1).
     if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
@@ -129,6 +129,10 @@ export function createSmHandler(deps: SmHandlerDeps): {
       if (typeof title !== 'string' || title.length > 256) {
         return bad('invalid-title', 'invalid title')
       }
+    }
+    // `force` must be a boolean when provided (otherwise the request is malformed).
+    if (force !== undefined && typeof force !== 'boolean') {
+      return bad('invalid-force', 'invalid force')
     }
 
     // Locate the project dir (honoring an optional test override map; bounds
@@ -152,7 +156,12 @@ export function createSmHandler(deps: SmHandlerDeps): {
     // handler level: when no session service is supplied we cannot know if the
     // target is live, so the guard is skipped (delete proceeds) rather than
     // crashing — the guard is a safety enhancement, not a hard gate.
-    if (deps.sessions?.get(id as string)) return fail('session-running', 'session is running')
+    // `force:true` opts into deleting a live (running) session: the file moves
+    // to the recycle bin anyway (recoverable). WITHOUT force a live session is
+    // still refused with the stable `session-running` code (contract unchanged).
+    if (deps.sessions?.get(id as string) && force !== true) {
+      return fail('session-running', 'session is running')
+    }
 
     // Source missing: if already in the trash → idempotent-complete, run the
     // archive step-2; else a genuine not-found.

@@ -442,6 +442,39 @@ test('REAL delete running -> 200 session-running, host refuses', async (t) => {
   t.assert.ok(exists(s.dir))
   t.assert.equal(exists(path.join(dctx.trash.root, 'sess-running')), false)
 })
+test('REAL delete running + force:false -> still session-running, no move', async (t) => {
+  const s = dctx.newSession(proj, 'sess-force-false')
+  dctx.live('sess-force-false')
+  const res = await dctx.server.call('delete', { id: 'sess-force-false', cwd: proj, force: false })
+  assertCode(t, res, 200, 'session-running')
+  t.assert.ok(exists(s.dir))
+  t.assert.equal(exists(path.join(dctx.trash.root, 'sess-force-false')), false)
+})
+test('REAL delete running + force:true -> ok:true, dir moved to trash', async (t) => {
+  const s = dctx.newSession(proj, 'sess-force-true')
+  dctx.live('sess-force-true')
+  const res = await dctx.server.call('delete', { id: 'sess-force-true', cwd: proj, force: true })
+  assertCode(t, res, 200, null)
+  t.assert.equal(exists(s.dir), false, 'forced delete moves the dir even for a live session')
+  t.assert.ok(exists(path.join(dctx.trash.root, 'sess-force-true', SESSION_MARKER)))
+})
+test('REAL delete running + force non-boolean -> 400 invalid-force', async (t) => {
+  const s = dctx.newSession(proj, 'sess-force-bad')
+  dctx.live('sess-force-bad')
+  for (const force of ['true', 1, { x: 1 }, null]) {
+    const res = await dctx.server.call('delete', { id: 'sess-force-bad', cwd: proj, force })
+    assertCode(t, res, 400, 'invalid-force')
+  }
+  t.assert.ok(exists(s.dir), 'nothing moved on a malformed force')
+})
+test('REAL delete running + force:true is idempotent (second call also ok)', async (t) => {
+  const s = dctx.newSession(proj, 'sess-force-idem')
+  dctx.live('sess-force-idem')
+  assertCode(t, await dctx.server.call('delete', { id: 'sess-force-idem', cwd: proj, force: true }), 200, null)
+  assertCode(t, await dctx.server.call('delete', { id: 'sess-force-idem', cwd: proj, force: true }), 200, null)
+  t.assert.equal(exists(s.dir), false)
+  t.assert.ok(exists(path.join(dctx.trash.root, 'sess-force-idem', SESSION_MARKER)))
+})
 test('REAL delete fence 403 -> no move', async (t) => {
   const s = dctx.newSession(proj, 'sess-forbidden')
   const res = await dctx.server.call('delete', { id: 'sess-forbidden', cwd: proj }, { host: 'not-local.tld' })

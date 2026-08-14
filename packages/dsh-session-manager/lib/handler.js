@@ -72,19 +72,20 @@ function createSmHandler(deps) {
 	const log = deps.log ?? { warn: () => {} };
 	function doDelete(_req, body) {
 		if (!bodyIsObject(body)) return bad("bad-request", "body must be an object");
-		const { id, cwd, title } = body;
+		const { id, cwd, title, force } = body;
 		if (!assertValidId(id)) return bad("invalid-id", "invalid id");
 		if (cwd !== void 0 && cwd !== null && typeof cwd !== "string") return bad("invalid-cwd", "invalid cwd");
 		if (title !== void 0 && title !== null) {
 			if (typeof title !== "string" || title.length > 256) return bad("invalid-title", "invalid title");
 		}
+		if (force !== void 0 && typeof force !== "boolean") return bad("invalid-force", "invalid force");
 		const proj = resolveLookup(deps, cwd);
 		if (proj.kind === "invalid") return bad("invalid-cwd", "invalid cwd");
 		if (proj.kind === "not-found") return fail("session-dir-not-found", "project dir not found");
 		if (!isStableSegment(id)) return fail("path-out-of-bounds", "id escapes segment encoding");
 		const targetDir = sessionSegment(proj.projectDir, id);
 		if (!isInsideOrEqual(deps.sessionsRoot, targetDir)) return fail("path-out-of-bounds", "target outside sessions root");
-		if (deps.sessions?.get(id)) return fail("session-running", "session is running");
+		if (deps.sessions?.get(id) && force !== true) return fail("session-running", "session is running");
 		if (!fs.existsSync(targetDir)) {
 			if (deps.trash.hasItem(id)) return doArchivedCleanup(id);
 			return fail("session-dir-not-found", "session dir not found");
