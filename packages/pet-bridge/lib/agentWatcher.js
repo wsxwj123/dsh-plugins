@@ -31,7 +31,8 @@ const { summarizeToolInput } = require('./toolLabels')
  * @returns {{ dispose:Function, finalStop:Function }} dispose 停轮询；finalStop 在 agent/disposed 时补发 stop 并彻底停用
  */
 function createWatcher(agent, cfg, emit, logger) {
-  const debug = (logger && typeof logger.debug === 'function' ? logger.debug : () => {})
+  // 同 bubble.js：logger 是依赖 fiber 上下文的可调用服务，调用包 try 防 this 绑定丢失
+  const debug = (...args) => { try { if (logger && typeof logger.debug === 'function') return logger.debug(...args) } catch (_) { /* 静默 */ } }
   let position = 0 // 位置游标：下一个待处理事件的数组下标
   let dead = false
   let interval = null
