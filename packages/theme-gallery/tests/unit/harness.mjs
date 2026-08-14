@@ -56,12 +56,14 @@ function camelToKebab(s) { return s.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase
 function kebabToCamel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()) }
 
 // ---- minimal element ----
-function makeElement(tag) {
+function makeElement(tag, registry) {
   const attrs = new Map()
   let datasetTarget = {}
+  let detached = false
   const node = {
     tag,
     dataset: {},
+    _running: typeof registry === 'function' ? registry : null,
     style: { setProperty() {}, getPropertyValue() { return '' }, removeProperty() {} },
     classList: { add() {}, remove() {}, contains() { return false } },
     _children: [],
@@ -77,7 +79,13 @@ function makeElement(tag) {
       node.children = node._children
     },
     appendChild(e) { e.parentNode = node; node._children.push(e); node.children = node._children; return e },
-    remove() { const p = node.parentNode; if (p) { p._children = p._children.filter((c) => c !== node); p.children = p._children; node.parentNode = null } },
+    remove() {
+      if (detached) return
+      detached = true
+      if (registry) { const i = registry.indexOf(node); if (i >= 0) registry.splice(i, 1) }
+      const p = node.parentNode
+      if (p) { p._children = p._children.filter((c) => c !== node); p.children = p._children; node.parentNode = null }
+    },
     textContent: '',
     innerHTML: '',
     insertBefore() {},
@@ -107,27 +115,40 @@ function makeElement(tag) {
 /** Minimal document: body with dataset, head; querySelector/S everything in-memory. */
 export function createDoc() {
   const all = []
-  const body = makeElement('body')
-  const head = makeElement('head')
+  const body = makeElement('body', all)
+  const head = makeElement('head', all)
   body._ownStyles = []
   const document = {
     body,
     head,
     title: 'DSH',
-    createElement(tag) { const el = makeElement(tag); all.push(el); return el },
+    createElement(tag) { const el = makeElement(tag, all); all.push(el); return el },
     createTextNode(t) { return { textContent: String(t) } },
     querySelector(sel) { return queryAll(sel)[0] || null },
     querySelectorAll(sel) { return queryAll(sel) },
   }
   function queryAll(sel) {
+    if (sel.includes(',')) {
+      // 逗号复合选择器：取并集。
+      const seen = new Set()
+      const out = []
+      for (const part of sel.split(',')) {
+        for (const el of querySingle(part.trim())) {
+          if (!seen.has(el)) { seen.add(el); out.push(el) }
+        }
+      }
+      return out
+    }
+    return querySingle(sel)
+  }
+  function querySingle(sel) {
     if (sel === 'style') return all.filter((e) => e.tag === 'style')
-    const m = sel.match(/^style\[data-plugin=["']?([^"']+)["']?\]$/)
-    if (m) return all.filter((e) => e.tag === 'style' && e.getAttribute('data-plugin') === m[1])
-    const a = sel.match(/^style\[data-theme-gallery-a11y=["']?([^"']+)["']?\]$/)
-    if (a) return all.filter((e) => e.tag === 'style' && e.getAttribute('data-theme-gallery-a11y') === a[1])
-    const s = sel.match(/^style\[data-theme-gallery-skin\]$/)
-    if (s) return all.filter((e) => e.tag === 'style' && e.hasAttribute('data-theme-gallery-skin'))
-    return all.filter((e) => e.tag === 'style')
+    // 属性值选择器（支持 data-plugin / data-plugin-css / data-theme-gallery-a11y / 无值布尔属性）。
+    const val = /^style\[([a-z0-9-]+)=["']?([^"']+)["']?\]$/.exec(sel)
+    if (val) return all.filter((e) => e.tag === 'style' && e.getAttribute(val[1]) === val[2])
+    const bool = /^style\[[a-z0-9-]+\]$/.exec(sel)
+    if (bool) return all.filter((e) => e.tag === 'style' && e.hasAttribute(sel.slice(6, -1)))
+    return [] // 其它选择器无匹配（浏览器语义：未知 attr 选择器无匹配元素）
   }
   return { document, all, queryAll }
 }
