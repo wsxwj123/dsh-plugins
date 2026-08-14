@@ -17,7 +17,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { TrashStore } from './trash.js'
+import { TrashStore, SESSION_MARKER } from './trash.js'
 import {
   assertValidId,
   isStableSegment,
@@ -223,6 +223,15 @@ export function createSmHandler(deps: SmHandlerDeps): {
       if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)
       if (liveSession) return doArchivedCleanup(id as string)
       return fail('session-dir-not-found', 'session dir not found')
+    }
+
+    // The dir exists — INTERFACE §3.1 step 3 requires the session marker
+    // (session.jsonl.zstd) INSIDE it before anything is moved. A same-named
+    // non-session directory must never be pulled into the trash (S-3): refuse
+    // with a distinct code so the client keeps the row and nothing is ever
+    // bulk-moved by a title/id collision.
+    if (!fs.existsSync(path.join(targetDir, SESSION_MARKER))) {
+      return fail('not-a-session', 'target dir is not a session (missing session.jsonl.zstd)')
     }
 
     // Move the whole directory into the trash.

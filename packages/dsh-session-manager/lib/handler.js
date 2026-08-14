@@ -1,3 +1,4 @@
+import "./trash.js";
 import { assertValidId, isInsideOrEqual, isStableSegment, lookupProjectDir, sessionSegment } from "./paths.js";
 import path from "node:path";
 import fs from "node:fs";
@@ -92,6 +93,7 @@ function createSmHandler(deps) {
 			if (liveSession) return doArchivedCleanup(id);
 			return fail("session-dir-not-found", "session dir not found");
 		}
+		if (!fs.existsSync(path.join(targetDir, "session.jsonl.zstd"))) return fail("not-a-session", "target dir is not a session (missing session.jsonl.zstd)");
 		try {
 			deps.trash.moveToTrash(targetDir, {
 				id,

@@ -163,6 +163,25 @@ test('delete: idempotent — second delete of an already-moved dir returns ok', 
   env.cleanup()
 })
 
+test('delete: same-named dir WITHOUT session marker -> not-a-session, nothing moved (S-3)', () => {
+  // INTERFACE §3.1 step 3: a session dir is only a session when it carries
+  // session.jsonl.zstd. A colliding non-session directory must be refused, not
+  // bulk-moved into the trash (defense-in-depth against title/id collisions).
+  const env = makeEnv()
+  const projectDir = path.join(env.sessionsRoot, projectKey('main'))
+  const dir = path.join(projectDir, 'not-a-session')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'placeholder.txt'), 'x') // no marker
+  const res = env.D({ id: 'not-a-session', cwd: 'main' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.ok, false)
+  assert.strictEqual(res.json.code, 'not-a-session')
+  assert.strictEqual(fs.existsSync(path.join(dir, 'placeholder.txt')), true, 'source dir untouched')
+  assert.strictEqual(fs.existsSync(path.join(env.truncate.root, 'not-a-session')), false, 'nothing moved to trash')
+  assert.strictEqual(env.truncate.hasRecord('not-a-session'), false, 'no record written')
+  env.cleanup()
+})
+
 test('delete: missing dir (not in trash) -> session-dir-not-found', () => {
   const env = makeEnv()
   const res = env.D({ id: 'ghost', cwd: 'main' })

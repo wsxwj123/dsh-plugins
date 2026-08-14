@@ -19,7 +19,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-/** Marker file that makes a directory a recognizable session directory. */
+/**
+ * Marker file that makes a directory a recognizable session directory. The
+ * /sm/delete gate refuses to move a dir lacking it (INTERFACE §3.1 step 3,
+ * S-3); the acceptance harness mirrors the same name with its own copy.
+ */
 export const SESSION_MARKER = 'session.jsonl.zstd'
 
 /** The metadata sub-directory inside the trash root. */
