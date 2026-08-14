@@ -44,6 +44,12 @@ export interface TrashStoreOptions {
    * files; defaults to fs.rmSync.
    */
   rmItem?: (id: string, trashRoot: string) => boolean | void
+  /**
+   * Optional warn logger (a plain function — never the cordis callable).
+   * Used to leave a trace when a metadata record is corrupt (S-6) so a broken
+   * record cannot vanish silently; defaults to a no-op.
+   */
+  log?: { warn(msg: string): void }
 }
 
 /**
@@ -55,11 +61,13 @@ export class TrashStore {
   readonly root: string
   private readonly metaDir: string
   private readonly rmItem: (id: string, trashRoot: string) => boolean | void
+  private readonly log: { warn(msg: string): void }
 
   constructor(root: string, opts: TrashStoreOptions = {}) {
     this.root = root
     this.metaDir = path.join(root, METADATA_DIR)
     this.rmItem = opts.rmItem ?? defaultRmItem
+    this.log = opts.log ?? { warn: () => {} }
     // Ensure the trash root and its metadata dir exist up-front so the first
     // delete can rename directly into a home directory.
     fs.mkdirSync(this.metaDir, { recursive: true })
@@ -85,14 +93,25 @@ export class TrashStore {
     if (!fs.existsSync(p)) return null
     try {
       return JSON.parse(fs.readFileSync(p, 'utf8')) as TrashRecord
-    } catch {
+    } catch (err) {
+      // S-6: a corrupt/half-written record must not vanish silently — it hides
+      // the trash item from /sm/trash and makes restore report not-in-trash.
+      // Leave a warn trace so the operator can find the broken file.
+      this.log.warn(`trash record ${p} is corrupt; treated as missing (${String(err)})`)
       return null
     }
   }
 
   writeRecord(rec: TrashRecord): void {
     fs.mkdirSync(this.metaDir, { recursive: true })
-    fs.writeFileSync(this.recordPath(rec.id), JSON.stringify(rec))
+    // S-6: atomic record write — serialize to a temp file in the SAME
+    // directory, then rename over the target. A crash mid-write leaves either
+    // the old record or a stray .tmp file, never a half-written record.json
+    // that readRecord would mis-parse as corruption.
+    const target = this.recordPath(rec.id)
+    const tmp = `${target}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(rec))
+    fs.renameSync(tmp, target)
   }
 
   deleteRecord(id: string): void {

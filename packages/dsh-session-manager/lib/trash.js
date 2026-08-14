@@ -35,10 +35,12 @@ var TrashStore = class {
 	root;
 	metaDir;
 	rmItem;
+	log;
 	constructor(root, opts = {}) {
 		this.root = root;
 		this.metaDir = path.join(root, METADATA_DIR);
 		this.rmItem = opts.rmItem ?? defaultRmItem;
+		this.log = opts.log ?? { warn: () => {} };
 		fs.mkdirSync(this.metaDir, { recursive: true });
 	}
 	/** The absolute metadata record path for an id. */
@@ -58,13 +60,17 @@ var TrashStore = class {
 		if (!fs.existsSync(p)) return null;
 		try {
 			return JSON.parse(fs.readFileSync(p, "utf8"));
-		} catch {
+		} catch (err) {
+			this.log.warn(`trash record ${p} is corrupt; treated as missing (${String(err)})`);
 			return null;
 		}
 	}
 	writeRecord(rec) {
 		fs.mkdirSync(this.metaDir, { recursive: true });
-		fs.writeFileSync(this.recordPath(rec.id), JSON.stringify(rec));
+		const target = this.recordPath(rec.id);
+		const tmp = `${target}.tmp`;
+		fs.writeFileSync(tmp, JSON.stringify(rec));
+		fs.renameSync(tmp, target);
 	}
 	deleteRecord(id) {
 		fs.rmSync(this.recordPath(id), { force: true });

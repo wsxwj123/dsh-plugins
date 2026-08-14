@@ -84,7 +84,7 @@ function apply(ctx, config = {}) {
 	const sessions = ctx.sessions;
 	if (!storageDomain) ctx.logger.warn("[session-manager] storageDomain service unavailable; archive write (unarchive / delete-of-archived) will degrade to workspace-domain-unavailable / system-error");
 	if (!sessions) ctx.logger.warn("[session-manager] sessions service unavailable; host-authoritative cwd resolution is skipped and deletes use the client-supplied cwd");
-	const trash = new TrashStore(trashRoot);
+	const trash = new TrashStore(trashRoot, { log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) } });
 	/**
 	* Read the current workspace global object. I-1: a THROWN read (storage
 	* fault) returns the `undefined` sentinel — distinguishable from "domain

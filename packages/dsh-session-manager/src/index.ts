@@ -134,7 +134,11 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
     )
   }
 
-  const trash = new TrashStore(trashRoot)
+  const trash = new TrashStore(trashRoot, {
+    // S-6: leave a warn trace when a metadata record is corrupt instead of
+    // silently treating it as missing.
+    log: { warn: (m) => ctx.logger.warn(`[session-manager] ${m}`) },
+  })
 
   /**
    * Read the current workspace global object. I-1: a THROWN read (storage

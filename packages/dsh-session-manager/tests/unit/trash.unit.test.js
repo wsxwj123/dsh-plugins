@@ -92,6 +92,38 @@ test('records() ignores non-json / corrupt metadata', () => {
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('readRecord: corrupt record -> null AND a warn trace is left (S-6)', () => {
+  // S-6: a broken record silently hid the item from /sm/trash and made restore
+  // report not-in-trash. It must still read as missing, but the corruption must
+  // be visible in the log so the operator can find the broken file.
+  const base = tmpdir()
+  const warns = []
+  const store = new TrashStore(path.join(base, 'trash'), { log: { warn: (m) => warns.push(String(m)) } })
+  fs.writeFileSync(store.recordPath('c1'), '{oops') // half-written / corrupt JSON
+  assert.strictEqual(store.readRecord('c1'), null, 'corrupt record reads as missing')
+  assert.strictEqual(store.readRecord('missing'), null, 'absent record reads as missing too')
+  assert.strictEqual(warns.length, 1, 'exactly the corrupt read warns')
+  assert.ok(/c1/.test(warns[0]) && /corrupt/.test(warns[0]), 'warn names the corrupt record')
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('writeRecord is atomic (temp + rename): valid round-trip, no .tmp residue (S-6)', () => {
+  // S-6: the record write must go through a same-dir temp file + rename so a
+  // crash can never leave a half-written record.json. Observable contract: the
+  // final file is complete/valid and no temp file is left behind.
+  const base = tmpdir()
+  const store = new TrashStore(path.join(base, 'trash'))
+  store.writeRecord({ id: 'a1', originalDir: '/x/a1', title: 'T', projectKey: 'p', deletedAt: 42 })
+  const rec = store.readRecord('a1')
+  assert.ok(rec && rec.originalDir === '/x/a1' && rec.title === 'T' && rec.deletedAt === 42, 'round-trip intact')
+  assert.strictEqual(fs.existsSync(`${store.recordPath('a1')}.tmp`), false, 'no temp residue after write')
+  // Overwriting an existing record must also be atomic and clean.
+  store.writeRecord({ id: 'a1', originalDir: '/x/a1', title: 'T2', projectKey: 'p', deletedAt: 43 })
+  assert.strictEqual(store.readRecord('a1').title, 'T2')
+  assert.strictEqual(fs.existsSync(`${store.recordPath('a1')}.tmp`), false)
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('moveToTrash: rename failure rolls the record back — no orphan, no dangling record', () => {
   // I-2: the record is the commit point. If the rename fails after the record
   // write, the record must be rolled back so system-error still means "host
