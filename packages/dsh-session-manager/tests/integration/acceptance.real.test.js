@@ -507,6 +507,7 @@ test('REAL delete archived partial-failure -> system-error, file moved', async (
   dctx.makeStorageWriteFail()
   const res = await dctx.server.call('delete', { id: 'sess-partial', cwd: proj })
   assertCode(t, res, 200, 'system-error')
+  t.assert.equal(res.json.moved, true, 'partial failure marked moved:true (I-3)')
   t.assert.equal(exists(s.dir), false)
   t.assert.ok(dctx.workspace.archived().includes('sess-partial'))
   dctx.cfg.state.storageWriteFail = false

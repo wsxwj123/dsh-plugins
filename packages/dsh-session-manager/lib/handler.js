@@ -24,13 +24,14 @@ function ok() {
 		json: { ok: true }
 	};
 }
-function fail(code, message) {
+function fail(code, message, extra) {
 	return {
 		status: 200,
 		json: {
 			ok: false,
 			code,
-			message
+			message,
+			...extra
 		}
 	};
 }
@@ -107,14 +108,14 @@ function createSmHandler(deps) {
 		const global = deps.readWorkspaceGlobal();
 		if (global === void 0) {
 			log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`);
-			return fail("system-error", "archive state unreadable; file already moved, retry to complete");
+			return fail("system-error", "archive state unreadable; file already moved, retry to complete", { moved: true });
 		}
 		const archived = archiveFromGlobal(global);
 		if (!archived.includes(id)) return ok();
 		const domain = deps.storageDomain?.get("workspace");
 		if (domain === null || domain === void 0) {
 			log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`);
-			return fail("system-error", "archive cleanup failed; file already moved, retry to complete");
+			return fail("system-error", "archive cleanup failed; file already moved, retry to complete", { moved: true });
 		}
 		try {
 			domain.global.set({
@@ -124,7 +125,7 @@ function createSmHandler(deps) {
 			return ok();
 		} catch (err) {
 			log.warn(`archive cleanup for ${id} failed: ${String(err)}`);
-			return fail("system-error", String(err));
+			return fail("system-error", String(err), { moved: true });
 		}
 	}
 	function doRestore(_req, body) {

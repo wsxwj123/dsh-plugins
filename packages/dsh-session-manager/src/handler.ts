@@ -98,8 +98,8 @@ function ok(): SmResponse {
   return { status: 200, json: { ok: true } }
 }
 
-function fail(code: string, message: string): SmResponse {
-  return { status: 200, json: { ok: false, code, message } }
+function fail(code: string, message: string, extra?: Record<string, unknown>): SmResponse {
+  return { status: 200, json: { ok: false, code, message, ...extra } }
 }
 
 function bad(code: string, message: string): SmResponse {
@@ -244,7 +244,14 @@ export function createSmHandler(deps: SmHandlerDeps): {
   // The workspace global is read ONCE (I-1): both the "is archived" judgment
   // and the write payload derive from the same snapshot, so a second read can
   // never return a stale/failed `{}` that would clobber workspaceIds/initialized.
-  // Partial failure → system-error while the file is already moved (retryable).
+  //
+  // Partial failure (I-3): every failure branch below carries `moved: true` —
+  // doArchivedCleanup is only ever reached when the delete step-1 is effective
+  // (dir moved / already in trash / live-but-not-persisted), so the response
+  // must be distinguishable from a pure move failure (plain `system-error`,
+  // nothing happened). The client branches on `moved` to keep the row hidden
+  // and offer a "cleanup pending, retry" recovery instead of restoring a
+  // session whose dir is already gone (INTERFACE §2.4).
   function doArchivedCleanup(id: string): SmResponse {
     const global = deps.readWorkspaceGlobal()
     // A failed read is NOT the same as "not archived" — surface it as a
@@ -253,7 +260,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
     // row with no recovery signal).
     if (global === undefined) {
       log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
-      return fail('system-error', 'archive state unreadable; file already moved, retry to complete')
+      return fail('system-error', 'archive state unreadable; file already moved, retry to complete', { moved: true })
     }
     const archived = archiveFromGlobal(global)
     if (!archived.includes(id)) return ok()
@@ -261,14 +268,14 @@ export function createSmHandler(deps: SmHandlerDeps): {
     const domain = deps.storageDomain?.get('workspace')
     if (domain === null || domain === undefined) {
       log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
-      return fail('system-error', 'archive cleanup failed; file already moved, retry to complete')
+      return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
     }
     try {
       domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
       return ok()
     } catch (err) {
       log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
-      return fail('system-error', String(err))
+      return fail('system-error', String(err), { moved: true })
     }
   }
 

@@ -388,13 +388,14 @@ test('delete archived session: file moved + archive id removed; keep others', ()
   env.cleanup()
 })
 
-test('delete archived session partial-failure: file moved, archive not cleared, system-error', () => {
+test('delete archived session partial-failure: file moved, archive not cleared, system-error + moved:true', () => {
   const env = makeEnv()
   env.newSession('main', 'part')
   env.setArchived(['part'])
   env.state.storageWriteFail = true
   const res = env.D({ id: 'part', cwd: 'main' })
   assert.strictEqual(res.json.code, 'system-error')
+  assert.strictEqual(res.json.moved, true, 'partial failure is marked moved:true (I-3)')
   assert.strictEqual(fs.existsSync(path.join(env.sessionsRoot, 'main', 'part')), false, 'file moved')
   assert.ok(env.archiveIds().includes('part'), 'archive not cleared (middle state)')
   // retry completes step-2 and returns ok
@@ -402,6 +403,27 @@ test('delete archived session partial-failure: file moved, archive not cleared, 
   const res2 = env.D({ id: 'part', cwd: 'main' })
   assert.strictEqual(res2.json.ok, true)
   assert.ok(!env.archiveIds().includes('part'))
+  env.cleanup()
+})
+
+test('delete: MOVE failure -> system-error WITHOUT moved flag (distinguishable from partial failure)', () => {
+  // I-3: a failed rename means nothing happened — plain system-error, no
+  // `moved` marker. The client must be able to tell this apart from the
+  // partial-failure case (file moved, cleanup pending).
+  const env = makeEnv()
+  const s = env.newSession('main', 'movefail')
+  // Occupy the trash destination with a non-empty dir so renameSync fails
+  // (ENOTEMPTY) after the record write — the handler must surface system-error
+  // and the store must have rolled the record back (no orphan, I-2).
+  const occupied = path.join(env.truncate.root, 'movefail')
+  fs.mkdirSync(path.join(occupied, 'blk'), { recursive: true })
+  fs.writeFileSync(path.join(occupied, 'blk', 'x'), '1')
+  const res = env.D({ id: 'movefail', cwd: 'main' })
+  assert.strictEqual(res.status, 200)
+  assert.strictEqual(res.json.code, 'system-error')
+  assert.strictEqual(res.json.moved, undefined, 'pure move failure carries NO moved flag')
+  assert.ok(fs.existsSync(s.dir), 'source dir untouched (nothing moved)')
+  assert.strictEqual(env.truncate.hasRecord('movefail'), false, 'record rolled back (no orphan, no dangling record)')
   env.cleanup()
 })
 
@@ -416,6 +438,7 @@ test('delete archived session: global READ failure -> system-error (not silent o
   const res = env.D({ id: 'rdfail', cwd: 'main' })
   assert.strictEqual(res.status, 200)
   assert.strictEqual(res.json.code, 'system-error', 'read failure surfaces as retryable error')
+  assert.strictEqual(res.json.moved, true, 'file moved -> marked moved:true (I-3 partial failure)')
   assert.strictEqual(fs.existsSync(s.dir), false, 'file moved (delete step-1 effective)')
   assert.ok(env.archiveIds().includes('rdfail'), 'archive set untouched')
   // The workspace file must be byte-for-byte intact (no {...{}, archivedSessionIds} clobber).
