@@ -1,0 +1,44 @@
+✔ 空 events 数组：装载不崩、无推送 (155.901166ms)
+✔ session.events 缺失（undefined）：该 tick 跳过、不崩、不推送 (152.204959ms)
+✔ 超长 arguments：不外发，payload 里不出现参数内容 (10.650875ms)
+✔ enabled=false：正常装载、零推送（有事件也不发） (251.144416ms)
+✔ config 缺省（不传 pollInterval/port 不崩，返回卸载函数） (255.808583ms)
+✔ apply(ctx) 不带 config：不抛错、返回卸载函数（契约签名兼容） (0.139209ms)
+✔ 两个 agent 各自独立增量：各自事件都按发生序外发，不重放、不串扰 (236.30475ms)
+✔ 同一 agent 事件不新增时，多轮询后不重复推送（增量游标不重放） (313.776375ms)
+✔ 推送目标无监听（ECONNREFUSED）：不抛异常、不重试、后续事件仍处理 (307.770959ms)
+✔ 非 2xx 响应（500）：静默降级、不重试、后续事件仍正常推送 (223.689959ms)
+✔ assistant/message 混入事件流：只推送非 assistant 事件，不污染 (26.19225ms)
+✔ tool/call 缺 data.name（undefined）：tool_name 兜底为「执行中」，恒非空字符串 (13.157625ms)
+✔ seq 追加时位置乱序（seq2 排在 seq1 前）：两条都是新增、各自动作正确，不因数值乱而丢 (10.829958ms)
+✔ 重复 feed：同一事件重复 append 同内容会各推一次，但同一位置的增量不重放（见 concurrency） (10.599333ms)
+✔ apply 必须返回一个可调用的卸载函数 (0.896333ms)
+✔ 卸载后：再喂事件不再推送（timer 已停、观察已解绑） (264.633583ms)
+✔ 多次 apply + 卸载不泄漏：各自推送独立、卸载后全停 (424.306833ms)
+✔ agent/disposed（created 后无任何 turn 事件）：补发一条 kind=stop，payload 与 turn/end→stop 完全一致 (11.832834ms)
+✔ agent/disposed 后：该 agent 不再产生任何推送、轮询资源已清理 (262.412417ms)
+﹣ pollInterval≤0 装载失败 —— 依赖真实 cordis 装载器，替身无法驱动 schema 校验 (0.55975ms) # SKIP
+﹣ port 越界（非 1–65535）装载失败 —— 依赖真实 cordis 装载器，替身无法驱动 schema 校验 (0.048917ms) # SKIP
+✔ 读取类：read/grep/glob/list 前缀 → 「读取中」 (59.908791ms)
+✔ 读取类：_search 结尾（词边界）→ 「读取中」 (21.463792ms)
+✔ 写入类：write/edit/apply_patch/insert → 「写入文件」 (41.219292ms)
+✔ 命令类：bash/exec/run/command/shell → 「运行命令」 (52.06425ms)
+✔ 联网类：web_search/http/fetch/request/curl → 「联网检索」 (51.876459ms)
+✔ 编排类：subagent/agent/workflow/skill → 「编排任务」 (41.142375ms)
+✔ 未知工具名（frobnicateX）→ 兜底「执行中」 (9.941291ms)
+✔ 反向：supersearch/nonsearch/doesearch 不得命中搜索类，走兜底「执行中」 (31.268708ms)
+✔ 反向：supersearch 与 run_all 对照（part 命中边界内才命中） (21.832875ms)
+✔ turn/start 推 kind=user、agent_source="dsh"、tool_name=null、tool_input=null (15.658625ms)
+✔ tool/call 推 kind=pre，tool_name=中文文案，tool_input 恒 null (12.876709ms)
+✔ tool/result 推 kind=post，tool_name=null、tool_input=null (10.271625ms)
+✔ turn/end 推 kind=stop，tool_name=null、tool_input=null (10.256583ms)
+✔ assistant/message 不推送（喂入后等待，0 次推送） (251.246833ms)
+✔ 一个完整回合：start→call→result→end 依次外发 user/pre/post/stop (10.934667ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 2
+ℹ todo 0
+ℹ duration_ms 1034.602625
