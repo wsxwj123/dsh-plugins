@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-manager",
   "version": "0.1.0",
-  "description": "DSH web plugin: recycle-bin session deletion (10s undo) + archived-session view / unarchive. Host (node) half owns the /sm/* RPC surface and the workspace storage-domain archive write.",
+  "description": "DSH web plugin: recycle-bin session deletion (5s undo) + archived-session view / unarchive. Host (node) half owns the /sm/* RPC surface and the workspace storage-domain archive write.",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
