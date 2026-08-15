@@ -10,6 +10,7 @@
 | [`dsh-skin-gallery`](packages/skin-gallery) | 独立承载 9 个完整 dsh-web-ui 皮肤复刻，避免主题设置页加载大体积皮肤资源。 |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
 | [`dsh-pet-bridge`](packages/pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物气泡。 |
+| [`dsh-session-manager`](packages/dsh-session-manager) | 会话删除（5 秒可撤销 + 回收站式硬删）与归档视图（查看/取消归档）。 |
 
 ## 界面预览
 
@@ -29,9 +30,10 @@
 
 ```text
 packages/
-  theme-gallery/   # 主题画廊插件
-  turn-scrubber/   # 对话回合刻度插件
-  pet-bridge/      # 桌面宠物状态桥插件（配合 cc-pet 使用）
+  theme-gallery/        # 主题画廊插件
+  turn-scrubber/        # 对话回合刻度插件
+  pet-bridge/           # 桌面宠物状态桥插件（配合 cc-pet 使用）
+  dsh-session-manager/  # 会话删除 + 归档视图插件
 ```
 
 每个插件都有自己的：
@@ -75,6 +77,12 @@ dsh plugin --profile web add "link:$PWD/packages/pet-bridge"
 ```
 
 > 前置条件：本机需已安装 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物（它监听 `127.0.0.1:7779` 接收状态推送）。pet 端代码无需任何修改。详见 [packages/pet-bridge/README.md](packages/pet-bridge/README.md)。
+
+### 安装会话管理
+
+```bash
+dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
+```
 
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
 
