@@ -66,5 +66,5 @@
 - ✅ 合并 main + push GitHub（e336e09）
 - ✅ 全家桶 README 更新（dsh-session-manager 条目）
 - ✅ pnpm-lock.yaml 入库；lib 移出 git（装前 build）
-- ✅ awesome-dsh-plugin PR #370（Sessions & Messages 分类）
+- ✅ awesome-dsh-plugin PR #370（Sessions & Messages 分类）→ 已合并 🎉；条目链接带 owner 前缀 `wsxwj123/dsh-plugins#dsh-session-manager`（列表已有 Semidia/dsh-session-manager，不带前缀会混淆）
 - 测试基线：单测 131 + 验收 65 + 桥接 69 全绿
