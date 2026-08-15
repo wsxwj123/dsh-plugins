@@ -1,1 +1,3 @@
 lib/
+test-results/
+playwright-report/

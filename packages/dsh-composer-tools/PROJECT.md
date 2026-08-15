@@ -28,7 +28,11 @@
 - 02 方案：PLAN.md + INTERFACE.md 已落盘（方案代理产出）；盲审（PLAN-REVIEW.md）无致命、4 重要已全部修订：truncated→save 双保险（file-truncated + allowTruncatedBase）、symlink lstat 拒收、cwd 不存在语义、isComposerTarget 焦点前置、手动编辑检测、T0 spike（4 项实证）、data-phase fail-safe、T12 发布 @已提交
 - 卡点① 方案定稿：用户确认（含 cordis 约束核查补丁：slots.inject 返回 disposer、handler ctx 闭包 + logger 现取）@已提交
 - 卡点② 验收测试锁定：11 文件 131 用例全绿（黑盒基于 INTERFACE 契约参考实现），TEST-PLAN.md 63 条人话清单，用户确认锁定（LOCK=8fbbc2f）@已提交
-- 04 开发：开始（模型=高性价比档），先 T0 spike 后按 T1–T12 实现
+- 04 开发：T1 脚手架 ✅；T0 spike ✅；T2-T10 实现 ✅；验收接驳真实实现 ✅（131/131）；T11 单测 ✅（112）；**全量 243/243 绿**；e2e ✅（headless 加载 + playwright 真实 dsh web）；剩 T12 发布
+- 05 验收：三轮裁判——①不合格（第三层 e2e 缺失）②不合格（无真实按键交互）③**合格**（补齐真实按键 e2e 7 条 + TEST-PLAN 接线说明，250 项全绿：验收131+单测112+e2e7）@已提交；卡点③待用户确认
+- 05.5 安全审计：**可发布**（0 致命/重要，4 建议级；symlink 竞态建议已加固——doSave 写前复核 isSymbolicLink），全量 243 绿 @已提交
+- 06 发布：**代码已推 GitHub main（29254dc）** ✅；README（包内 + monorepo）✅；密钥终检 ✅；**awesome PR #489 已提交**（OPEN 等合并）✅；部署实测 ✅（composer-e2e 全 bundles + 最新构建，7/7 e2e 过）；已装进 web profile（物理复制坑已处理）
+- 07 收尾：LEARNINGS 同步（项目 + 全局）✅；feature 分支清理 + 临时文件 ✅；**剩卡点⑤用户实测（web profile 重启后体验方向键/面板/提示词库）**
 - 主会话已确认的技术事实（供方案代理复用，来自代码阅读）：
   - DSH InputBar 方向键已走 keyboard.arbitrate()：input-trigger 菜单打开时 ↑↓ 被消费、关闭时 pass（放行光标移动）→ 历史导航监听在放行路径上做
   - DSH 无原生输入历史（只有草稿恢复）→ 空白区
