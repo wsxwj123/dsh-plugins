@@ -27,7 +27,8 @@
   - 剪贴板：官方 `writeClipboard`
 - 02 方案：PLAN.md + INTERFACE.md 已落盘（方案代理产出）；盲审（PLAN-REVIEW.md）无致命、4 重要已全部修订：truncated→save 双保险（file-truncated + allowTruncatedBase）、symlink lstat 拒收、cwd 不存在语义、isComposerTarget 焦点前置、手动编辑检测、T0 spike（4 项实证）、data-phase fail-safe、T12 发布 @已提交
 - 卡点① 方案定稿：用户确认（含 cordis 约束核查补丁：slots.inject 返回 disposer、handler ctx 闭包 + logger 现取）@已提交
-- 03 测试设计：测试设计代理产出 11 个验收测试文件（host 传输/列表/读/写/提示词 + client 门槛/历史核心/存储/追加/发现，黑盒基于 INTERFACE），守卫预检无实现泄露；TEST-PLAN.md 等代理完成
+- 卡点② 验收测试锁定：11 文件 131 用例全绿（黑盒基于 INTERFACE 契约参考实现），TEST-PLAN.md 63 条人话清单，用户确认锁定（LOCK=8fbbc2f）@已提交
+- 04 开发：开始（模型=高性价比档），先 T0 spike 后按 T1–T12 实现
 - 主会话已确认的技术事实（供方案代理复用，来自代码阅读）：
   - DSH InputBar 方向键已走 keyboard.arbitrate()：input-trigger 菜单打开时 ↑↓ 被消费、关闭时 pass（放行光标移动）→ 历史导航监听在放行路径上做
   - DSH 无原生输入历史（只有草稿恢复）→ 空白区
