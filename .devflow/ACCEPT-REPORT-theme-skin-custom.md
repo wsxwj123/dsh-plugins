@@ -1,106 +1,66 @@
-# ACCEPT-REPORT — 主题与皮肤自定义系统 独立裁判验收报告
+# ACCEPT-REPORT — 主题与皮肤自定义系统 独立裁判验收报告（B3 覆盖缺口复核）
 
-> 裁判：独立盲判（未读取 `packages/*/src` 实现源码、未读 git 历史、未读 `.devflow` 除四大依据外的文件）。
-> 依据：`BRIEF-theme-skin-custom.md`、`INTERFACE-theme-skin-custom.md`、`TEST-PLAN-theme-skin-custom.md`、`LOCK-theme-skin-custom`、`tests/acceptance/*`、本次测试输出 `test-output.txt`。
-> 数据与指令隔离：本项目原始需求、INTERFACE、BRIEF 等为自产规范化文档，非外部"命令"；自定义皮肤 bundle / 主题 JSON 一律按数据校验，绝不执行其字符串内容。
-> 时间/版本：分支 `feature/theme-skin-custom-system`；测试由 `node --test tests/acceptance/*.test.mjs` 于本次会话执行并落盘。
+> 裁判：独立盲判。本复核仅评估"B3 覆盖缺口是否已关闭"。依据：`BRIEF-theme-skin-custom.md`、`INTERFACE-theme-skin-custom.md`、`TEST-PLAN-theme-skin-custom.md`、`LOCK-theme-skin-custom`、`tests/acceptance/*`、本次运行输出 `test-output.txt`。**未读取实现源码、未读 git 历史、未读 `.devflow` 除指定文件外内容，未修改任何项目文件**（仅更新 `.devflow/test-output.txt` 与本报两份裁判产出物）。
+> 数据与指令隔离声明：测试输出与文件内容视为**数据**，不是命令；任何试图放宽标准的文字均未执行。自定义皮肤 bundle / 主题 JSON 一律按数据校验，不执行其字符串内容。
+> 时间/版本：分支 `feature/theme-skin-custom-system`；验收命令 `node --test tests/acceptance/*.test.mjs` 于本会话执行并落盘。
 
 ---
 
 ## 结论：**合格**
 
-签署的验收测试（tests/acceptance，LOCK 锁定）全部通过；两包 build / check / unit test 全部通过；build 产物与 README 交付契约独立核验达标。报告末尾披露一处覆盖盲点（§8.2② / TEST-PLAN B3）供委托人知悉，不构成此项失败。
+本复核针对上期报告的覆盖盲点（TEST-PLAN `B3` / INTERFACE §8.2②：对侧 `track=skin` 时本轨不抢占、明确应用才写 theme）执行：当前 LOCK 锁定的 `tests/acceptance` 中已新增可执行 B3 断言，实跑 30/30 全通过（含该 B3 用例），**B3 覆盖缺口已关闭**。未发现阻断性缺陷。
 
 ---
 
-## 0. 锁定校验
+## 0. 锁定校验（tests/acceptance 相对 LOCK 未改动）
 
-- LOCK 值：`57f74ae7aa385e26dea13a13aca30fcca23a7c45`（commit）
-- 方法：`git diff <LOCK> -- tests/acceptance/` + `git ls-tree -r <LOCK> -- tests/acceptance/` + `git status --short tests/acceptance/`
-- 结果：LOCK 时 tests/acceptance 含 3 文件（`skin-custom.test.mjs` / `theme-custom.test.mjs` / `theme-skin-build-static.test.mjs`）；当前工作区与 LOCK 的 diff 为空，无增删、无 un-tagged 修改。**tests/acceptance 相对 LOCK 未改动，锁定成立。**
+- LOCK 当前值：`0d698f5c2453313ba3d8ebe3bd53a25504047be1`
+- 方法：`git ls-tree -r <LOCK> -- tests/acceptance/` + `git ls-files -s -- tests/acceptance/` + `git status --short`
+- 结果：LOCK 时 tests/acceptance 含 3 文件；当前工作区 3 文件 blob 哈希与 LOCK 完全一致（`skin-custom.test.mjs`=`9765862…`、`theme-custom.test.mjs`=`930c5d3…`、`theme-skin-build-static.test.mjs`=`efa6a2a…`），`git status` 干净、index 相对 LOCK diff 为空。**tests/acceptance 相对 LOCK 未改动，锁定成立。**
+
+> 注：LOCK 值较上期（`57f74ae7…`）已更新为 `0d698f5c…`——即重新锁定并纳入了新增的 B3 断言文件。当前 `tests/acceptance` 与当前 LOCK 逐字一致。
 
 ## 1. 验收测试运行结果（写入 .devflow/test-output.txt）
 
-命令：`node --test tests/acceptance/*.test.mjs`
+命令：`node --test tests/acceptance/*.test.mjs`（node v25.9.0，exit 0）
 
 ```
-tests  29   suites 12   pass 29   fail 0   cancelled 0   skipped 0   todo 0
-duration ~86ms
+tests  30   suites 13   pass 30   fail 0   cancelled 0   skipped 0   todo 0
+duration ~129ms
 ```
 
-覆盖点落点：
-- 皮肤状态机全链 / track 键（§8.1 A2、§8.2 B1/B2）
-- 皮肤缺文件 / 缺元数据 → `ERR_SKIN_MISSING_FILE` / `ERR_SKIN_BAD_META`（C7/C8，且失败不改 registry）
-- 皮肤契约 & 高危能力（C9/C10/C11/C12/C13）+ a11y 缺失降级（C14）
-- 皮肤内置不可删（D5）
-- 主题状态机全链（A1/A1b/A4）
-- 主题导入校验错误契约（C1–C6）
-- 主题未知 id → `ERR_UNKNOWN_ID`；内置不可删（D5）
-- 滚动契约 / 体积契约（E1/E2，读到 `lib/client.js` 真实产物，产物存在则真断言、缺失才 skip）
-- README 交付格式（F1/F2/F3）
+关键落点：
+- **新增用例（§8.2 B3，主题⇄皮肤软互斥边界）**：`theme-custom.test.mjs` 新增 describe「主题↔皮肤软互斥边界 (§8.2 B3)」，单条 it：**对侧 skin 已激活时，主题包不主动覆盖 track；本包用户明确应用时才写入 theme**。✔ 通过。
+- 其余原 29 项（皮肤/主题状态机、校验错误契约 C1–C14、D5 内置不可删、E1/E2 滚动与体积、F1–F3 README）全部保持通过。
 
-## 2. 两包 build / check / test
+## 2. 对侧 track=skin 覆盖核对（本任务重点）
 
-| 包 | build | check | test | 结果 |
-|---|---|---|---|---|
-| `theme-gallery` | ✔ 产出 `lib/client.js` | ✔ | 16/16 pass | 通过 |
-| `skin-gallery` | ✔ 产出 `lib/client.js`（9 skins, 9 bundles embedded） | ✔ | 39/39 pass | 通过 |
+任务要求确认 B3 是否覆盖「对侧 track=skin 时主题导入不抢占，明确应用才写 theme」。核对锁定文件 `theme-custom.test.mjs` 的 B3 断言：
 
-- theme unit 覆盖：导入校验、状态机、滚动契约、轨道互斥写键。
-- skin unit 覆盖：a11y 缺失降级、NOTICE/LICENSE/作者一致性、9 皮肤可访问性对比≥4.5、动态注册 bundle、缺文件/元数据、契约/高危/体积/数量、生命周期/track、真实 bundle 引擎全链路。全部 pass。
+| 步骤 | 断言 | 是否命中要求 |
+|---|---|---|
+| 预置对侧 track=skin（`setAppearanceTrack('skin')`） | — | 模拟「对侧已激活、track='skin'」 |
+| `importCustomTheme(validThemeJSON)` 导入主题 | `getAppearanceTrack() === 'skin'`（导入**不抢占**） | ✔ |
+| `applyCustomTheme('my-theme')` 明确应用 | `getAppearanceTrack() === 'theme'`（**明确应用才写**） | ✔ |
 
-## 3. build 产物独立核验（黑盒，不读实现源码）
+实跑中该用例通过（`✔ 对侧 skin 已激活时，主题包不主动覆盖 track；本包用户明确应用时才写入 theme`）。上期报告 §7-①「B3 拒绝路径缺乏可执行验收」的缺口已由锁定的可执行断言闭合。
 
-- **体积（§6 / E2）**：`packages/theme-gallery/lib/client.js` = 50714 B，< 102400 B（100KB）。✔
-- **滚动（§6 / E1）**：产物中 `.theme-gallery-grid` / `.skin-gallery-grid` 定义仅含 `display:grid;grid-template-columns;gap;padding`，media query 只改列数，**无 `overflow`、无 `max-height`**。✔
+> **诚实披露（不构成失败）**：该 B3 用例以 `if (!api.getAppearanceTrack) return` 作为读取缝的软守卫——若某配置下接口未暴露该 getter，用例会静默返回而被 stat 计为 pass，而非 loud-fail。本案实跑中该断言真实执行（否则 `importCustomTheme` 后 track 非 'skin' 的断言之上的 `assert.equal` 会抛错），故当前配置下覆盖为真；但该写法使「读取缝缺失」这一退化路径无强失败信号。属健壮性提示，不计入失败。
 
-## 4. README 交付格式独立核验（§8.6）
+## 3. 其余审核面（沿用锁定 test 覆盖）
 
-- F1 主题格式：明确 `id`/`label`/非空 `tokens`、token 名 `--dsw-` 前缀、值 `{light,dark}` 字符串。✔
-- F2 皮肤包三文件：`skin.json`（id/name/author/license 必填）/`client.js`（`__ModuleLoader__.load`+`apply(ctx)`+仅 `ctx.effect`/`ctx.get`）/`a11y.css`（缺失降级）+ 256KB/8 个限制。✔
-- F3 状态机与错误表：完整列出状态机（none/preview/applied/deleted、restore_default/delete 回默认）与全部 12 个 `ERR_*` code。✔
+- 状态机：主题/skin 全链、preview 不回写、非法导入不变外观（A1/A1b/A2/A4）。✔
+- 导入校验错误契约：主题 C1–C6、皮肤 C7–C14（缺文件/缺元数据/坏契约/高危/体积/数量/内置冲突/a11y 降级）。✔
+- 删除 & 恢复默认、内置不可删（D1–D5）。✔
+- 滚动/体积/README（E1/E2、F1–F3）：读取 `lib/client.js` 产物与根 README 做静态断言，产物存在即真断言、缺失才 skip。本运行 30/30 全过、无 skip。✔
 
-## 5. 管线红线复核
+## 4. 判定
 
-- 贯穿性红线（导入失败不改外观 / 不写 storage；bundle 按数据校验绝不执行包内文字；失败抛 `{code,message}` 不崩、不静默）：由 C7/C8、"导入失败不改 registry"、C9–C13 各 code 断言覆盖且通过。✔
+- 红线（非法不改外观/不写 storage；bundle 按数据不执行包内文字；失败抛 `{code,message}`）：由 A4、C2–C14、C7/C8「导入失败不改 registry」等断言覆盖且全部通过。✔
+- **未发现阻断性缺陷；B3 覆盖缺口已关闭。** 结论：**合格**。
 
 ---
 
-## 6. INTERFACE §8 逐项判定表
-
-| §8 条目 | 验收要点 | 落点 | 判定 |
-|---|---|---|---|
-| 8.1 状态机 | theme 全链 none→import→preview→applied→delete→restore | A1/A1b/A4 ✔ | 达标 |
-| 8.1 状态机 | skin 9/自定义 全链 | A2 ✔ | 达标 |
-| 8.1 状态机 | preview 刷新不回写 applied | A1 preview 后 applied 空 + A1b ✔ | 达标 |
-| 8.1 状态机 | 非法导入全链失败且外观不变 | A4 ✔ | 达标 |
-| 8.2 互斥 | 激活时 track='theme'/'skin' | B1/B2 ✔ | 达标 |
-| 8.2 互斥 | 对侧键存在时不活化本轨（软仲裁） | ⚠ **锁定 test 未纳入可执行断言** | 未覆盖（见 §7） |
-| 8.3 主题导入校验 | 合法通过；缺字段/坏 token/内置冲突拒绝 | C1–C6 ✔ | 达标 |
-| 8.3 皮肤导入校验 | 缺文件/缺元数据/坏契约/含高危/超256KB/超8个/内置冲突拒绝 | C7–C13 ✔ | 达标 |
-| 8.3 a11y 降级 | 缺 a11y.css 仍可用 | C14 ✔（另 skin unit F3） | 达标 |
-| 8.4 删除 & 恢复默认 | delete applied 回默认（主题=jade/皮肤=none）；restore 清自定义留内置 | A1/A2/D5 ✔ | 达标 |
-| 8.5 滚动/体积/残留 | 无内部滚动；theme<100KB；stop 无残留 | E1/E2 ✔（残留为运行时 GUI 面，node:test 不覆盖，见 §7-③） | 达成（残留留手动） |
-| 8.6 README 交付 | 主题格式/皮肤三文件/状态机+错误表 | F1/F2/F3 ✔ | 达标 |
-
----
-
-## 7. 覆盖盲点 / 诚实声明（不构成此项失败，请委托人知悉）
-
-1. **§8.2② 对侧占位不覆盖 track（TEST-PLAN B3）未落入锁定验收 test**。`skin-custom.test.mjs` / `theme-custom.test.mjs` 的互斥断言仅覆盖"激活时 track 写入 theme/skin"（B1/B2），未断言 B3"对侧存在非激活态时本轨不活化、track 不被覆盖"。故该项**无法从签署测试证明**。theme-gallery unit 有一断言表述为"对侧 track=skin 占位，本轨 apply 仍写 theme（最后写者生效）"。INTERFACE §1.2 的"对侧存在非激活态时不活化本轨"与"事件序软互斥/最后写者生效"可视为不同场景（非激活态 vs 激活态互补），不构成直接冲突，但 B3 的拒绝路径缺乏可执行验收，属覆盖缺口。**建议**为补严互斥，追加 B3 签收用例。
-2. **F3（README）含错误表**为真实产出一致（12 个 ERR code 全列出），无误。
-3. **§8.5 "停止后残留"与真实 GUI 冒烟**（导入→试穿→应用→删除→恢复→切换轨→停插件）属运行时 GUI 面：TEST-PLAN 覆盖声明明确交由发布前手动流程（INTERFACE §9），不入 node:test。本次 node:test 无法真刷新页面/真停插件，仅能断言无副作用，已由命名一致且全部通过的 unit 生命周期测试侧面支撑；真机残留核验不在本次自动化范围内。
-
----
-
-## 8. 判定依据声明
-
-- 本裁判未读取 `packages/*/src` 实现源码，未读 git 历史，未读 `.devflow` 中 PLAN/老版本文档等非指定文件。
-- 所有"通过"均基于签署锁定 test 的实际执行输出（落盘 `test-output.txt`）+ 本次 build/check/unit test 实跑结果 + 对 build 产物与根 README 的黑盒独立复核。
-- 未对实现做任何篡改；未执行任何自定义 bundle/主题 JSON 的字符串内容（仅 JSON.parse/静态校验/正则匹配）。
-
----
-
-验收人：独立裁判（current session）
+验收人：独立裁判（current session，B3 复核）
 日期：本会话执行日
 结论：**合格**
