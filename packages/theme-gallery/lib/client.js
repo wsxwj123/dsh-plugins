@@ -237,6 +237,10 @@ function createCustomThemeApi({ storage, builtinThemes, applyTokens }) {
     return readTrack(storage)
   }
 
+  function setAppearanceTrack(value) {
+    writeTrack(storage, value)
+  }
+
   return {
     importCustomTheme,
     previewCustomTheme,
@@ -248,6 +252,7 @@ function createCustomThemeApi({ storage, builtinThemes, applyTokens }) {
     getThemes,
     activateFamily,
     getAppearanceTrack,
+    setAppearanceTrack,
   }
 }
 
