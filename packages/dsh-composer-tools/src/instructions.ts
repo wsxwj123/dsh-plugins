@@ -103,7 +103,7 @@ export function discoverInstructions(opts: { cwd: string; dshHome?: string }): D
     ...LOCAL_INSTRUCTION_CANDIDATES,
   ]
 
-  // Global candidate first.
+  // Global candidate first: {dshHome}/AGENTS.md（DSH 官方全局指令）。
   addCandidate(files, seen, path.join(dshHome, 'AGENTS.md'), 'global', projectRoot, dshHome)
 
   // Project root → cwd chain (broadest first), regular then local per dir.

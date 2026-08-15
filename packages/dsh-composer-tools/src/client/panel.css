@@ -34,9 +34,9 @@
   flex-direction: column;
   border-radius: 14px;
   overflow: hidden;
-  background: var(--ct-background, #17181d);
-  color: var(--ct-foreground, #e8e8ea);
-  border: 1px solid var(--ct-border, #2b2d35);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2);
   box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
   font-size: 13px;
 }
@@ -46,8 +46,8 @@
   align-items: center;
   gap: 4px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--ct-border, #2b2d35);
-  background: var(--ct-background-elev, #1c1e24);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform);
 }
 .dsh-ct-header-title {
   font-weight: 600;
@@ -58,21 +58,21 @@
 .dsh-ct-tab {
   border: none;
   background: transparent;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   padding: 5px 10px;
   border-radius: 7px;
   cursor: pointer;
   font-size: 13px;
 }
 .dsh-ct-tab.active {
-  color: var(--ct-foreground, #e8e8ea);
+  color: var(--dsw-alias-label-primary);
   background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .dsh-ct-close {
   border: none;
   background: transparent;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   width: 26px;
   height: 26px;
   border-radius: 6px;
@@ -82,7 +82,7 @@
 }
 .dsh-ct-close:hover {
   background: color-mix(in srgb, currentColor 12%, transparent);
-  color: var(--ct-foreground, #e8e8ea);
+  color: var(--dsw-alias-label-primary);
 }
 
 .dsh-ct-panel-body {
@@ -103,9 +103,9 @@
 .dsh-ct-search input {
   flex: 1;
   min-width: 0;
-  background: var(--ct-background-elev, #1c1e24);
-  color: var(--ct-foreground, #e8e8ea);
-  border: 1px solid var(--ct-border, #2b2d35);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 6px 9px;
   font-size: 13px;
@@ -116,9 +116,9 @@
 }
 
 .dsh-ct-icon-btn {
-  border: 1px solid var(--ct-border, #2b2d35);
+  border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   border-radius: 8px;
   padding: 5px 9px;
   cursor: pointer;
@@ -126,7 +126,7 @@
   white-space: nowrap;
 }
 .dsh-ct-icon-btn:hover:not(:disabled) {
-  color: var(--ct-foreground, #e8e8ea);
+  color: var(--dsw-alias-label-primary);
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 .dsh-ct-icon-btn:disabled {
@@ -168,9 +168,9 @@
   width: 100%;
   min-height: 260px;
   resize: vertical;
-  background: var(--ct-background-elev, #1c1e24);
-  color: var(--ct-foreground, #e8e8ea);
-  border: 1px solid var(--ct-border, #2b2d35);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 9px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -201,12 +201,12 @@
 .dsh-ct-btn-primary:disabled { opacity: .5; cursor: default; }
 
 .dsh-ct-hint {
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   padding: 2px 4px;
 }
 .dsh-ct-empty {
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   text-align: center;
   padding: 18px 6px;
@@ -224,7 +224,7 @@
 .dsh-ct-prompt-name { font-weight: 600; }
 .dsh-ct-prompt-desc {
   font-size: 12px;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -245,7 +245,7 @@
 }
 .dsh-ct-cat-count {
   font-size: 11px;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   font-weight: 400;
 }
 
@@ -282,9 +282,9 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-top: 1px solid var(--ct-border, #2b2d35);
+  border-top: 1px solid var(--dsw-alias-border-l2);
   font-size: 11px;
-  color: var(--ct-foreground-dim, #a0a3ad);
+  color: var(--dsw-alias-label-tertiary);
   flex-wrap: wrap;
 }
 .dsh-ct-panel-footer a {
