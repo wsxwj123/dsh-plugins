@@ -52,5 +52,14 @@ export function ctPrompts(): Promise<CtResult> {
   return post('/prompts', {})
 }
 
+/**
+ * 新建项目级 AGENTS.md（INTERFACE §1.5）。body 仅 cwd；目标路径由 host 按发现的
+ * projectRoot 严格推导（不接受客户端传 path）。成功返回 {ok, path, content, mtimeMs}；
+ * 失败码见契约（no-project-root / path-exists / path-out-of-scope / system-error）。
+ */
+export function ctInstructionsCreate(cwd: string): Promise<CtResult> {
+  return post('/instructions.create', { cwd })
+}
+
 /** 导出 Ct 结果类型别名供调用方使用。 */
 export type CtBridgeResult = CtResult

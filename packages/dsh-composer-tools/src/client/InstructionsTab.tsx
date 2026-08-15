@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
+  ctInstructionsCreate,
   ctInstructionsList,
   ctInstructionsRead,
   ctInstructionsSave,
@@ -43,6 +44,11 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   const [files, setFiles] = useState<InstructionFile[]>([])
   const [phase, setPhase] = useState<string>('loading')
   const [err, setErr] = useState<string>('')
+  // 新建项目级 AGENTS.md 入口判定：host 已用 realpath + lstat 算好（§1.1/§1.5），
+  // client 只读此值、不重复推导。'ready' 时才显示按钮。
+  const [canCreateRootAgents, setCanCreateRootAgents] = useState(false)
+  // 新建中（按钮禁用 + 「创建中…」）
+  const [creating, setCreating] = useState(false)
   // [path -> readState]：面板打开期间缓存；重新加载失效。
   const contentCache = useRef<Map<string, ReadState>>(new Map())
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -50,6 +56,7 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   const loadList = async (): Promise<void> => {
     setPhase('loading')
     setErr('')
+    setCanCreateRootAgents(false)
     contentCache.current.clear()
     setExpanded(null)
     if (cwd === undefined) {
@@ -63,6 +70,7 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
       return
     }
     setFiles((res.files as InstructionFile[]) ?? [])
+    setCanCreateRootAgents(res.canCreateRootAgents === true)
     setPhase('ready')
   }
 
@@ -141,12 +149,46 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     alert(`保存失败：${res.code} ${res.message}`)
   }
 
+  // 新建项目级 AGENTS.md（INTERFACE §1.5 client UI 契约）。
+  // 成功 → await loadList() 完成后 setExpanded(新 path)（editor 复用现有 read-on-mount
+  // 读入模板，用户直接编辑 → save）。
+  // path-exists → 文件届时已在列表，重载进入正常展开/编辑流，不重复报错。
+  const createRootAgents = async (): Promise<void> => {
+    if (cwd === undefined || creating) return
+    setCreating(true)
+    setErr('')
+    try {
+      const res = await ctInstructionsCreate(cwd)
+      if (res.ok) {
+        const newPath = String(res.path ?? '')
+        await loadList()
+        if (newPath !== '') setExpanded(newPath)
+      } else if (res.code === 'path-exists') {
+        await loadList() // 文件已由并发的同类操作（或外部）创建，重载展示即可
+      } else {
+        setErr(`${res.code}: ${res.message}`)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div className="dsh-ct-instr">
       <div className="dsh-ct-search">
         <button className="dsh-ct-icon-btn" onClick={() => void loadList()} title="重新加载">
           重新加载
         </button>
+        {phase === 'ready' && canCreateRootAgents === true && (
+          <button
+            className="dsh-ct-icon-btn"
+            onClick={() => void createRootAgents()}
+            disabled={creating}
+            title="新建项目级 AGENTS.md"
+          >
+            {creating ? '创建中…' : '新建项目级 AGENTS.md'}
+          </button>
+        )}
       </div>
 
       {err !== '' && <div className="dsh-ct-err">{err}</div>}
