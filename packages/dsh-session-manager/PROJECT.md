@@ -59,3 +59,12 @@
 - 7 重要全部修复（host 4 + client 4，单测 104）
 - host 侧 9 建议消化完成（单测 118）
 - 测试基线：单测 118 + 验收 65 + 桥接 69 全绿
+
+## 发布完成 @2026-08-14
+
+- ✅ 代码修复至无优化空间：7 重要 + 14 建议 + 安全建议全部消化（复审 REVIEW-ROUND2 确认可发布）
+- ✅ 合并 main + push GitHub（e336e09）
+- ✅ 全家桶 README 更新（dsh-session-manager 条目）
+- ✅ pnpm-lock.yaml 入库；lib 移出 git（装前 build）
+- ✅ awesome-dsh-plugin PR #370（Sessions & Messages 分类）
+- 测试基线：单测 131 + 验收 65 + 桥接 69 全绿
