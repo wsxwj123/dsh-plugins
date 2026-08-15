@@ -104,15 +104,15 @@ export function discoverInstructions(opts: { cwd: string; dshHome?: string }): D
   ]
 
   // Global candidate first.
-  addCandidate(files, seen, path.join(dshHome, 'AGENTS.md'), 'global', dshHome)
+  addCandidate(files, seen, path.join(dshHome, 'AGENTS.md'), 'global', projectRoot, dshHome)
 
   // Project root → cwd chain (broadest first), regular then local per dir.
   for (const dir of ancestorChain(projectRoot, cwd)) {
     for (const name of regularNames) {
-      addCandidate(files, seen, path.join(dir, name), 'project', projectRoot)
+      addCandidate(files, seen, path.join(dir, name), 'project', projectRoot, dshHome)
     }
     for (const name of localNames) {
-      addCandidate(files, seen, path.join(dir, name), 'local', projectRoot)
+      addCandidate(files, seen, path.join(dir, name), 'local', projectRoot, dshHome)
     }
   }
 
@@ -125,6 +125,7 @@ function addCandidate(
   candidatePath: string,
   level: InstructionLevel,
   projectRoot: string,
+  dshHome: string,
 ): void {
   const abs = path.resolve(candidatePath)
   if (seen.has(abs)) return
@@ -140,7 +141,7 @@ function addCandidate(
   seen.add(abs)
   files.push({
     path: abs,
-    displayPath: displayPathFor(abs, level, projectRoot),
+    displayPath: displayPathFor(abs, level, projectRoot, dshHome),
     level,
     name: path.basename(abs),
     sizeBytes: st.size,
@@ -148,9 +149,15 @@ function addCandidate(
   })
 }
 
-function displayPathFor(abs: string, level: InstructionLevel, projectRoot: string): string {
+/**
+ * displayPathFor: project/local files are project-root-relative; the global
+ * file shows `~/.dsh/AGENTS.md` for the default home, `$DSH_HOME/AGENTS.md`
+ * when the home is non-default (INTERFACE §1.1).
+ */
+function displayPathFor(abs: string, level: InstructionLevel, projectRoot: string, dshHome: string): string {
   if (level === 'global') {
-    return `~/.dsh/${path.basename(abs)}`
+    const isDefault = dshHome === path.resolve(os.homedir(), '.dsh')
+    return isDefault ? `~/.dsh/${path.basename(abs)}` : `$DSH_HOME/${path.basename(abs)}`
   }
   return path.relative(projectRoot, abs)
 }

@@ -45,10 +45,26 @@ let cached: { ok: true; items: PromptItem[] } | { ok: false; error: string } | u
 /**
  * Load the prompt library once and return either the full 200 response object
  * or a domain error object (both `ok` keyed). Never rejects.
+ *
+ * @param overrideItems - optional injected item list (test harness). When
+ *   provided, the disk data file and cache are bypassed entirely; the items
+ *   are normalised (\r\n → \n) exactly like disk data. Production callers
+ *   omit it and get the real 780-item library.
+ * @param overrideError - optional injected failure (test harness). When set,
+ *   loadPrompts behaves exactly as if the disk read had failed with this
+ *   message — the response is the same `prompt library unavailable: <msg>`
+ *   system-error shape the real failure path produces.
  */
-export async function loadPrompts(): Promise<PromptsOutput> {
+export async function loadPrompts(overrideItems?: PromptItem[], overrideError?: string): Promise<PromptsOutput> {
   try {
-    const ready = cached ?? (cached = await loadFromDisk())
+    let ready: { ok: true; items: PromptItem[] } | { ok: false; error: string }
+    if (overrideError !== undefined) {
+      ready = { ok: false, error: overrideError }
+    } else if (overrideItems !== undefined) {
+      ready = { ok: true, items: normalizeItems(overrideItems) }
+    } else {
+      ready = cached ?? (cached = await loadFromDisk())
+    }
     if (!ready.ok) {
       return { ok: false, json: { ok: false, code: 'system-error', message: `prompt library unavailable: ${ready.error}` } }
     }
@@ -89,7 +105,18 @@ async function loadFromDisk(): Promise<{ ok: true; items: PromptItem[] } | { ok:
     return value.includes('\r\n') ? value.replace(/\r\n/g, '\n') : value
   }
 
-  const items: PromptItem[] = data.map((rawItem) => {
+  const items: PromptItem[] = normalizeItems(data as unknown[])
+
+  return { ok: true, items }
+}
+
+/** Normalise raw records into PromptItem[] (tolerate missing fields, \r\n → \n). */
+function normalizeItems(raw: unknown[]): PromptItem[] {
+  const normalize = (value: unknown, key: string): string => {
+    if (typeof value !== 'string') return '' // tolerate optional/absent fields
+    return value.includes('\r\n') ? value.replace(/\r\n/g, '\n') : value
+  }
+  return raw.map((rawItem) => {
     const it = (rawItem && typeof rawItem === 'object' ? rawItem : {}) as Record<string, unknown>
     return {
       id: typeof it.id === 'string' ? it.id : '',
@@ -100,6 +127,4 @@ async function loadFromDisk(): Promise<{ ok: true; items: PromptItem[] } | { ok:
       group: Array.isArray(it.group) ? (it.group.filter((g) => typeof g === 'string') as string[]) : [],
     }
   })
-
-  return { ok: true, items }
 }

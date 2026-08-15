@@ -45,6 +45,10 @@ const INSTRUCTION_BASENAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.m
 export interface CtHandlerOptions {
   /** Override dshHome for discovery (tests). Defaults to env/OS resolution. */
   dshHome?: string
+  /** Injected prompt items (test harness). Omitted → real data/prompt-templates.json. */
+  promptsItems?: import('./prompts-store.js').PromptItem[]
+  /** Injected prompt-library failure (test harness). Omitted → real read path. */
+  promptsError?: string
 }
 
 export interface CtHandler {
@@ -213,11 +217,11 @@ function doSave(body: unknown, opts: CtHandlerOptions): { status: number; json: 
 }
 
 /** §1.4 prompts — empty body or {} both accepted; otherwise must be an object. */
-async function doPrompts(body: unknown): Promise<{ status: number; json: unknown }> {
+async function doPrompts(body: unknown, opts: CtHandlerOptions): Promise<{ status: number; json: unknown }> {
   if (body !== undefined && !bodyIsObject(body)) {
     return { status: 400, json: { ok: false, code: 'bad-request', message: 'body must be an object' } }
   }
-  const out = await loadPrompts()
+  const out = await loadPrompts(opts.promptsItems, opts.promptsError)
   return out.ok ? { status: 200, json: out.json } : { status: 200, json: out.json }
 }
 
@@ -277,7 +281,7 @@ export function createCtHandler(ctx: Context, opts: CtHandlerOptions = {}): CtHa
       // dispatch
       let result: { status: number; json: unknown }
       if (pathname === '/ct/prompts') {
-        result = await doPrompts(body)
+        result = await doPrompts(body, opts)
       } else {
         if (!bodyIsObject(body)) {
           result = { status: 400, json: { ok: false, code: 'bad-request', message: 'body must be an object' } }
