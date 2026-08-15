@@ -11,7 +11,7 @@
  *     (cwd, path, content, mtimeMs)；mtime-conflict 提示重载/覆盖，file-truncated
  *     提示用外部编辑器。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ctInstructionsList,
   ctInstructionsRead,
@@ -46,7 +46,6 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   // [path -> readState]：面板打开期间缓存；重新加载失效。
   const contentCache = useRef<Map<string, ReadState>>(new Map())
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
 
   const loadList = async (): Promise<void> => {
     setPhase('loading')
@@ -90,18 +89,16 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   const toggleFile = async (f: InstructionFile): Promise<void> => {
     if (expanded === f.path) {
       setExpanded(null)
-      setQuery('')
       return
     }
     setExpanded(f.path)
-    setQuery('')
     await getRead(f) // 预热缓存，展开前先读好
   }
 
   const save = async (f: InstructionFile, newContent: string): Promise<void> => {
     const st = contentCache.current.get(f.path)
     if (st === undefined) return
-    if (!window.confirm(`保存将改写 ${f.displayPath}，会改变模型行为。确认？`)) return
+    // 直接落盘（对齐 claude gui）：保存即写入，不做保存前确认。
     const res = await ctInstructionsSave(cwd ?? '', f.path, newContent, st.mtimeMs)
     if (res.ok) {
       contentCache.current.get(f.path)!.mtimeMs = Number(res.mtimeMs ?? st.mtimeMs)
@@ -144,94 +141,15 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     alert(`保存失败：${res.code} ${res.message}`)
   }
 
-  // ---- 全文搜索 ----
-  const [searching, setSearching] = useState(false)
-  const searchHits = useMemo(() => {
-    const q = query.trim()
-    if (!q) return null
-    const hits: Array<{ file: InstructionFile; line: number; snippet: string }> = []
-    const re = new RegExp(escapeReg(q), 'i')
-    for (const f of files) {
-      if (re.test(f.displayPath) || re.test(f.name)) {
-        // 标题/路径命中 → 作为整体命中（行 0）
-        hits.push({ file: f, line: 0, snippet: f.displayPath })
-        continue
-      }
-      const st = contentCache.current.get(f.path)
-      if (!st) continue
-      const lines = st.content.split('\n')
-      for (let i = 0; i < lines.length; i++) {
-        if (re.test(lines[i])) {
-          hits.push({ file: f, line: i + 1, snippet: lines[i] })
-        }
-      }
-    }
-    return hits
-  }, [query, files])
-
-  const runSearch = async (): Promise<void> => {
-    const q = query.trim()
-    if (!q) return
-    const pending = files.filter((f) => !contentCache.current.has(f.path))
-    if (pending.length > 0) {
-      setSearching(true)
-      await Promise.all(pending.map((f) => getRead(f)))
-      setSearching(false)
-    }
-  }
-
-  const jumpTo = async (f: InstructionFile, line: number): Promise<void> => {
-    setExpanded(f.path)
-    setQuery('')
-    const st = await getRead(f)
-    if (st && line > 0) {
-      requestAnimationFrame(() => {
-        const ta = document.getElementById('dsh-ct-editor-' + safeId(f.path))
-        if (ta) (ta as HTMLTextAreaElement).scrollTop = (line - 3) * 18
-      })
-    }
-  }
-
   return (
     <div className="dsh-ct-instr">
       <div className="dsh-ct-search">
-        <input
-          placeholder="全文搜索（回车搜集未读文件）"
-          value={query}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void runSearch()
-          }}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button className="dsh-ct-icon-btn" onClick={() => void runSearch()} disabled={searching}>
-          {searching ? '…' : '搜索'}
-        </button>
         <button className="dsh-ct-icon-btn" onClick={() => void loadList()} title="重新加载">
           重新加载
         </button>
       </div>
 
       {err !== '' && <div className="dsh-ct-err">{err}</div>}
-
-      {query.trim() !== '' && (
-        <div className="dsh-ct-search-cols">
-          {searchHits === null ? (
-            <div className="dsh-ct-hint">按回车检索未读文件…</div>
-          ) : searchHits.length === 0 ? (
-            <div className="dsh-ct-empty">无命中</div>
-          ) : (
-            searchHits.map((h, i) => (
-              <div key={i} className="dsh-ct-search-hit" onClick={() => void jumpTo(h.file, h.line)}>
-                <div className="dsh-ct-hit-file">
-                  {h.file.displayPath}
-                  {h.line > 0 ? ` · 第 ${h.line} 行` : ''}
-                </div>
-                <div className="dsh-ct-hit-line">{h.snippet}</div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
 
       {phase === 'loading' && <div className="dsh-ct-hint">加载中…</div>}
       {phase === 'no-cwd' && <div className="dsh-ct-empty">无当前会话目录</div>}
@@ -342,10 +260,6 @@ function lvlLabel(level: string): string {
   if (level === 'project') return '项目'
   if (level === 'local') return '本地'
   return level
-}
-
-function escapeReg(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function safeId(p: string): string {

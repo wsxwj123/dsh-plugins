@@ -15,6 +15,7 @@
  *      且 draft 恢复 pending 原文（发送失败）→ dropPending。claimed 不动。
  */
 import { createElement, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { Context, InputActions, InputPhase, InputSelection } from './context-types.ts'
 import { createHistoryNav, type HistoryNavController } from './HistoryNav.ts'
 import { Panel } from './Panel.tsx'
@@ -157,14 +158,22 @@ export function ComposerEntry(props: EntryProps): ReactNode {
         title: '指令 / 提示词',
         onClick: () => setOpen((o) => !o),
       },
-      createElement('span', { className: 'dsh-ct-entry-ico', children: '🧩' }),
       createElement('span', { children: '指令/提示词' }),
     ),
-    open ? createElement(Panel, {
-      cwd,
-      currentDraft: draft,
-      setDraft: (text) => inputActions.setDraft(text),
-      onClose: () => setOpen(false),
-    }) : null,
+    open
+      ? createPortal(
+          createElement(Panel, {
+            cwd,
+            currentDraft: draft,
+            setDraft: (text) => inputActions.setDraft(text),
+            onClose: () => setOpen(false),
+          }),
+          // Portal 到 body：面板必须脱离 composerStack（其祖先 z-index:1 创建了
+          // stacking context，会把面板的 2147483100 限制在上下文内部，导致被
+          // explorer 侧栏的 fixed+z:50 盖住）。挂 body 后面板在根 stacking
+          // context，z-index 直接与侧栏竞争。
+          document.body,
+        )
+      : null,
   )
 }

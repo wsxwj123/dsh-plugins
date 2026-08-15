@@ -21,10 +21,10 @@ export const SLOT_ID = 'dsh-composer-tools'
 
 export function apply(ctx: Context): void {
   // slots.inject(key, callback)：回调返回 disposer 或 disposer 的可迭代集合。
-  // 这里只注册一个 entry，因此返回 slots.register 的 disposer。
-  const offSlot = ctx.slots.inject('conversation.input.right', () =>
+  // 注册到 conversation.input.left（权限按钮旁、modes div 之后渲染，list slot 安全）。
+  const offSlot = ctx.slots.inject('conversation.input.left', () =>
     ctx.slots.register(
-      { name: 'conversation.input.right', id: SLOT_ID, order: 1000 },
+      { name: 'conversation.input.left', id: SLOT_ID, order: 1000 },
       (props: Record<string, unknown>) =>
         // 透传 slot standard props（含 useInput / inputActions）给 ComposerEntry。
         createElement(ComposerEntry, { ctx, ...props } as never),
