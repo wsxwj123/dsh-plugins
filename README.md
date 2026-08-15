@@ -11,6 +11,7 @@
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
 | [`dsh-pet-bridge`](packages/pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物气泡。 |
 | [`dsh-session-manager`](packages/dsh-session-manager) | 会话删除（5 秒可撤销 + 回收站式硬删）与归档视图（查看/取消归档）。 |
+| [`dsh-composer-tools`](packages/dsh-composer-tools) | 输入体验增强：方向键输入历史（首/末行门槛）+ 指令查看/编辑面板（全局+项目 AGENTS.md/CLAUDE.md）+ 提示词库（780 条，发送到输入框/复制）。 |
 
 ## 界面预览
 
@@ -34,6 +35,7 @@ packages/
   turn-scrubber/        # 对话回合刻度插件
   pet-bridge/           # 桌面宠物状态桥插件（配合 cc-pet 使用）
   dsh-session-manager/  # 会话删除 + 归档视图插件
+  dsh-composer-tools/   # 输入体验增强（方向键历史/指令面板/提示词库）
 ```
 
 每个插件都有自己的：
@@ -87,6 +89,14 @@ dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
 
 > 安装后请检查 `~/.dsh/profiles/web/node_modules/@deepseek-ai` 是否被创建成真实目录。若是，应按 DSH 本机规则处理，避免 Cordis / Tool Symbol 分裂。相关背景见 [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783)。
+
+### 安装输入体验增强（方向键历史/指令面板/提示词库）
+
+```bash
+dsh plugin --profile web add "link:$PWD/packages/dsh-composer-tools"
+```
+
+同样先 `cd packages/dsh-composer-tools && pnpm install && pnpm build`（lib/ 不入库），装完重启 `dsh web`，并执行上面的 `@deepseek-ai` 物理复制检查。
 
 ## 提交到 DSH Plugins 目录
 
