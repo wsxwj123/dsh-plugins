@@ -363,6 +363,7 @@ function apply(ctx) {
   function ThemeGallery() {
     const [query, setQuery] = React.useState('')
     const [json, setJson] = React.useState('')
+    const [customOpen, setCustomOpen] = React.useState(false)
     const [err, setErr] = React.useState('')
     const [, force] = React.useState(0)
     React.useEffect(() => subscribe((id) => { selected = id; force((v) => v + 1) }), [])
@@ -421,7 +422,16 @@ function apply(ctx) {
               React.createElement('span', { className: 'theme-gallery-meta' }, '跟随 DSH 外观')
             )
           ))),
-      React.createElement('div', { className: 'theme-gallery-custom' },
+      React.createElement('div', { className: 'theme-gallery-actions' },
+        React.createElement('button', {
+          type: 'button', className: 'theme-gallery-action theme-gallery-action-primary',
+          onClick: () => setCustomOpen(!customOpen),
+        }, customOpen ? '收起自定义主题' : '创建自定义主题'),
+        React.createElement('button', {
+          type: 'button', className: 'theme-gallery-action', onClick: doRestore,
+        }, '恢复默认主题')
+      ),
+      customOpen && React.createElement('div', { className: 'theme-gallery-custom' },
         React.createElement('div', { className: 'theme-gallery-custom-title' }, '自定义主题'),
         React.createElement('div', { className: 'theme-gallery-custom-text' }, '粘贴 JSON（含 id / label / tokens，token 名以 --dsw- 开头且含 light+dark）。仅注入 CSS 变量，不执行任何 JS。'),
         React.createElement('textarea', {
@@ -431,8 +441,7 @@ function apply(ctx) {
         }),
         err && React.createElement('div', { className: 'theme-gallery-err' }, err),
         React.createElement('div', { className: 'theme-gallery-actions' },
-          React.createElement('button', { type: 'button', className: 'theme-gallery-action theme-gallery-action-primary', onClick: doImport, disabled: !json.trim() }, '导入'),
-          React.createElement('button', { type: 'button', className: 'theme-gallery-action', onClick: doRestore }, '恢复默认主题')
+          React.createElement('button', { type: 'button', className: 'theme-gallery-action theme-gallery-action-primary', onClick: doImport, disabled: !json.trim() }, '导入主题')
         ),
         customs.length === 0
           ? null

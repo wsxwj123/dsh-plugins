@@ -834,7 +834,9 @@ const CSS = `
   .skin-gallery-search { box-sizing: border-box; width: 100%; height: 34px; padding: 0 11px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; outline: none; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; }
   .skin-gallery-search:focus { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); }
   .skin-gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 2px; }
-  .skin-gallery-card { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; padding: 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; text-align: left; }
+  .skin-gallery-card { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; padding: 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; }
+  .skin-gallery-card-main { cursor: pointer; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; text-align: left; }
+  .skin-gallery-card-actions { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
   .skin-gallery-card:hover { border-color: var(--dsw-alias-brand-primary); }
   .skin-gallery-card.is-active { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent); }
   .skin-gallery-swatch { width: 30px; height: 22px; border-radius: 6px; border: 1px solid rgba(127,127,127,.3); }
@@ -882,6 +884,10 @@ function apply(ctx) {
     const [query, setQuery] = React.useState('')
     const [busy, setBusy] = React.useState(false)
     const [designOpen, setDesignOpen] = React.useState(false)
+    const [importOpen, setImportOpen] = React.useState(false)
+    const [deleteOpen, setDeleteOpen] = React.useState(false)
+    const [selectedForDelete, setSelectedForDelete] = React.useState([])
+    const [confirmDelete, setConfirmDelete] = React.useState(false)
     const [skinText, setSkinText] = React.useState('')
     const [clientText, setClientText] = React.useState('')
     const [a11yText, setA11yText] = React.useState('')
@@ -911,9 +917,24 @@ function apply(ctx) {
       clearSkin()
       customSkinApi.restoreDefaultSkin()
       setDesignOpen(false)
+      setImportOpen(false)
+      closeDeleteMode()
     }
     const togglePart = (part) => {
       setDesignParts((parts) => parts.includes(part) ? parts.filter((item) => item !== part) : [...parts, part])
+    }
+    const toggleDeleteSelection = (id) => {
+      setSelectedForDelete((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])
+    }
+    const closeDeleteMode = () => {
+      setDeleteOpen(false)
+      setConfirmDelete(false)
+      setSelectedForDelete([])
+    }
+    const deleteSelected = () => {
+      for (const id of selectedForDelete) customSkinApi.deleteCustomSkin(id)
+      closeDeleteMode()
+      force((value) => value + 1)
     }
 
     const doImportCustom = async () => {
@@ -931,7 +952,8 @@ function apply(ctx) {
       '我想创建一个自定义 DSH 皮肤。请按 dsh-skin-gallery 的皮肤包格式交付，不要生成独立 Cordis 插件。',
       '',
       '【交付路径】',
-      '把文件放入 dsh-plugins 仓库的：packages/skin-gallery/skins/<skin-id>/',
+      '把文件放入 dsh-plugins 仓库的相对路径：packages/skin-gallery/skins/<skin-id>/',
+      '不要使用绝对路径，不要放到用户主目录或 ~/.dsh。',
       '',
       '【交付格式】',
       'packages/skin-gallery/skins/<skin-id>/',
@@ -996,7 +1018,22 @@ function apply(ctx) {
         React.createElement('button', {
           type: 'button', className: 'skin-gallery-action skin-gallery-action-primary', disabled: busy,
           onClick: () => setDesignOpen(!designOpen),
-        }, designOpen ? '收起自定义皮肤' : '创建自定义皮肤')
+        }, designOpen ? '收起自定义皮肤' : '创建自定义皮肤'),
+        React.createElement('button', {
+          type: 'button', className: 'skin-gallery-action', disabled: busy,
+          onClick: () => setImportOpen(!importOpen),
+        }, importOpen ? '收起皮肤导入' : '导入皮肤'),
+        React.createElement('button', {
+          type: 'button', className: 'skin-gallery-action', disabled: busy || customSkins.length === 0,
+          onClick: () => {
+            if (deleteOpen) closeDeleteMode()
+            else {
+              setDesignOpen(false)
+              setImportOpen(false)
+              setDeleteOpen(true)
+            }
+          },
+        }, deleteOpen ? '取消删除' : '删除皮肤')
       ),
       designOpen && React.createElement('div', { className: 'skin-gallery-design' },
         React.createElement('div', { className: 'skin-gallery-design-title' }, '自定义皮肤设计助手'),
@@ -1014,7 +1051,7 @@ function apply(ctx) {
           onFocus: (event) => event.target.select(),
         })
       ),
-      React.createElement('div', { className: 'skin-gallery-import' },
+      importOpen && React.createElement('div', { className: 'skin-gallery-import' },
         React.createElement('div', { className: 'skin-gallery-import-title' }, '自定义皮肤包导入'),
         React.createElement('div', { className: 'skin-gallery-import-text' }, '受控包格式：skin.json（含 author / license）+ client.js（须注册 __ModuleLoader__.load 并导出 apply(ctx)）+ 可选 a11y.css。仅按契约校验并注入，绝不执行包内文字。'),
         React.createElement('textarea', {
@@ -1041,6 +1078,46 @@ function apply(ctx) {
           }, '导入皮肤包')
         )
       ),
+      deleteOpen && React.createElement('div', { className: 'skin-gallery-design' },
+        React.createElement('div', { className: 'skin-gallery-design-title' }, '删除自定义皮肤'),
+        React.createElement('div', { className: 'skin-gallery-design-text' }, customSkins.length === 0 ? '当前没有可删除的自定义皮肤。内置皮肤不可删除。' : '勾选要删除的自定义皮肤，然后点击“删除所选”。内置皮肤不可删除。'),
+        customSkins.length > 0 && React.createElement('div', { className: 'skin-gallery-design-options' },
+          ...customSkins.map((item) => React.createElement('label', {
+            key: item.id, className: 'skin-gallery-design-option' + (selectedForDelete.includes(item.id) ? ' is-selected' : ''),
+          },
+            React.createElement('input', {
+              type: 'checkbox', checked: selectedForDelete.includes(item.id),
+              onChange: () => toggleDeleteSelection(item.id),
+            }),
+            ' ',
+            item.name
+          ))
+        ),
+        React.createElement('div', { className: 'skin-gallery-actions' },
+          React.createElement('button', {
+            type: 'button', className: 'skin-gallery-action', disabled: selectedForDelete.length === 0,
+            onClick: () => setConfirmDelete(true),
+          }, '删除所选'),
+          React.createElement('button', {
+            type: 'button', className: 'skin-gallery-action',
+            onClick: closeDeleteMode,
+          }, '取消')
+        )
+      ),
+      confirmDelete && React.createElement('div', { className: 'skin-gallery-design' },
+        React.createElement('div', { className: 'skin-gallery-design-title' }, '确认删除'),
+        React.createElement('div', { className: 'skin-gallery-design-text' }, `将删除 ${selectedForDelete.length} 个自定义皮肤：${selectedForDelete.join('、')}。此操作不可撤销。`),
+        React.createElement('div', { className: 'skin-gallery-actions' },
+          React.createElement('button', {
+            type: 'button', className: 'skin-gallery-action skin-gallery-action-primary',
+            onClick: deleteSelected,
+          }, '确认删除'),
+          React.createElement('button', {
+            type: 'button', className: 'skin-gallery-action',
+            onClick: () => setConfirmDelete(false),
+          }, '返回')
+        )
+      ),
       React.createElement('input', {
         className: 'skin-gallery-search', type: 'search', value: query,
         placeholder: '搜索皮肤…', 'aria-label': '搜索皮肤',
@@ -1048,20 +1125,42 @@ function apply(ctx) {
       }),
       visible.length === 0
         ? React.createElement('div', { className: 'skin-gallery-empty' }, '没有匹配的皮肤')
-        : React.createElement('div', { className: 'skin-gallery-grid' }, ...visible.map((item) =>
-            React.createElement('button', {
-              key: item.id, type: 'button', disabled: busy,
+        : React.createElement('div', { className: 'skin-gallery-grid' }, ...visible.map((item) => {
+            const isCustom = item.source === 'custom'
+            return React.createElement('div', {
+              key: item.id,
               className: 'skin-gallery-card' + (state.skinId === item.id ? ' is-active' : ''),
-              'aria-pressed': state.skinId === item.id,
-              onClick: () => choose(item.id),
             },
-              React.createElement('span', { className: 'skin-gallery-swatch', style: { background: item.accent } }),
-              React.createElement('span', { className: 'skin-gallery-copy' },
-                React.createElement('span', { className: 'skin-gallery-name' }, item.name),
-                React.createElement('span', { className: 'skin-gallery-meta' }, (item.source === 'custom' ? '自定义 · ' : '') + item.author)
+              React.createElement('button', {
+                type: 'button', disabled: busy,
+                className: 'skin-gallery-card-main',
+                onClick: () => choose(item.id),
+              },
+                React.createElement('span', { className: 'skin-gallery-swatch', style: { background: item.accent } }),
+                React.createElement('span', { className: 'skin-gallery-copy' },
+                  React.createElement('span', { className: 'skin-gallery-name' }, item.name),
+                  React.createElement('span', { className: 'skin-gallery-meta' }, (isCustom ? '自定义 · ' : '') + item.author)
+                )
+              ),
+              React.createElement('div', { className: 'skin-gallery-card-actions' },
+                React.createElement('button', {
+                  type: 'button', className: 'skin-gallery-action', disabled: busy,
+                  onClick: async () => { setBusy(true); try { await previewSkin(item.id) } finally { setBusy(false) } },
+                }, '试穿'),
+                React.createElement('button', {
+                  type: 'button', className: 'skin-gallery-action skin-gallery-action-primary', disabled: busy,
+                  onClick: async () => { setBusy(true); try { await applySkin(item.id) } finally { setBusy(false) } },
+                }, '应用'),
+                deleteOpen && isCustom && React.createElement('label', { className: 'skin-gallery-design-option' },
+                  React.createElement('input', {
+                    type: 'checkbox', checked: selectedForDelete.includes(item.id),
+                    onChange: () => toggleDeleteSelection(item.id),
+                  }),
+                  ' 勾选删除'
+                )
               )
             )
-          ))
+          }))
     )
   }
 
