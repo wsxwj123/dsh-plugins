@@ -7,6 +7,7 @@
 | 插件 | 功能 |
 |---|---|
 | [`dsh-theme-gallery`](packages/theme-gallery) | 提供 15 个精选主题家族，跟随 DSH 原生“浅色 / 深色 / 跟随系统”外观设置。 |
+| [`dsh-skin-gallery`](packages/skin-gallery) | 独立承载 9 个完整 dsh-web-ui 皮肤复刻，避免主题设置页加载大体积皮肤资源。 |
 | [`dsh-turn-scrubber`](packages/turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
 | [`dsh-pet-bridge`](packages/pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物气泡。 |
 

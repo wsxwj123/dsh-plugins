@@ -1,18 +1,5 @@
 # Changelog
 
-## 0.7.0
-
-- Added a second, mutually exclusive **skin track**: nine complete dsh-web-ui skin replicas
-  (qq98 / ths / xp / blue-fantasy / dragon-heir / minecraft / whale-song / trading / miku).
-- Skin bundles are embedded at build time and executed lazily on demand (no external/dynamic URL);
-  the skin engine guarantees load → apply → switch mutual exclusion → full teardown on plugin stop.
-- Added a per-skin accessibility layer (`skins/<id>/a11y.css`) that applies only WCAG-AA contrast
-  fixes (primary-button text on light/hover fills, semi-transparent code-block backgrounds).
-- Theme and skin tracks are mutually exclusive; selection is remembered in
-  `localStorage` without modifying the official skin-center configuration.
-- Added BSD-3-Clause attribution for the bundled skin assets: `skins/NOTICE.md`, per-skin
-  `skins/<id>/LICENSE`, README attribution sections (EN/zh-CN) and a LICENSE note.
-
 ## 0.6.0
 
 - Added Blush Dawn / 粉霞 with white surfaces and soft rose accents.

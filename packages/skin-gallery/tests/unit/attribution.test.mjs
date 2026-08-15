@@ -10,7 +10,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { buildManifest, extractFamilies } from './client-harness.mjs'
+import { buildManifest } from './skin-harness.mjs'
 
 const ROOT = new URL('../../', import.meta.url)
 const NOTICE = await readFile(new URL('skins/NOTICE.md', ROOT), 'utf8')

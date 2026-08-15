@@ -19,3 +19,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Bundled third-party skin assets (directories under `skins/`) are BSD 3-Clause
+works from github.com/zhu1090093659/dsh-web-ui, Copyright (c) 2026,
+zhu1090093659. See `skins/NOTICE.md` for the BSD-3-Clause full text, per-skin
+authors (taken verbatim from each `skin.json` `author` field) and the
+aggregate copyright notice. The MIT license above covers only this package's
+own glue code (theme engine, skin engine, accessibility layer, UI, build), not
+the bundled skin assets.
