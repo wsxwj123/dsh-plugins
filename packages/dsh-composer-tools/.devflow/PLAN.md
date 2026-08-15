@@ -64,6 +64,10 @@ dispose 链、cordis.patch.yml 挂 bundle。理由：该模式已在真实 web p
    分发。async handler 用 try/catch 兜底**永不 reject**（session-manager I-4 教训）。
    trust-fence.ts / http-util.ts 从 session-manager 逐字移植（它是官方
    `isTrustedApiRequest` 的忠实移植，行为已对账）。
+   **⚠️ handler 的 ctx 传递方式**：`createCtHandler(ctx)` 闭包捕获 ctx（handler 只做
+   端点分发，业务在 instructions.ts/prompts-store.ts 纯模块）；**`ctx.logger` 每次
+   调用时现取 `ctx.logger.x(...)`，禁止存成局部变量跨异步回调**（pet-bridge 崩溃坑，
+   AGENTS.md 红线 2）。
 
 ### 1.3 client 半（React）
 
@@ -72,7 +76,11 @@ dispose 链、cordis.patch.yml 挂 bundle。理由：该模式已在真实 web p
 1. **入口按钮 + 面板挂载**：`ctx.slots.inject('conversation.input.right', cb)` 注册
    list entry（带唯一 id `dsh-composer-tools`）。用 `slots.inject` 而非直接 `register`：
    slot 声明由 conversation 插件完成、加载顺序不保证，`inject` 等声明出现再跑
-   （RESEARCH Q1 推荐路径 + `dsh-client-runtime/lib/client.js:55`）。**面板本体直接
+   （RESEARCH Q1 推荐路径 + `dsh-client-runtime/lib/client.js:55`）。
+   **⚠️ callback 必须返回 `ctx.slots.register(...)` 的返回值（disposer）**——runtime
+   的 `slots.inject(key, callback)` 语义是 "creates one disposer or an iterable of
+   disposers"（`dsh-client-runtime/lib/client.js:55-110`），漏返回会导致卸载/重挂时
+   槽位不摘、面板残留（cordis 约束常见坑，开发时必查）。**面板本体直接
    在 entry 组件内渲染**（position fixed 浮层），不需要 session-manager 的 createRoot
    overlay——因为我们的 entry 就在 composer 里。entry 组件凭 standard props 拿到
    `useInput` / `inputActions`（provide channel，`client.js:9504-9514`）。
