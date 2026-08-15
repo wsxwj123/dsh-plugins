@@ -809,6 +809,11 @@ function teardown() {
   if (skinEngine) skinEngine.teardownSkins()
 }
 
+const plugin = {
+  inject: ['slots'],
+  apply,
+}
+
 if (typeof globalThis.__TG_SURFACE__ === 'function') {
   globalThis.__TG_SURFACE__({
     apply,
@@ -1178,6 +1183,6 @@ function apply(ctx) {
   ))
 }
 
-  module.exports = { apply };
+  module.exports = plugin;
   return module.exports;
 } });
