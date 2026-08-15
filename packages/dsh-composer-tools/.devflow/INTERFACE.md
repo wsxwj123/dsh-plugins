@@ -314,10 +314,12 @@ export function appendPromptToDraft(current: string, prompt: string): string
   `data-input-backdrop`/`data-input-mirror`，`client.js:3781/3788/3800`）。不是 → gate
   入参 `isComposerTarget: false`，一律放行。
 - `menuOpen` 的判定（**含 fail-safe**）：`isComposerTarget` 为真时读该 textarea 的
-  `data-phase` 属性，`!== 'plain'` 即菜单/仲裁活跃（依据：`dsh-client-ui-conversation/
-  lib/client.js:3800` textarea 实时反映 InputState.phase）。**属性读不到（不存在/空串/
-  元素取不到）时一律按 `menuOpen: true` 处理**——宁可历史功能整体失效，不可抢命令菜单
-  的 ↑/↓。`data-phase` 的取值序列属 DOM 调试属性而非接口承诺，T0 spike 实测回填本条目。
+  `data-phase` 属性（依据：`dsh-client-ui-conversation/lib/client.js:3800` textarea 实时反映
+  InputState.phase）。**判定 = `data-phase` 存在且 `!== 'plain'` 即菜单/仲裁活跃**
+  （T0 实测修正：`input?.phase ?? "inert"`——input 为 undefined（无会话/未初始化）时属性值为
+  `"inert"`，同样 `!== 'plain'`，符合 fail-safe 语义）。**属性读不到（不存在/空串/元素取不到）
+  时一律按 `menuOpen: true` 处理**——宁可历史功能整体失效，不可抢命令菜单的 ↑/↓。
+  `data-phase` 的取值序列属 DOM 调试属性而非接口承诺，实机取值序列由 e2e 守门（SPIKE-T0 ③）。
 - 回填草稿：slot 组件 props 的 `inputActions.setDraft(text)`（`types/client/input/
   contract.d.ts:65-76`，"Single public draft write path"）。
 - 发送采集：slot 组件 props 的 `useInput` selector 订阅 `InputState.phase`（∈
