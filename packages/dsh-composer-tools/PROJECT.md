@@ -50,3 +50,7 @@
 - 提示词库复用 claude gui prompt-templates.json（Cherry Studio **AGPL-3.0**，打包+标注来源，用户已确认）
 - 提示词"发送到输入框"= 追加到末尾、已有内容前空一行（不覆盖不自动发送）
 - 指令面板支持跨文件全文搜索
+
+## 增量：新建项目级 AGENTS.md（轻量档）
+
+- 卡点①②（合并确认）：方案定稿 + 测试锁定——PLAN §7 / INTERFACE §1.5（POST /ct/instructions.create，只收 cwd，realpath 目标，flag:'wx' 原子创建，list 增补 projectRootFound/canCreateRootAgents）+ test-12 22 条黑盒用例（LOCK=52846fc）@用户确认 23:12
