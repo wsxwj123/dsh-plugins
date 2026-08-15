@@ -1,61 +1,64 @@
-
-> dsh-theme-gallery@0.7.0 test /private/tmp/ttf-skin2-ZnAvaL/packages/theme-gallery
-> node --test --test-force-exit "tests/unit/*.test.mjs"
-
-▶ F3 — a11y 缺失降级
-  ✔ a11y.css 缺失的皮肤仍可加载激活，且日志含 [theme-gallery-a11y] (25.338625ms)
-  ✔ 正常皮肤的 a11y 仍注入（对照：不误伤已有修正） (17.637917ms)
-✔ F3 — a11y 缺失降级 (43.609542ms)
-▶ F4 — NOTICE/LICENSE/作者/上游一致性
-  ✔ NOTICE.md 含 9 款皮肤 author 与上游仓库引用 (0.520792ms)
-  ✔ 每个 skins/<id>/LICENSE 为 BSD-3 且含版权行 (2.838333ms)
-  ✔ getSkins（manifest）逐项与皮肤资产作者/license 一致 (0.763ms)
-  ✔ manifest 与 NOTICE 中 author 逐项对齐 (0.204959ms)
-✔ F4 — NOTICE/LICENSE/作者/上游一致性 (4.967166ms)
-▶ F1 — localStorage 恢复 / track 判断
-  ✔ track=skin + skin-v1=qq98 → apply 后恢复激活 qq98，track=skin，主题 override 清空 (26.447417ms)
-  ✔ track=theme + family-v5 → apply 后恢复主题轨道，皮肤 inactive (14.126167ms)
-  ✔ track 缺失 → 回退主题轨道，皮肤 inactive（向后兼容） (13.847083ms)
-  ✔ track=skin 但 skin-v1 非法 → 回退主题且写回 track=theme (13.111916ms)
-✔ F1 — localStorage 恢复 / track 判断 (68.194792ms)
-▶ F2 — 主题↔皮肤轨道互斥（activateFamily 清退皮肤）
-  ✔ 激活皮肤后 activateFamily → 皮肤副作用全清、主题 override 生效、track=theme (23.421792ms)
-  ✔ 回切皮肤 → 主题 override 消失、新皮肤生效（track=skin） (24.403ms)
-  ✔ 主题轨道内部切换不破坏互斥状态 (23.427625ms)
-✔ F2 — 主题↔皮肤轨道互斥（activateFamily 清退皮肤） (71.416417ms)
-▶ F5 — 插件 start/stop 副作用归零
-  ✔ stop（ctx 停用钩子）后：body 无 data-dsh-*、无 skin/a11y style、主题 override 清空 (23.612083ms)
-  ✔ stop 后可重新启动，从 localStorage 恢复已选皮肤轨道（生命周期可往返、无残留态） (33.732417ms)
-✔ F5 — 插件 start/stop 副作用归零 (57.496542ms)
-▶ 皮肤可访问性修正达标（9 款 × 亮暗）
-  ✔ 9 款皮肤清单与目录一致 (2.86375ms)
-  ✔ qq98：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (1.985416ms)
-  ✔ ths：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.869209ms)
-  ✔ xp：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.995916ms)
-  ✔ blue-fantasy：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.749041ms)
-  ✔ dragon-heir：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.761458ms)
-  ✔ minecraft：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.558583ms)
-  ✔ whale-song：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.577333ms)
-  ✔ trading：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.490708ms)
-  ✔ miku：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.89725ms)
-✔ 皮肤可访问性修正达标（9 款 × 亮暗） (11.622541ms)
-▶ 皮肤引擎（真实 qq98 / ths bundle）
-  ✔ getSkins 返回清单且与皮肤资产一致 (4.242375ms)
-  ✔ activateSkin 全链路：body 属性出现、内置 style 注入、状态正确 (1.819916ms)
-  ✔ deactivateSkin 幂等：第二次 no-op、body 无残留 (1.189666ms)
-  ✔ 切换互斥：从 A 切到 B，A 消失、B 生效 (1.60025ms)
-  ✔ 同一皮肤重复激活 no-op，不重复注入 style (0.431292ms)
-  ✔ unknown-skin（无 bundle）拒绝且无副作用 (0.986208ms)
-  ✔ 皮肤自带 disposer 在引擎驱动下真实可逆（ths chrome 卸载后清除） (0.633875ms)
-✔ 皮肤引擎（真实 qq98 / ths bundle） (11.663875ms)
-▶ miniCtx（假皮肤隔离测试）
-  ✔ effect 立即执行并收集返回 disposer，__disposeAll 逆序调用 (0.818792ms)
-✔ miniCtx（假皮肤隔离测试） (0.868542ms)
-ℹ tests 33
-ℹ suites 8
-ℹ pass 33
+▶ 皮肤 状态机 & 生命周期 (§8.1 / §8.2)
+  ✔ A2 全链并回默认，内置 9 不动 (1.545917ms)
+  ✔ B1/B2 track 键随激活轨正确（theme/skin） (0.528458ms)
+✔ 皮肤 状态机 & 生命周期 (§8.1 / §8.2) (2.5775ms)
+▶ 皮肤 导入校验 · 缺文件/元数据 (§5 / §8.3)
+  ✔ C7 缺 skin.json 或缺 client.js → ERR_SKIN_MISSING_FILE (0.333292ms)
+  ✔ C8 缺 id/name/author/license → ERR_SKIN_BAD_META (0.201459ms)
+  ✔ 导入失败不改当前外观 / 不写 registry (0.123083ms)
+✔ 皮肤 导入校验 · 缺文件/元数据 (§5 / §8.3) (0.738083ms)
+▶ 皮肤 契约 & 高危能力 (§3.3 / §3.4)
+  ✔ C9 坏契约 → ERR_SKIN_CONTRACT (0.231333ms)
+  ✔ C10 高危能力任一命中 → ERR_SKIN_DANGEROUS (0.301916ms)
+  ✔ C11 超 256KB（btoa 后）→ ERR_SKIN_SIZE (18.017833ms)
+  ✔ C12 已达 8 个再导入 → ERR_SKIN_COUNT (0.413333ms)
+  ✔ C13 与内置皮肤 id 冲突 → 拒绝且 registry 不变 (0.142667ms)
+✔ 皮肤 契约 & 高危能力 (§3.3 / §3.4) (19.24875ms)
+▶ 皮肤 a11y 缺失降级 (§3.2 / §5)
+  ✔ C14 合法 skin+client 无 a11y → 仍可用（不拒绝） (0.064708ms)
+  ✔ a11y 提供时不应破坏导入 (0.051375ms)
+✔ 皮肤 a11y 缺失降级 (§3.2 / §5) (0.14875ms)
+▶ 皮肤 内置不可删 (§8.4 D5)
+  ✔ delete 内置 id 后内置仍在 (0.118625ms)
+✔ 皮肤 内置不可删 (§8.4 D5) (0.137042ms)
+▶ 主题自定义系统 · 状态机 (§8.1)
+  ✔ A1 全链：none→import→preview→applied→delete→restore 状态一致 (0.879208ms)
+  ✔ A1b delete 未应用项：只移出 registry，不改 applied 键 (0.135625ms)
+  ✔ A4 非法导入全链失败且外观不变 (0.392791ms)
+✔ 主题自定义系统 · 状态机 (§8.1) (1.973083ms)
+▶ 主题导入校验 · 错误契约 (§5 / §8.3)
+  ✔ C1 合法 JSON 通过并入 registry (0.580167ms)
+  ✔ C2 非法 JSON → ERR_IMPORT_INVALID_JSON (0.13975ms)
+  ✔ C3 缺 id / label / tokens 任一 → ERR_THEME_MISSING_FIELD (0.145667ms)
+  ✔ C4 坏 token（前缀非 --dsw- / 值缺 light 或缺 dark / 非字符串）→ ERR_THEME_BAD_TOKEN (0.173166ms)
+  ✔ C5 与内置主题 id 冲突 → ERR_THEME_ID_CONFLICT (0.101ms)
+  ✔ C6 边界拒绝且外观不变 (0.111125ms)
+✔ 主题导入校验 · 错误契约 (§5 / §8.3) (1.392333ms)
+▶ 主题 试穿/应用 未知 id (§5 ERR_UNKNOWN_ID)
+  ✔ 对不存在的 id 试穿/应用抛 ERR_UNKNOWN_ID (0.103541ms)
+✔ 主题 试穿/应用 未知 id (§5 ERR_UNKNOWN_ID) (0.135875ms)
+▶ 主题 内置不可删 (§8.4 D5)
+  ✔ 对内置 id delete 不生效（内置仍可枚举） (0.658166ms)
+✔ 主题 内置不可删 (§8.4 D5) (0.681625ms)
+▶ 主题↔皮肤软互斥边界 (§8.2 B3)
+  ✔ 对侧 skin 已激活时，主题包不主动覆盖 track；本包用户明确应用时才写入 theme (0.08575ms)
+✔ 主题↔皮肤软互斥边界 (§8.2 B3) (0.116459ms)
+▶ 滚动契约 (§6 / E1)
+  ✔ .-grid 容器 CSS 不含 overflow 或 max-height (7.341458ms)
+✔ 滚动契约 (§6 / E1) (7.889375ms)
+▶ 体积契约 (§6 / E2)
+  ✔ theme bundle lib/client.js < 100KB（按字节） (0.177917ms)
+✔ 体积契约 (§6 / E2) (0.233458ms)
+▶ README 交付格式 (§8.6)
+  ✔ F1 根 README 写明主题 JSON 需 id/label/tokens 且值含 light/dark (0.138209ms)
+  ✔ F2 根 README 写明皮肤包三文件格式 (0.0775ms)
+  ✔ F3 根 README 含状态机与错误 code 表 (0.068375ms)
+✔ README 交付格式 (§8.6) (0.35825ms)
+ℹ tests 30
+ℹ suites 13
+ℹ pass 30
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 262.251667
+ℹ duration_ms 129.481792

@@ -65,6 +65,23 @@ After installation, restart the existing `dsh web` process and refresh its curre
 4. Search for a theme family and click its card.
 5. Use DSH's built-in **Appearance** control to choose Light, Dark, or Follow system.
 
+## Custom themes (CSS-only)
+
+Import a custom theme as JSON. Only CSS custom-property injection runs — **no JavaScript is executed**.
+
+```json
+{
+  "id": "my-jade-tweak",
+  "label": "My Jade Tweak",
+  "tokens": {
+    "--dsw-alias-bg-base": { "light": "#fff", "dark": "#111" },
+    "--dsw-alias-brand-primary": { "light": "#07c160", "dark": "#07c160" }
+  }
+}
+```
+
+Rules: must provide `id`, `label` and a non-empty `tokens`; every token key must start with `--dsw-`; every value must be `{ light: <string>, dark: <string> }`. `id` must not conflict with a built-in id. Imported themes support **preview / apply / delete / restore-default**. Any rejected import leaves the current appearance and storage untouched and throws a `{ code, message }` error.
+
 ## Attribution
 
 The package contains compact palette adaptations for a conversational interface, not editor syntax definitions. Theme family names, IDs, UI labels, package metadata, and generated runtime output are source-neutral. The adaptation code and DSH integration are MIT licensed.

@@ -57,11 +57,12 @@ const [manifest, { bundles, a11y }] = await Promise.all([buildManifest(), collec
 
 const engine = await readFile(new URL('./src/skin-engine.js', root), 'utf8')
 const a11yModule = await readFile(new URL('./src/skin-a11y.js', root), 'utf8')
+const customSkin = stripExports(await readFile(new URL('./src/custom-skin.js', root), 'utf8'))
 const source = await readFile(new URL('./src/client.js', root), 'utf8')
 
 const maybeStrictWrapper = 'globalThis'
 
-const output = `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {\n  var module = { exports: {} }; var exports = module.exports;\n  const React = require('react');\n// ---- injected skin manifest / assets (build-time embedded, runtime lazy) ----\nconst __SKIN_MANIFEST__ = ${JSON.stringify(manifest)};\nconst __SKIN_BUNDLES__ = ${JSON.stringify(bundles)};\nconst __SKIN_A11Y__ = ${JSON.stringify(a11y)};\n// ---- skin engine (browser skin loading / mutex / teardown) ----\n${stripExports(engine)}\n// ---- a11y injector ----\n${stripExports(a11yModule)}\n// ---- plugin client ----\n${stripExports(source)}\n  module.exports = { apply };\n  return module.exports;\n} });\n`
+const output = `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {\n  var module = { exports: {} }; var exports = module.exports;\n  const React = require('react');\n// ---- injected skin manifest / assets (build-time embedded, runtime lazy) ----\nconst __SKIN_MANIFEST__ = ${JSON.stringify(manifest)};\nconst __SKIN_BUNDLES__ = ${JSON.stringify(bundles)};\nconst __SKIN_A11Y__ = ${JSON.stringify(a11y)};\n// ---- skin engine (browser skin loading / mutex / teardown) ----\n${stripExports(engine)}\n// ---- custom skin: controlled import / registry / preview / apply / delete / restore ----\n${customSkin}\n// ---- a11y injector ----\n${stripExports(a11yModule)}\n// ---- plugin client ----\n${stripExports(source)}\n  module.exports = { apply };\n  return module.exports;\n} });\n`
 
 await mkdir(new URL('./lib/', root), { recursive: true })
 await writeFile(new URL('./lib/client.js', root), output)

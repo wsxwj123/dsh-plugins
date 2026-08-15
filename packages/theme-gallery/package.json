@@ -21,7 +21,8 @@
   ],
   "scripts": {
     "build": "node build.mjs",
-    "check": "node build.mjs --check"
+    "check": "node build.mjs --check",
+    "test": "node --test --test-force-exit \"tests/unit/*.test.mjs\""
   },
   "dsh": {
     "bundle": {

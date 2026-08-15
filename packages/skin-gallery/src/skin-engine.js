@@ -2,6 +2,10 @@
  * skin-engine.js — browser 端皮肤加载/应用/互斥/卸载核心（无 React 依赖）。
  *
  * 皮肤 bundle 上游形态（见 skins/<id>/client.js）：`window.__ModuleLoader__.load({ id, factory })`。
+ * 自定义皮肤：受控导入时用 validateCustomBundle（契约 + 高危能力静态校验）通过，随后以
+ * registerCustomBundle 插进内部 manifest/bundles，走与内置皮肤完全相同的 activateSkin 链路。
+ * 校验是「契约+黑名单第一道门」，运行时为 Blob-URL 经典脚本 + ctx.effect 可逆 + 引擎兜底
+ * 快照，不替代浏览器自身安全边界（见 PLAN §5.2 诚实声明）。
  * 真实契约（对齐官方 dsh-client-modules）：
  *   - `__ModuleLoader__.load({ id, factory })` 只把 factory 注册进模块表；重复注册同一 id
  *     会抛错，所以同一 bundle 重新注册前必须 invalidate 该 id。
@@ -23,6 +27,68 @@
  * 使单测可零 DOM 或 stub 化执行。
  */
 
+// ---- 受控导入：契约 + 高危能力静态校验（无 DOM，纯字符串分析）----
+
+/** 自定义皮肤契约/高危错误 code（与 custom-skin.js 共享，见 INTERFACE §5）。 */
+export const SKIN_VALIDATION_ERRORS = {
+  CONTRACT: 'ERR_SKIN_CONTRACT',
+  DANGEROUS: 'ERR_SKIN_DANGEROUS',
+}
+
+/**
+ * 静态校验自定义皮肤 client.js 文本（契约 + 高危能力）。纯函数，不执行包内文字。
+ * 校验策略见 PLAN §5.2：a) 契约合规（__ModuleLoader__.load + factory + 括号配平 + apply/ctx 白名单）
+ * b) 高危能力黑名单。返回 true 表示通过；否则抛带 code 的错。
+ * 顺序：契约结构 → 高危黑名单 → apply/ctx 白名单，以区分 C9（契约）与 C10（高危）。
+ * 注：内部常量均为函数局部，避免与 custom-skin.js 内联进同一 scope 时标识符冲突。
+ */
+export function validateCustomBundle(clientText) {
+  const CTX_WHITELIST = new Set(['effect', 'get'])
+  const DANGEROUS_PATTERNS = [
+    'eval(', 'new Function(', 'import(', 'require(', '<script src=',
+    'fetch(', 'XMLHttpRequest(', 'WebSocket(', 'localStorage', 'sessionStorage',
+    'document.cookie', 'chrome.runtime',
+  ]
+  const error = (code, message) => { const e = new Error(message); e.code = code; return e }
+  const parenBalanced = (text) => {
+    let depth = 0
+    for (const ch of text) {
+      if (ch === '(') depth++
+      else if (ch === ')') { depth--; if (depth < 0) return false }
+    }
+    return depth === 0
+  }
+
+  if (typeof clientText !== 'string' || clientText.length === 0) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, 'client.js 为空或缺失')
+  }
+  // 1) 契约结构：必须注册 __ModuleLoader__.load({... factory ...}) 且括号配平。
+  const hasLoader = clientText.includes('window.__ModuleLoader__.load({') && clientText.includes('factory')
+  if (!hasLoader || !parenBalanced(clientText)) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, '缺失 __ModuleLoader__.load 契约或括号不配平')
+  }
+  // 2) 高危能力黑名单（前置：优先于 apply 结构，以区分 C10 与 C9）。
+  for (const pat of DANGEROUS_PATTERNS) {
+    if (clientText.includes(pat)) {
+      throw error(SKIN_VALIDATION_ERRORS.DANGEROUS, `client.js 含高危能力: ${pat}`)
+    }
+  }
+  // 3) apply 与 ctx 白名单：导出 apply，且只消费 ctx.effect / ctx.get。
+  if (!/\bapply\s*(\{|:)/.test(clientText) && !/function\s+apply/.test(clientText)) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, 'client.js 未导出 apply')
+  }
+  const ctxRe = /ctx\.([A-Za-z_$][\w$]*)/g
+  let m
+  const badCtx = []
+  while ((m = ctxRe.exec(clientText)) !== null) {
+    if (!CTX_WHITELIST.has(m[1])) badCtx.push(m[1])
+  }
+  if (badCtx.length > 0) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, `apply 使用白名单外 ctx.${badCtx[0]}`)
+  }
+  return true
+}
+
 /** 创建皮肤引擎实例。 */
 export function createSkinEngine({
   modules,
@@ -34,7 +100,6 @@ export function createSkinEngine({
   if (modules === undefined) throw new Error('[theme-gallery-skin] engine requires window.__DSH_MODULES__')
   if (!Array.isArray(manifest)) throw new Error('[theme-gallery-skin] engine requires manifest array')
   if (typeof bundles !== 'object' || bundles === null) throw new Error('[theme-gallery-skin] engine requires bundles map')
-
   const runScript = executeScript ?? defaultExecuteScript
   // 当前激活皮肤的副作用句柄集：package -> { dispose, bodyAttrs[], chrome[], styles[], original }
   const handles = new Map()
@@ -90,8 +155,40 @@ export function createSkinEngine({
   }
 
   return {
-    /** 皮肤清单（构建期内联 manifest，按 order 排序）。 */
-    getSkins() { return manifest.slice() },
+    /** 皮肤清单（构建期内联 manifest + 动态注册的自定义项，按 order 排序）。 */
+    getSkins() { return manifest.slice().sort((a, b) => a.order - b.order) },
+
+    /**
+     * 动态注册一款自定义皮肤 bundle（受控导入通过后调用），走与内置相同的激活链路。
+     * skin 形如 CustomSkinItem（含 id/name/author/accent/bodyAttr/order/bundleText/a11yText）；
+     * package 用自定义皮肤 id，因为其 client.js 以 `load({ id: <皮肤id>, factory })` 注册。
+     * 重新注册同 id 时先移旧项，避免 __ModuleLoader__ duplicate。
+     */
+    registerCustomBundle(skin) {
+      if (!skin || typeof skin.id !== 'string' || typeof skin.bundleText !== 'string') {
+        throw new Error('[theme-gallery-skin] registerCustomBundle: invalid custom skin')
+      }
+      const id = skin.id
+      const pkg = skin.package || id
+      bundles[id] = skin.bundleText
+      const existing = manifest.findIndex((entry) => entry.id === id)
+      const entry = {
+        id,
+        name: skin.name || id,
+        nameEn: skin.nameEn || '',
+        author: skin.author || '',
+        tagline: skin.tagline || '',
+        accent: skin.accent || '',
+        bodyAttr: skin.bodyAttr || `data-dsh-${id}`,
+        order: typeof skin.order === 'number' ? skin.order : 100 + manifest.length,
+        package: pkg,
+        license: skin.license || 'BSD-3-Clause',
+        source: 'custom',
+      }
+      if (existing >= 0) manifest[existing] = entry
+      else manifest.push(entry)
+      return entry
+    },
 
     /** 当前皮肤激活状态。 */
     currentSkinState() { return { skinId: currentSkinId(), active: activePackage !== null } },
