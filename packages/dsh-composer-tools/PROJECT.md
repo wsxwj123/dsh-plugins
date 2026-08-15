@@ -28,7 +28,7 @@
 - 02 方案：PLAN.md + INTERFACE.md 已落盘（方案代理产出）；盲审（PLAN-REVIEW.md）无致命、4 重要已全部修订：truncated→save 双保险（file-truncated + allowTruncatedBase）、symlink lstat 拒收、cwd 不存在语义、isComposerTarget 焦点前置、手动编辑检测、T0 spike（4 项实证）、data-phase fail-safe、T12 发布 @已提交
 - 卡点① 方案定稿：用户确认（含 cordis 约束核查补丁：slots.inject 返回 disposer、handler ctx 闭包 + logger 现取）@已提交
 - 卡点② 验收测试锁定：11 文件 131 用例全绿（黑盒基于 INTERFACE 契约参考实现），TEST-PLAN.md 63 条人话清单，用户确认锁定（LOCK=8fbbc2f）@已提交
-- 04 开发：T1 脚手架 ✅；T0 spike ✅（SPIKE-T0.md）；T2-T10 实现 ✅（host 6 文件 + client 纯逻辑 6 + UI 8，tsc+build 过，purity gate 干净）；验收测试接驳真实实现 ✅（修 displayPathFor 非默认 home + prompts 数据注入，131/131 全绿）；剩 T11 单测 + e2e
+- 04 开发：T1 脚手架 ✅；T0 spike ✅；T2-T10 实现 ✅（host 6 + client 纯逻辑 6 + UI 8，tsc+build 过，purity gate 干净）；验收测试接驳真实实现 ✅（131/131）；T11 单测 ✅（7 文件 112 用例 + 修 3 处测试问题）；**全量 243/243 绿（单测 112 + 验收 131）**；剩 T12 发布（06 阶段）
 - 主会话已确认的技术事实（供方案代理复用，来自代码阅读）：
   - DSH InputBar 方向键已走 keyboard.arbitrate()：input-trigger 菜单打开时 ↑↓ 被消费、关闭时 pass（放行光标移动）→ 历史导航监听在放行路径上做
   - DSH 无原生输入历史（只有草稿恢复）→ 空白区
