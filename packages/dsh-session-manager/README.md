@@ -25,8 +25,10 @@
 插件装进 DSH 的 **web profile**（`dsh web` 对应 `web` profile）：
 
 ```bash
-# 从全家桶 monorepo 克隆后，用 link 方式装
+# 从全家桶 monorepo 克隆后，先构建（lib/ 不入库），再用 link 方式装
 cd dsh-plugins
+pnpm install          # 装依赖
+node build.mjs        # 或 pnpm -r build：生成 packages/dsh-session-manager/lib/
 dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
 ```
 
