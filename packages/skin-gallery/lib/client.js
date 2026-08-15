@@ -321,6 +321,8 @@ function clearSkin() {
   const state = skinEngine.currentSkinState()
   if (state.active && state.skinId) a11yInjector.remove(state.skinId)
   skinEngine.deactivateSkin()
+  try { localStorage.removeItem(STORAGE_SKIN) } catch {}
+  notify()
 }
 
 async function activateSkin(skinId) {
@@ -370,6 +372,17 @@ const CSS = `
   .skin-gallery-copy { min-width: 0; display: grid; gap: 2px; }
   .skin-gallery-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .skin-gallery-meta { color: var(--dsw-alias-label-secondary); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .skin-gallery-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .skin-gallery-action { min-height: 32px; padding: 0 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 12px; }
+  .skin-gallery-action:hover { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }
+  .skin-gallery-action-primary { color: var(--dsw-alias-label-primary-foreground); border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-brand-primary); }
+  .skin-gallery-design { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+  .skin-gallery-design-title { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+  .skin-gallery-design-text { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+  .skin-gallery-design-options { display: flex; flex-wrap: wrap; gap: 6px; }
+  .skin-gallery-design-option { padding: 5px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 12px; }
+  .skin-gallery-design-option.is-selected { color: var(--dsw-alias-label-primary-foreground); border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-brand-primary); }
+  .skin-gallery-design-output { min-height: 84px; padding: 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 9px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); font: 12px/18px var(--ds-font-family-code, ui-monospace, monospace); white-space: pre-wrap; }
   .skin-gallery-empty { padding: 14px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-secondary); text-align: center; font-size: 12px; }
   @media (max-width: 900px) { .skin-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 680px) { .skin-gallery-grid { grid-template-columns: 1fr; } }
@@ -389,6 +402,8 @@ function apply(ctx) {
   function SkinGallery() {
     const [query, setQuery] = React.useState('')
     const [busy, setBusy] = React.useState(false)
+    const [designOpen, setDesignOpen] = React.useState(false)
+    const [designParts, setDesignParts] = React.useState(['颜色', '气泡', '代码块'])
     const [, force] = React.useState(0)
     React.useEffect(() => subscribe(() => force((value) => value + 1)), [])
 
@@ -403,6 +418,23 @@ function apply(ctx) {
       setBusy(true)
       try { await activateSkin(id) } finally { setBusy(false) }
     }
+    const resetToDefault = () => {
+      clearSkin()
+      setDesignOpen(false)
+    }
+    const togglePart = (part) => {
+      setDesignParts((parts) => parts.includes(part) ? parts.filter((item) => item !== part) : [...parts, part])
+    }
+    const designSummary = [
+      '我想创建一个自定义 DSH 皮肤。请先询问我以下信息，再生成实现方案：',
+      '1. 皮肤名称和整体风格；',
+      '2. 浅色/深色背景、主色、文字色、边框色；',
+      '3. 消息气泡、代码块、按钮、侧栏、输入框分别如何设计；',
+      '4. 是否需要背景图、标题栏、状态栏、动效或特殊控件；',
+      '5. 必须保证消息气泡和代码块背景与文字有足够对比度。',
+      '当前选择的版块：' + designParts.join('、'),
+      '请先向我提问确认设计，不要直接生成代码。',
+    ].join('\n')
 
     return React.createElement('div', { className: 'skin-gallery-root' },
       React.createElement('div', { className: 'skin-gallery-heading' },
@@ -410,6 +442,32 @@ function apply(ctx) {
         React.createElement('div', { className: 'skin-gallery-count' }, visible.length + ' / ' + SKINS.length)
       ),
       React.createElement('div', { className: 'skin-gallery-hint' }, '完整皮肤会改变背景、控件与界面装饰。主题包中的轻量主题请回到“精选主题”选择。'),
+      React.createElement('div', { className: 'skin-gallery-actions' },
+        React.createElement('button', {
+          type: 'button', className: 'skin-gallery-action', disabled: busy || !state.active,
+          onClick: resetToDefault,
+        }, '恢复默认外观'),
+        React.createElement('button', {
+          type: 'button', className: 'skin-gallery-action skin-gallery-action-primary', disabled: busy,
+          onClick: () => setDesignOpen(!designOpen),
+        }, designOpen ? '收起自定义皮肤' : '创建自定义皮肤')
+      ),
+      designOpen && React.createElement('div', { className: 'skin-gallery-design' },
+        React.createElement('div', { className: 'skin-gallery-design-title' }, '自定义皮肤设计助手'),
+        React.createElement('div', { className: 'skin-gallery-design-text' }, '选择你关心的版块，把下面的设计需求复制到对话里。AI 会先询问你设计细节，再决定是否需要 JavaScript 控件、背景图或动效。'),
+        React.createElement('div', { className: 'skin-gallery-design-options' },
+          ...['颜色', '气泡', '代码块', '按钮', '侧栏', '输入框', '背景图', '标题栏', '状态栏', '动效', 'JavaScript 控件'].map((part) => React.createElement('button', {
+            key: part, type: 'button',
+            className: 'skin-gallery-design-option' + (designParts.includes(part) ? ' is-selected' : ''),
+            onClick: () => togglePart(part),
+          }, part))
+        ),
+        React.createElement('textarea', {
+          className: 'skin-gallery-design-output', readOnly: true, value: designSummary,
+          'aria-label': '自定义皮肤设计需求',
+          onFocus: (event) => event.target.select(),
+        })
+      ),
       React.createElement('input', {
         className: 'skin-gallery-search', type: 'search', value: query,
         placeholder: '搜索皮肤…', 'aria-label': '搜索皮肤',
