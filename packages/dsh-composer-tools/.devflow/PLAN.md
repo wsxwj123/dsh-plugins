@@ -262,3 +262,103 @@ pending-deletes-core 模式），node --test 直接驱动。
 3. F3 780 条浏览/搜索/发送/复制 + 许可 → prompts-store + PromptsTab + R4。
 4. 三层测试 → §5.3 + T11。
 5. 安装/卸载干净 → inject 硬依赖语义（缺服务 pending 不崩）+ dispose 链全覆盖。
+
+---
+
+## 7. 新增「新建项目级 AGENTS.md」（增量功能）
+
+来源：用户口头需求「指令面板应该可以新建 agents md（如果没有的话），现在没有项目级」。
+只做**项目根（.git 标记处）的 `AGENTS.md`** 新建；全局 `~/.dsh/AGENTS.md` 与本地
+`AGENTS.local.md` 的新建不在本次范围（用户未提，不扩范围）。接口契约见
+`.devflow/INTERFACE.md §1.5` 与 §2.4 的 `projectRootFound` 增补。
+
+### 7.1 形态（一句话）
+
+复用现有 `/ct` RPC + `instructions.*` 家族，加一个 `/ct/instructions.create`（body 仅
+`cwd`，目标路径 host 硬推导），client 在指令 tab 文件列表区顶部加一个「新建项目级
+AGENTS.md」按钮；点击 → host 建 `<projectRoot>/AGENTS.md`（带中文模板，见 INTERFACE
+§1.5）→ 成功重载列表并自动展开到 new 文件的编辑器。创建后文件即入发现集合，编辑保存
+**直接复用已有的 `/ct/instructions.save`**，不在 create 上叠加新保存契约。
+
+### 7.2 需求
+
+1. 项目根存在 `.git` 标记（真项目根）且 `<projectRoot>/AGENTS.md` 不存在时，指令面板展示
+   「新建项目级 AGENTS.md」入口。
+2. 点击 → host 创建该文件（2 行中文模板），成功后面板重载列表并自动展开让用户直接编辑。
+3. 已存在 / 无项目根 → 不显示入口（见 7.3 决策）。
+4. 只做项目级 AGENTS.md；全局 / 本地新建超出范围。
+
+### 7.3 UI 交互设计
+
+- **入口位置**：指令 tab 文件列表区顶部工具栏（「重新加载」按钮旁），一个「新建项目级
+  AGENTS.md」按钮。
+- **显示/隐藏判定**（单一规则，读 list 响应）：
+  显示 ⇔ `phase==='ready' && list.canCreateRootAgents === true`。该字段已由 host 用
+  realpath + lstat 算好（`projectRootFound=true` 且 `realpath(projectRoot)/AGENTS.md`
+  不存在，符号链接/目录占用视为已存在），覆盖"无项目根""根 AGENTS.md 已存在""根恰好是
+  symlink"等全部情况，**client 只读这一字段、不重复推导**。全局文件、链上子目录的
+  AGENTS.md 是否存在**不影响**本按钮（它们不是根目录的那个）。
+- **cwd 无项目根（如 /tmp、无 `.git`）：`canCreateRootAgents=false` → 隐藏，不禁用。**
+  理由：① 隐藏无需解释文案，不邀请用户在非项目目录（尤其系统目录）乱落盘；② 与现有
+  「无当前会话目录/未发现指令文件」的 phase 样式一致（属于"这个能力此刻不适用"的静默态，
+  而非"有但去不了"的报错态）。设计成禁用+tooltip 会引入一条几乎只在非 git 目录出现的
+  解释路径，收益极低。
+- **点击流程**：按钮置禁用 + 文案「创建中…」→ `ctInstructionsCreate(cwd)` → 成功：
+  重载 list（await 完成后）再把 `expanded` 设为新 `path`（Editor 复用现有 read-on-mount
+  读入，内容即模板，用户直接编辑 → 保存走 save）；失败：面板内提示 `{code}: {message}`。
+- **创建不加确认对话框**：新建是增量、非破坏（不动既有文件），模板由 host 定、无外部
+  依赖；与 save 的「会改变模型行为」确认是两回事（save 是覆盖写）。见 7.5 R-C 讨论。
+
+### 7.4 host 端点设计
+
+新端点 `/ct/instructions.create`（INTERFACE §1.5）。判定顺序：
+cwd 校验(400 `invalid-cwd`) → 现场发现（复用 `discoverInstructions`）→
+`projectRootFound===false` → 200 `no-project-root` → **目录链 realpath 防护**：对
+`projectRoot` 做 realpathSync 解开任意 symlink 组件、对 `realRoot` 复核 `.git` 标记，
+不符 → 200 `path-out-of-scope`（详见 INTERFACE §1.5 判定 4）→ **原子创建**
+`writeFileSync(realRoot/AGENTS.md, 模板, { flag:'wx' })`：`EEXIST` → 200 `path-exists`，
+其余 IO → 200 `system-error` → 成功 `{path, content, mtimeMs}`。
+**不接收客户端路径**；body 仅 `cwd`，越权写入唯一来源已封死。
+为支撑入口显示判定，`instructions.list` 响应新增 `projectRootFound: boolean` 与
+`canCreateRootAgents: boolean`（均 additive，客户端忽略未知字段，不破坏既有契约）——
+client 显示只读 `canCreateRootAgents`，不重复推导真实路径/存在性。
+
+### 7.5 文件结构变更清单
+
+| 文件 | 变更 |
+|---|---|
+| `src/instructions.ts` | `DiscoveryResult` 增 `projectRootFound` 与 `canCreateRootAgents`；`findProjectRootSync` 暴露是否命中 `.git` 标记（不破坏既有回退语义）；新增纯函数 `createProjectAgentsTemplate()` 返回模板字符串、`canCreateProjectRootAgents()`（realpath + 存在性计算显示信号）、`projectRootAgentsTarget()`（realpath 后落盘目标），均可单测 |
+| `src/handler.ts` | `ENDPOINTS` 加 `/ct/instructions.create`；新增 `doCreate`，判定顺序 = INTERFACE §1.5：realpath 目录链防护 + **原子 `flag:'wx'` 创建**（`EEXIST`→`path-exists`，`EPERM`/`EROFS`→`system-error`） |
+| `src/client/bridge.ts` | 新增 `ctInstructionsCreate(cwd)`（返 `CtResult`） |
+| `src/client/InstructionsTab.tsx` | 工具栏新建按钮 + 可见性判定（**只读 `list.canCreateRootAgents`**）+ 点击流程 + 成功自动展开 |
+| `tests/…` | 开发阶段补齐 create 正反用例（无项目根 / 根为 symlink / **根 AGENTS.md 为 symlink** / 已存在 / **并发两次 create** / 成功 / IO 失败）；`instructions.list` 断言 `projectRootFound`、`canCreateRootAgents` 两字段；`canCreateProjectRootAgents`/`projectRootAgentsTarget` 单测 |
+
+### 7.6 任务拆解
+
+| # | 任务 | 依赖 | 并行 |
+|---|------|------|------|
+| T-C1 | instructions.ts：`projectRootFound` + `canCreateRootAgents` + `createProjectAgentsTemplate()` + `canCreateProjectRootAgents()` + `projectRootAgentsTarget()` | — | — |
+| T-C2 | handler.ts：`doCreate` + ENDPOINTS 注册 + **realpath 目录链防护** + **原子 `flag:'wx'` 创建** | T-C1 | — |
+| T-C3 | bridge.ts：`ctInstructionsCreate` | — | 可与 T-C1/T-C2 并行 |
+| T-C4 | InstructionsTab.tsx：按钮 + 可见性 + 点击流 + 自动展开 | T-C2 T-C3 | — |
+| T-C5 | 测试 + 真实环境实测（headless / 本机 profile）| T-C2 T-C4 | — |
+
+### 7.7 风险清单（rules.md 格式：非机械改动至少 1 失败模式 + 缓解）
+
+| # | What/Where | 失败模式 | 缓解 |
+|---|---|---|---|
+| R-C1 | create 端点路径推导（host）——**高风险** | 若按客户端传的 path 创建 → 任意路径写文件（越界）；若 projectRoot 判定过宽 → 在 /tmp 等非项目目录落 AGENTS.md | **接口根本不接收 path**（body 仅 `cwd`），目标硬编码 `join(projectRoot,'AGENTS.md')`；projectRoot 复用 `discoverInstructions` 的真项目根信号（`projectRootFound`），无 `.git` 标记一律 200 `no-project-root`。比"收 path 再比对"（read/save 的白名单风格）更严 |
+| R-C2 | 已存在 / 符号链接 / TOCTOU（host 创建）——**高风险** | 目标已存在仍覆盖用户现有 AGENTS.md；目标若是同名的项目外向符号链接，跟随链接写穿项目根；「探测未占用→写入」窗口期被外部/并发抢先创建或换成 symlink 仍覆盖/跟随写入 | **原子 `flag:'wx'`（O_CREAT\|O_EXCL）**写入：不存在才创建，`EEXIST`（含并发对方先建成、或目标是任何实体的符号链接被 name 占住）→ `path-exists`，无"先探测后写入"的非原子窗口，从机制上杜绝 TOCTOU。绝不覆盖、绝不跟随（writeFileSync 对已存在路径在 `wx` 下直接 EEXIST，根本不会写） |
+| R-C3 | 按钮显示与磁盘真实状态不一致（client） | 列表时根 AGENTS.md 缺失显示按钮，点击瞬间文件已被外部创建 → 返回 `path-exists` 吓到用户；或根缺失却因链上同名 / **根恰好是 symlink（列表不列出→误显按钮）** 而显示误导 | 可见性**只读 list 响应的 `canCreateRootAgents`**（host 用 realpath + lstat 算好，symlink 建视为已存在故为 false，列表不列出但磁盘有 symlink 时也不会误显按钮），client 不重复推导；`path-exists` 失败后客户端重载 list（文件届时已在列表，进入正常展开/编辑），不重复报错 |
+| R-C6 | 目录链 symlink 越界（host 创建 + 发现）——**高风险** | projectRoot 或其上级沿路径若含 symlink 组件，字符级 `path.resolve` 判定"在范围内"，但真实物理位置可能在项目外，模板被写到物理越界处，「写不出项目范围」承诺对目录链失效 | `projectRootAgentsTarget()` 写前对 `projectRoot` 做 `fs.realpathSync`，目标落在 `realpath(projectRoot)`（真实物理目录）内，并对 realRoot 复核 `.git` 标记（与发现对同一物理位置判定一致），不符 → 200 `path-out-of-scope`（INTERFACE §1.5 判定 4）。`canCreateRootAgents` 对显示端同样用 realpath，两端口径一致 |
+| R-C4 | 成功后的自动展开被重载副作用清掉（client） | `loadList()` 会 `setExpanded(null)`，create 成功回调里先 await 重载再 setExpanded 的顺序写错 → 自动展开落空，用户看不到新文件 | 契约固定：create 成功 → `await loadList()` 完成 → `setExpanded(newPath)`；Editor 在列表重载后文件必在（3 已入发现集合），复用现有读入 |
+| R-C5 | 权限 / git 跟踪 / 模板内容（host） | 创建的文件权限异常；模板误打误撞进系统目录；模板混入敏感信息 | `writeFileSync` 默认 mode 走进程 umask（常规 0644），普通文本文件；仅写 projectRoot 内（R-C1 担保）；模板为 2 行中文标题+注释、无任何用户/密钥内容，随代码版本可控；项目若为 git 仓，新 AGENTS.md 自动成为 untracked 待提交文件，随 git 版本控制 |
+
+### 7.8 成功标准
+
+1. git 项目根缺 AGENTS.md → 面板显示新建按钮；点击后文件创建、列表出现并自动展开、内容为模板、可直接编辑保存（save 复用）。
+2. 根 AGENTS.md 已存在 → 无新建按钮。
+3. 无项目根（如 /tmp）→ 无新建按钮（隐藏）。
+4. 根 AGENTS.md 是符号链接 → 无新建按钮（`canCreateRootAgents=false`），不误导。
+5. 并发两次 create 同一 cwd → 恰好一个 `ok:true`、一个 `path-exists`，无覆盖。
+6. `no-project-root` / `path-exists` / `path-out-of-scope` / `system-error` 四种失败场景反馈明确、不静默。

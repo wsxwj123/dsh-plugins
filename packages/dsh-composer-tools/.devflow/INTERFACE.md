@@ -50,6 +50,8 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
   "ok": true,
   "dshHome": "/Users/x/.dsh",
   "projectRoot": "/abs/project/root",
+  "projectRootFound": true,
+  "canCreateRootAgents": true,
   "files": [
     {
       "path": "/Users/x/.dsh/AGENTS.md",
@@ -77,6 +79,14 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
 - 只列**当前存在**的**常规文件**（符号链接不收录，见 §2.4）；一个文件都没有时 `files: []`，仍是 `ok:true`。
 - **cwd 不存在或不可读**：不报错，正常返回 `ok:true`——逐级探 `.git` 全部失败，`projectRoot = path.resolve(cwd)`，`files` 仅含可能存在的全局文件（全局文件也不存在时为空数组）。会话 cwd 被外部删掉属正常边界，不是错误。
 - `mtimeMs` 取自 `fs.lstat` 的 `mtimeMs` 原值（可为浮点）。
+- `projectRootFound`（additive，供诊断/显示的"是否有真项目根"信号）：`true` ⇔ cwd 到文件系统
+  根链上存在 `.git` 标记；`false` ⇔ `projectRoot` 只是 `resolve(cwd)` 的回退（无项目根）。
+- `canCreateRootAgents`（additive，**client 显示新建入口的唯一判定信号**）：host 在发现阶段
+  用 realpath 计算（见 §2.4）——`true` ⇔ `projectRootFound=true` 且 `realpath(projectRoot)/AGENTS.md`
+  当前**不存在**（lstat 探测，符号链接/目录占用一律视为"已存在"）。**client 只读此字段**决定
+  新建入口显隐，不在 client 侧重复推导 projectRoot/realpath/file-exists 逻辑，也避免
+  symlink 造成的"列表无此文件但磁盘有"的显示误导。
+- 以上两字段均 additive：client 忽略未知字段不报错；本插件旧 client 无此字段时按"无新建能力"处理。
 
 ### 1.2 POST /ct/instructions.read — 读单个指令文件
 
@@ -149,6 +159,72 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
 ```
 - `items` 字段与源数据一致；`prompt`/`description` 中的 `\r\n` 由 host 统一归一为 `\n` 后下发。
 - host 进程内缓存一次，后续请求不重读磁盘（重启生效更新）。
+
+### 1.5 POST /ct/instructions.create — 新建项目级 AGENTS.md
+
+**请求**
+```json
+{ "cwd": "/abs/session/cwd" }
+```
+- body **仅含 `cwd`，不接受、不关心客户端传来的任何目标路径**。目标路径由 host 按「发现的
+  projectRoot（§2.4，复用 discoverInstructions）+ `AGENTS.md`」严格推导——这是本文对
+  read/save「路径白名单」风格的加强：create 本质上不存在"集合外的合法目标"，比收 path
+  再比对更稳。多余字段忽略。
+
+**判定顺序**（顺序是契约）
+1. body 对象（否则公共契约 400 `body must be an object`）。
+2. `cwd` 校验 → 400 `{ok:false, code:'invalid-cwd', message:'invalid cwd: must be an absolute path string'}`（同 1.1）。
+3. 现场发现（复用 `discoverInstructions`，§2.4）：若 `projectRootFound !== true`（cwd 到
+   文件系统根链上**均无 `.git` 标记**，`findProjectRootSync` 仅回退到 `resolve(cwd)` 本身）
+   → **200** `{ok:false, code:'no-project-root', message:'no project root found for cwd: no .git marker on the path up to the fs root'}`。**在无真项目根的目录不创建文件**（避免在 /tmp 等非项目目录落盘）。
+4. **目录链 symlink 防护（写前 realpath，杜绝"字符在范围内、物理越界"）**：对 `projectRoot`
+   做 `fs.realpathSync`，得到物理目录 `realRoot`；再对 `realRoot` 复核存在 `.git` 标记
+   （与发现对同一物理位置判定一致）。`realRoot` 与发现段不一致或以 `.git` 复核失败 →
+   **200** `{ok:false, code:'path-out-of-scope', message:'project root resolves outside the discovered instruction scope'}`。
+   目标 = `path.join(realRoot, 'AGENTS.md')`——创建落在 projectRoot 的**真实物理目录**内，
+   不信任字符路径上可能存在的任意 symlink 组件。
+5. **原子创建**：`fs.writeFileSync(target, content, { flag: 'wx' })`（O_CREAT|O_EXCL，
+   **"不存在才创建"，原子保证无 TOCTOU**）。`EEXIST`（目标已被常规文件/目录/符号链接占用，
+   含并发竞态下对方先建成的场景）→ **200** `{ok:false, code:'path-exists',
+   message:'project-level AGENTS.md already exists; create refused to overwrite'}`；
+   `EPERM`/`EROFS` 等其他 IO 错误 → 200 `{ok:false, code:'system-error', message: String(err)}`。
+   因 `wx` 原子性，本端点**绝不覆盖、绝不跟随符号链接写入**，且**不依赖"先探测后写入"的
+   非原子窗口**。
+6. 写后重新 lstat 取新 mtime。
+
+**并发语义（调用方契约，与 #1 原子性配套）**：两个 create 并发到同一 `cwd` → 恰好一个返回
+`ok:true`（先建成），另一个返回 `path-exists`（`wx` 触发 EEXIST）；不会出现两次成功、不会
+出现覆盖。client 收到 `path-exists` 时重载 list 即可看到现成文件，无需重试创建。
+
+**成功响应 200**
+```json
+{ "ok": true, "path": "/abs/project/root/AGENTS.md", "content": "# 项目指令（AGENTS.md）\n\n<!-- 记录本项目的团队约定、编码规范、任务要求与常用命令。此文件会被 DSH 作为本项目的指令自动加载。 -->\n", "mtimeMs": 1750000000000.0 }
+```
+- `content` 为实际写入的模板全文（utf8 原样；\n 归一由 host 落盘前完成）。
+- `mtimeMs` 为写入后重新 stat 的值，**可直接作为后续 save 的 `expectedMtimeMs` 基线**。
+
+**模板**（2 行：一级标题 + 中文注释；utf8 远小于 `MAX_SOURCE_BYTES`，无截断风险）
+```markdown
+# 项目指令（AGENTS.md）
+
+<!-- 记录本项目的团队约定、编码规范、任务要求与常用命令。此文件会被 DSH 作为本项目的指令自动加载。 -->
+```
+
+**与 save 的关系**：新建后 `<projectRoot>/AGENTS.md` 立即成为发现集合成员（`level:'project'`），
+随后的编辑保存**直接复用 `/ct/instructions.save`，无需任何新契约**——create 返回的
+`mtimeMs` 直接作 save 基线；若创建后到保存前文件被外部改动，save 的 mtime 乐观锁照常拦截。
+
+**client UI 行为契约**（详见 PLAN §7.2）：
+- **显示**：新建按钮在指令 tab 文件列表区顶部（「重新加载」旁）出现，**仅当 list 响应
+  `ok:true && canCreateRootAgents === true`**（该字段已由 host 用 realpath + 存在性计算好，
+  client 不重复推导，见 §1.1）。
+- **隐藏**：`canCreateRootAgents !== true`（含无项目根、根 AGENTS.md 已存在、根为 symlink
+  ——symlink 被建视为已存在故为 false）——隐藏，不禁用。
+- **点击**：调 `ctInstructionsCreate(cwd)`；期间按钮禁用并显示「创建中…」。
+- **成功**：重载 `instructions.list`，随后把新 `path` 设为展开（Editor 复用现有
+  read-on-mount 读入，内容即模板，用户直接编辑 → save）。
+- **失败**：面板内提示 `{code}: {message}`；`path-exists` 时重载 list（文件届时已在列表，
+  进入正常展开/编辑流），不重复报错。
 
 ---
 
@@ -264,6 +340,9 @@ export interface DiscoveredInstruction {
 export interface DiscoveryResult {
   dshHome: string
   projectRoot: string
+  projectRootFound: boolean   // true ⇔ cwd 到文件系统根链上存在 '.git' 标记（真项目根）；
+                              // false ⇔ findProjectRootSync 回退到 resolve(cwd) 本身（无项目根）。
+  canCreateRootAgents: boolean // 见下方 helper；host 计算，作为 §1.5 / §1.1 的统一信号。
   files: DiscoveredInstruction[]   // 排序契约见 1.1
 }
 
@@ -281,7 +360,9 @@ export function ancestorChain(root: string, cwd: string): string[]
 export function discoverInstructions(opts: { cwd: string; dshHome?: string }): DiscoveryResult
 // 同步实现（fs.lstatSync）。全局 {dshHome}/AGENTS.md 存在则列在最前（level 'global'）；
 // 项目根 = findProjectRootSync(cwd)；对 ancestorChain 每层依次查常规候选再 local 候选，
-// 存在的才收录；按绝对路径去重。
+// 存在的才收录；按绝对路径去重。`projectRootFound` 记录 `.git` 标记是否命中（真项目根）
+// ——`findProjectRootSync` 无标记时回退 cwd 本身，此时 projectRootFound=false，
+// create 端点据此拒绝在无项目根处落盘（§1.5 判定 3）。
 // 【符号链接拒收】所有存在性/元数据探测一律用 lstat：`lstat.isSymbolicLink()` 为真的
 // 候选**不收录**（含全局文件）。理由：跟随 symlink 的 stat 会把指向项目根外的链接文件
 // 收进发现集合，scope 校验随之穿透，"写不出项目范围"的承诺失效；拒收后 symlink 既不在
@@ -290,6 +371,19 @@ export function discoverInstructions(opts: { cwd: string; dshHome?: string }): D
 export function isDiscoveredPath(inputPath: string, discovery: DiscoveryResult): boolean
 // path.resolve(inputPath) ∈ discovery.files 的绝对路径集合。因发现已拒收 symlink，
 // 成员比对即同时完成"非符号链接"约束，无需二次 realpath。
+
+export function canCreateProjectRootAgents(projectRoot: string): boolean
+// 计算 §1.1 的 canCreateRootAgents（host 同步，供 list 与 create 共用同一信号）：
+//   projectRoot 必须"真项目根"（realpath 后含 '.git' 标记，目录链 symlink 已解开），
+//   且 `realpath(projectRoot)/AGENTS.md` 当前不存在（lstat 探测，符号链接/目录占用
+//   一律视为"已存在"）。任何一步 IO 失败 → false。这是"新建入口是否显示"的权威判定。
+// 注意：canCreate=true 只代表"此刻可以新建"，create 端点仍用原子 'wx' 兜底（§1.5），
+// 两者之间存在正常竞态（并发下返回 path-exists）。
+
+export function projectRootAgentsTarget(projectRoot: string): string
+// 返回 create 的落盘目标：`path.join(fs.realpathSync(projectRoot), 'AGENTS.md')`。
+// realpathSync 解开目录链上可能存在的任意 symlink 组件，保证目标在项目的真实物理目录内
+// （§1.5 判定 4）。realpath 失败（目录被删等）抛错由调用方映射为 system-error。
 ```
 
 ### 2.5 提示词追加拼接（append.ts）
