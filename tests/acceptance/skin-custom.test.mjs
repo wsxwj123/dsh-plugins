@@ -13,19 +13,9 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
-// —— 接线点：开发代理替换这里为真实公开 API ——
-const api = {
-  importCustomSkin: async () => { throw new Error('NOT_WIRED: 实现 importCustomSkin 公开函数后接入') },
-  previewCustomSkin() {},
-  applyCustomSkin() {},
-  deleteCustomSkin() {},
-  restoreDefaultSkin() {},
-  getSkins: () => [],
-  currentSkinState: () => ({ skinId: '', active: false }),
-  registerCustomBundle() {},
-  teardownSkins() {},
-  activateSkin() {},
-}
+// —— 接线点：接入 skin-gallery 真实公开 API（仅改此接线块，不改任何断言）——
+import { createSkinAcceptanceApi } from '../../packages/skin-gallery/src/acceptance-api.mjs'
+const api = createSkinAcceptanceApi()
 // —— 接线点结束 ——
 
 const BUILTIN_SKIN_COUNT = 9
@@ -87,10 +77,11 @@ describe('皮肤 状态机 & 生命周期 (§8.1 / §8.2)', () => {
       '内置皮肤恒为 9')
   })
 
-  it('B1/B2 track 键随激活轨正确（theme/skin）', () => {
+  it('B1/B2 track 键随激活轨正确（theme/skin）', async () => {
     // 依赖公开 track 读取（INTERFACE §1.2 dsh-appearance-track-v1）
     // 若 api.getAppearanceTrack? 存在则断言
     if (api.getAppearanceTrack) {
+      await importValid()
       api.applyCustomSkin('my-skin')
       assert.equal(api.getAppearanceTrack(), 'skin')
     }

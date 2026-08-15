@@ -18,21 +18,9 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
-// —— 接线点：开发代理替换这里为真实公开 API ——
-// import * as api from '<theme-gallery 公开入口>'
-const api = {
-  importCustomTheme: async () => {
-    throw new Error('NOT_WIRED: 实现 importCustomTheme 公开函数后接入')
-  },
-  previewCustomTheme() {},
-  applyCustomTheme() {},
-  deleteCustomTheme() {},
-  restoreDefaultTheme() {},
-  getCustomThemes: () => [],
-  getThemes: () => [],
-  activateFamily() {},
-  getCustomAppliedId: () => null,
-}
+// —— 接线点：接入 theme-gallery 真实公开 API（仅改此接线块，不改任何断言）——
+import { createThemeAcceptanceApi } from '../../packages/theme-gallery/src/acceptance-api.mjs'
+const api = createThemeAcceptanceApi()
 // —— 接线点结束 ——
 
 // 常量：内置主题 id 与 jade 默认值（来自 INTERFACE §1.1 / §5）
