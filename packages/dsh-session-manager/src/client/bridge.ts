@@ -1,0 +1,65 @@
+/**
+ * client→host bridge: raw fetch over the same-origin `/sm/*` RPC surface.
+ *
+ * Wiring note (matches the node half's own decision, see src/handler.ts): the
+ * `/sm` prefix route is a RAW HTTP JSON surface — it returns `{ ok:true, … }`
+ * directly and accepts a raw `{ id, cwd, title }` body, guarded by the node
+ * half's loopback trust fence. This file is the client's thin typed caller.
+ *
+ * Every call is a JSON POST (GET-free), so the browser sends `Sec-Fetch-Site`
+ * same-origin and the loopback Host the node fence requires.
+ *
+ * All transport logic (including the review I-5 network-error catch) lives in
+ * the pure, node-testable `bridgeCore`; this module only wires the `/sm` base
+ * path to it.
+ */
+import { postJson, type SmResult } from './bridgeCore.ts'
+
+export type { SmResult } from './bridgeCore.ts'
+
+const BASE = '/sm'
+
+function post(path: string, body: unknown): Promise<SmResult> {
+  return postJson(BASE + path, body)
+}
+
+/**
+ * Delete a session (recycle-bin move + optional archive-set cleanup). Fired
+ * from the pending-delete state machine when the window expires.
+ * @param id - session id.
+ * @param cwd - working-directory path used to locate the project dir on the
+ *   host. OMITTED when the session has no recorded cwd, so the host places it
+ *   under `_no-cwd` (real DSH semantics) instead of returning `not-found` for
+ *   an empty string. Pass `undefined`/omit to skip.
+ * @param title - display title for the trash record (identify-in-trash only).
+ * @param force - set true only when the user already confirmed at click time that
+ *   a RUNNING session should be deleted (`byId.running === true`). The host no
+ *   longer uses it to gate deletion (running is a client-side judgment), but it
+ *   is still forwarded for compatibility. Omitted/false → a plain delete.
+ */
+export function smDelete(id: string, cwd: string | undefined, title: string, force?: boolean): Promise<SmResult> {
+  return post('/delete', { id, ...(cwd !== undefined ? { cwd } : {}), title, ...(force ? { force: true } : {}) })
+}
+
+/** Restore a session from the recycle bin. */
+export function smRestore(id: string): Promise<SmResult> {
+  return post('/restore', { id })
+}
+
+/** Remove a session id from the archive set (`unarchive`). */
+export function smUnarchive(id: string): Promise<SmResult> {
+  return post('/unarchive', { id })
+}
+
+/** List the confirmed recycle-bin entries (debug/re-read only). */
+export function smTrash(): Promise<SmResult> {
+  return post('/trash', {})
+}
+
+/**
+ * Empty the recycle bin. Requires an explicit `confirm:true` payload — the
+ * client prompts a dialog before calling this (unrecoverable action).
+ */
+export function smEmptyTrash(confirm: true): Promise<SmResult> {
+  return post('/emptyTrash', { confirm })
+}
