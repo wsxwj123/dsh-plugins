@@ -60,6 +60,9 @@ export async function createHttpHarness(handler) {
     }
   })
   server.listen(0, '127.0.0.1')
+  // unref：测试进程不应被这个 loopback server 拖住——node --test 会等所有打开
+  // 的资源，一个未 stop 的 server 会让测试进程挂起不退（单测与验收测试都受益）。
+  server.unref()
   await once(server, 'listening')
   const port = server.address().port
   return {
@@ -69,9 +72,11 @@ export async function createHttpHarness(handler) {
     /** 关闭服务 */
     async stop() {
       server.close()
-      // 兜底：若有残留长连接，强制断开，确保 close 事件一定触发
+      // 兜底：若有残留长连接，强制断开。
       if (typeof server.closeAllConnections === 'function') server.closeAllConnections()
-      await once(server, 'close')
+      // 不依赖 close 事件：Node 在 unref + 连接竞争下 close 事件可能不触发，
+      // 无限 await 会让测试进程挂起。server 已 unref，这里立即返回即可——
+      // 事件循环不会因它保活，测试进程能正常退出。
     },
   }
 }
