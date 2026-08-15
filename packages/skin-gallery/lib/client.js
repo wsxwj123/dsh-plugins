@@ -10,6 +10,10 @@ const __SKIN_A11Y__ = {"qq98":"/*\n * qq98 — QQ2008 怀旧版 — 可访问性
  * skin-engine.js — browser 端皮肤加载/应用/互斥/卸载核心（无 React 依赖）。
  *
  * 皮肤 bundle 上游形态（见 skins/<id>/client.js）：`window.__ModuleLoader__.load({ id, factory })`。
+ * 自定义皮肤：受控导入时用 validateCustomBundle（契约 + 高危能力静态校验）通过，随后以
+ * registerCustomBundle 插进内部 manifest/bundles，走与内置皮肤完全相同的 activateSkin 链路。
+ * 校验是「契约+黑名单第一道门」，运行时为 Blob-URL 经典脚本 + ctx.effect 可逆 + 引擎兜底
+ * 快照，不替代浏览器自身安全边界（见 PLAN §5.2 诚实声明）。
  * 真实契约（对齐官方 dsh-client-modules）：
  *   - `__ModuleLoader__.load({ id, factory })` 只把 factory 注册进模块表；重复注册同一 id
  *     会抛错，所以同一 bundle 重新注册前必须 invalidate 该 id。
@@ -31,6 +35,68 @@ const __SKIN_A11Y__ = {"qq98":"/*\n * qq98 — QQ2008 怀旧版 — 可访问性
  * 使单测可零 DOM 或 stub 化执行。
  */
 
+// ---- 受控导入：契约 + 高危能力静态校验（无 DOM，纯字符串分析）----
+
+/** 自定义皮肤契约/高危错误 code（与 custom-skin.js 共享，见 INTERFACE §5）。 */
+const SKIN_VALIDATION_ERRORS = {
+  CONTRACT: 'ERR_SKIN_CONTRACT',
+  DANGEROUS: 'ERR_SKIN_DANGEROUS',
+}
+
+/**
+ * 静态校验自定义皮肤 client.js 文本（契约 + 高危能力）。纯函数，不执行包内文字。
+ * 校验策略见 PLAN §5.2：a) 契约合规（__ModuleLoader__.load + factory + 括号配平 + apply/ctx 白名单）
+ * b) 高危能力黑名单。返回 true 表示通过；否则抛带 code 的错。
+ * 顺序：契约结构 → 高危黑名单 → apply/ctx 白名单，以区分 C9（契约）与 C10（高危）。
+ * 注：内部常量均为函数局部，避免与 custom-skin.js 内联进同一 scope 时标识符冲突。
+ */
+function validateCustomBundle(clientText) {
+  const CTX_WHITELIST = new Set(['effect', 'get'])
+  const DANGEROUS_PATTERNS = [
+    'eval(', 'new Function(', 'import(', 'require(', '<script src=',
+    'fetch(', 'XMLHttpRequest(', 'WebSocket(', 'localStorage', 'sessionStorage',
+    'document.cookie', 'chrome.runtime',
+  ]
+  const error = (code, message) => { const e = new Error(message); e.code = code; return e }
+  const parenBalanced = (text) => {
+    let depth = 0
+    for (const ch of text) {
+      if (ch === '(') depth++
+      else if (ch === ')') { depth--; if (depth < 0) return false }
+    }
+    return depth === 0
+  }
+
+  if (typeof clientText !== 'string' || clientText.length === 0) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, 'client.js 为空或缺失')
+  }
+  // 1) 契约结构：必须注册 __ModuleLoader__.load({... factory ...}) 且括号配平。
+  const hasLoader = clientText.includes('window.__ModuleLoader__.load({') && clientText.includes('factory')
+  if (!hasLoader || !parenBalanced(clientText)) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, '缺失 __ModuleLoader__.load 契约或括号不配平')
+  }
+  // 2) 高危能力黑名单（前置：优先于 apply 结构，以区分 C10 与 C9）。
+  for (const pat of DANGEROUS_PATTERNS) {
+    if (clientText.includes(pat)) {
+      throw error(SKIN_VALIDATION_ERRORS.DANGEROUS, `client.js 含高危能力: ${pat}`)
+    }
+  }
+  // 3) apply 与 ctx 白名单：导出 apply，且只消费 ctx.effect / ctx.get。
+  if (!/\bapply\s*(\{|:)/.test(clientText) && !/function\s+apply/.test(clientText)) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, 'client.js 未导出 apply')
+  }
+  const ctxRe = /ctx\.([A-Za-z_$][\w$]*)/g
+  let m
+  const badCtx = []
+  while ((m = ctxRe.exec(clientText)) !== null) {
+    if (!CTX_WHITELIST.has(m[1])) badCtx.push(m[1])
+  }
+  if (badCtx.length > 0) {
+    throw error(SKIN_VALIDATION_ERRORS.CONTRACT, `apply 使用白名单外 ctx.${badCtx[0]}`)
+  }
+  return true
+}
+
 /** 创建皮肤引擎实例。 */
 function createSkinEngine({
   modules,
@@ -42,7 +108,6 @@ function createSkinEngine({
   if (modules === undefined) throw new Error('[theme-gallery-skin] engine requires window.__DSH_MODULES__')
   if (!Array.isArray(manifest)) throw new Error('[theme-gallery-skin] engine requires manifest array')
   if (typeof bundles !== 'object' || bundles === null) throw new Error('[theme-gallery-skin] engine requires bundles map')
-
   const runScript = executeScript ?? defaultExecuteScript
   // 当前激活皮肤的副作用句柄集：package -> { dispose, bodyAttrs[], chrome[], styles[], original }
   const handles = new Map()
@@ -98,8 +163,40 @@ function createSkinEngine({
   }
 
   return {
-    /** 皮肤清单（构建期内联 manifest，按 order 排序）。 */
-    getSkins() { return manifest.slice() },
+    /** 皮肤清单（构建期内联 manifest + 动态注册的自定义项，按 order 排序）。 */
+    getSkins() { return manifest.slice().sort((a, b) => a.order - b.order) },
+
+    /**
+     * 动态注册一款自定义皮肤 bundle（受控导入通过后调用），走与内置相同的激活链路。
+     * skin 形如 CustomSkinItem（含 id/name/author/accent/bodyAttr/order/bundleText/a11yText）；
+     * package 用自定义皮肤 id，因为其 client.js 以 `load({ id: <皮肤id>, factory })` 注册。
+     * 重新注册同 id 时先移旧项，避免 __ModuleLoader__ duplicate。
+     */
+    registerCustomBundle(skin) {
+      if (!skin || typeof skin.id !== 'string' || typeof skin.bundleText !== 'string') {
+        throw new Error('[theme-gallery-skin] registerCustomBundle: invalid custom skin')
+      }
+      const id = skin.id
+      const pkg = skin.package || id
+      bundles[id] = skin.bundleText
+      const existing = manifest.findIndex((entry) => entry.id === id)
+      const entry = {
+        id,
+        name: skin.name || id,
+        nameEn: skin.nameEn || '',
+        author: skin.author || '',
+        tagline: skin.tagline || '',
+        accent: skin.accent || '',
+        bodyAttr: skin.bodyAttr || `data-dsh-${id}`,
+        order: typeof skin.order === 'number' ? skin.order : 100 + manifest.length,
+        package: pkg,
+        license: skin.license || 'BSD-3-Clause',
+        source: 'custom',
+      }
+      if (existing >= 0) manifest[existing] = entry
+      else manifest.push(entry)
+      return entry
+    },
 
     /** 当前皮肤激活状态。 */
     currentSkinState() { return { skinId: currentSkinId(), active: activePackage !== null } },
@@ -241,6 +338,356 @@ function restoreSnapshot(snapshot) {
   else if (typeof snapshot.style === 'string') body.setAttribute('style', snapshot.style)
 }
 
+// ---- custom skin: controlled import / registry / preview / apply / delete / restore ----
+/**
+ * custom-skin.js — 自定义皮肤：受控包导入校验（契约 + 高危能力 + 容量） + registry
+ * + 试穿/应用/删除/恢复（无 React 依赖，自包含，不 import 其它 src 模块以免破坏 build 内联）。
+ *
+ * 受控导入（INTERFACE §3）：skin.json + client.js + a11y.css 一律当「纯数据」校验，
+ * 校验通过才写 storage；绝不执行包内注释/字符串内容。校验「先全量通过再 commit」，
+ * 任何失败不落地、不改当前外观。
+ *
+ * 构造参数：
+ *   storage        — 必填，{ getItem, setItem, removeItem }（浏览器传 localStorage）
+ *   builtinSkins   — 必填，内置皮肤 manifest 列表（构建期内联 __SKIN_MANIFEST__）
+ *   validate       — 可选，function(clientText) 契约+高危校验，默认用包内实现；
+ *                    浏览器可传 skin-engine 的 validateCustomBundle 以复用同一扫描器
+ *   engine         — 可选，createSkinEngine 实例；提供时应用会真实 activateSkin 该 bundle
+ *   applyToken     — 预留（未来 a11y 注入），当前不用
+ */
+
+const STORAGE_CUSTOM = 'skin-gallery-custom-v1'
+const STORAGE_CUSTOM_APPLIED = 'skin-gallery-custom-applied-v1'
+const STORAGE_SKIN = 'skin-gallery-skin-v1'
+const TRACK_KEY = 'dsh-appearance-track-v1'
+const MAX_BUNDLE_B64 = 256 * 1024 // btoa 后字节上限
+const MAX_CUSTOM_COUNT = 8
+
+/** 错误契约（INTERFACE §5）。 */
+const ERR = {
+  INVALID_JSON: 'ERR_IMPORT_INVALID_JSON',
+  MISSING_FILE: 'ERR_SKIN_MISSING_FILE',
+  BAD_META: 'ERR_SKIN_BAD_META',
+  CONTRACT: 'ERR_SKIN_CONTRACT',
+  DANGEROUS: 'ERR_SKIN_DANGEROUS',
+  SIZE: 'ERR_SKIN_SIZE',
+  COUNT: 'ERR_SKIN_COUNT',
+  ID_CONFLICT: 'ERR_THEME_ID_CONFLICT',
+  UNKNOWN_ID: 'ERR_UNKNOWN_ID',
+}
+
+const ID_RE = /^[a-z0-9][a-z0-9-_]{0,63}$/
+
+/** UTF-8 安全的 base64 编码（btoa 只接受 Latin-1，中文等需先经 TextEncoder 转 UTF-8 字节）。 */
+function toBase64Utf8(str) {
+  const bytes = typeof TextEncoder !== 'undefined'
+    ? new TextEncoder().encode(str)
+    : Buffer.from(str, 'utf8')
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin)
+}
+
+function fail(code, message) {
+  const err = new Error(message)
+  err.code = code
+  return err
+}
+
+function readTrack(storage) {
+  try {
+    const raw = storage.getItem(TRACK_KEY)
+    return raw === 'theme' || raw === 'skin' ? raw : ''
+  } catch { return '' }
+}
+
+function writeTrack(storage, value) {
+  try {
+    if (value === 'theme' || value === 'skin') storage.setItem(TRACK_KEY, value)
+    else storage.removeItem(TRACK_KEY)
+  } catch { /* 存储不可用则忽略 */ }
+}
+
+function readCustomItems(storage) {
+  try {
+    const raw = storage.getItem(STORAGE_CUSTOM)
+    const data = raw ? JSON.parse(raw) : null
+    if (data && typeof data === 'object' && Array.isArray(data.items)) return data.items
+  } catch { /* 损坏则按空 registry 处理 */ }
+  return []
+}
+
+function writeCustomItems(storage, items) {
+  try { storage.setItem(STORAGE_CUSTOM, JSON.stringify({ version: 1, items })) } catch {}
+}
+
+function readScoped(storage, key, fallback = '') {
+  try { return storage.getItem(key) || fallback } catch { return fallback }
+}
+
+function writeScoped(storage, key, value) {
+  try { storage.setItem(key, value) } catch {}
+}
+
+function removeScoped(storage, key) {
+  try { storage.removeItem(key) } catch {}
+}
+
+// ---- client.js 契约 + 高危静态校验（与 skin-engine.validateCustomBundle 同源逻辑）----
+const CTX_WHITELIST = new Set(['effect', 'get'])
+const DANGEROUS_PATTERNS = [
+  'eval(', 'new Function(', 'import(', 'require(', '<script src=',
+  'fetch(', 'XMLHttpRequest(', 'WebSocket(', 'localStorage', 'sessionStorage',
+  'document.cookie', 'chrome.runtime',
+]
+
+function parenBalanced(text) {
+  let depth = 0
+  for (const ch of text) {
+    if (ch === '(') depth++
+    else if (ch === ')') { depth--; if (depth < 0) return false }
+  }
+  return depth === 0
+}
+
+/** 包内默认 JS 扫描器（可被 createCustomSkinApi 的 validate 参数覆盖以复用引擎副本）。 */
+function validateBundle(clientText) {
+  if (typeof clientText !== 'string' || clientText.length === 0) {
+    throw fail(ERR.CONTRACT, 'client.js 为空或缺失')
+  }
+  const hasLoader = clientText.includes('window.__ModuleLoader__.load({') && clientText.includes('factory')
+  if (!hasLoader || !parenBalanced(clientText)) {
+    throw fail(ERR.CONTRACT, '缺失 __ModuleLoader__.load 契约或括号不配平')
+  }
+  for (const pat of DANGEROUS_PATTERNS) {
+    if (clientText.includes(pat)) throw fail(ERR.DANGEROUS, `client.js 含高危能力: ${pat}`)
+  }
+  if (!/\bapply\s*(\{|:)/.test(clientText) && !/function\s+apply/.test(clientText)) {
+    throw fail(ERR.CONTRACT, 'client.js 未导出 apply')
+  }
+  const ctxRe = /ctx\.([A-Za-z_$][\w$]*)/g
+  let m
+  const bad = []
+  while ((m = ctxRe.exec(clientText)) !== null) {
+    if (!CTX_WHITELIST.has(m[1])) bad.push(m[1])
+  }
+  if (bad.length > 0) throw fail(ERR.CONTRACT, `apply 使用白名单外 ctx.${bad[0]}`)
+  return true
+}
+
+/** 校验 skin.json 元数据；通过返回归一化元数据，否则抛带 code 的错。 */
+function validateSkinMeta(skinText, builtinIds) {
+  let parsed
+  try {
+    parsed = JSON.parse(skinText)
+  } catch {
+    throw fail(ERR.INVALID_JSON, 'skin.json 解析失败')
+  }
+  if (typeof parsed !== 'object' || parsed === null) throw fail(ERR.INVALID_JSON, 'skin.json 必须是 JSON 对象')
+  const { id, name, author, license } = parsed
+  if (typeof id !== 'string' || id.length === 0 || typeof name !== 'string' || name.length === 0 ||
+    typeof author !== 'string' || author.length === 0 || typeof license !== 'string' || license.length === 0) {
+    throw fail(ERR.BAD_META, 'skin.json 缺 id/name/author/license（author 与 license 必填）')
+  }
+  if (!ID_RE.test(id)) throw fail(ERR.BAD_META, `非法 id: ${id}`)
+  if (builtinIds.includes(id)) throw fail(ERR.ID_CONFLICT, `id 与内置皮肤冲突: ${id}`)
+  return {
+    id, name, author, license,
+    accent: typeof parsed.accent === 'string' ? parsed.accent : '',
+    bodyAttr: typeof parsed.bodyAttr === 'string' ? parsed.bodyAttr : `data-dsh-${id}`,
+    order: typeof parsed.order === 'number' ? parsed.order : undefined,
+  }
+}
+
+/**
+ * 创建自定义皮肤公开 API。返回扁平函数集（UI 即测试面，见 INTERFACE §4.2）。
+ */
+function createCustomSkinApi({ storage, builtinSkins, validate, engine }) {
+  if (!storage || typeof storage.getItem !== 'function') throw new Error('custom-skin: storage required')
+  const builtinIds = (builtinSkins || []).map((s) => s.id)
+  const validateBundleFn = typeof validate === 'function' ? validate : validateBundle
+
+  // 归一化内置条目：确保 license/author/package 可读，且不带 source:'custom'。
+  const builtinEntries = (builtinSkins || []).map((s) => ({
+    id: s.id, name: s.name, nameEn: s.nameEn || '', author: s.author,
+    tagline: s.tagline || '', accent: s.accent || '', bodyAttr: s.bodyAttr || `data-dsh-${s.id}`,
+    order: s.order, package: s.package, license: s.license || 'BSD-3-Clause',
+  }))
+
+  function getCustomItems() {
+    return readCustomItems(storage)
+  }
+
+  function buildSkinList() {
+    const customs = getCustomItems().map((item) => ({
+      id: item.id, name: item.name, nameEn: item.nameEn || '', author: item.author,
+      license: item.license, accent: item.accent, bodyAttr: item.bodyAttr,
+      order: item.order, package: item.id, source: 'custom', bundleText: item.bundleText, a11yText: item.a11yText || '',
+    }))
+    return builtinEntries.concat(customs)
+  }
+
+  function getSkins() {
+    return buildSkinList().slice().sort((a, b) => a.order - b.order)
+  }
+
+  function findByCustomId(id) {
+    return getCustomItems().find((item) => item.id === id) || null
+  }
+
+  /** 当前激活皮肤：自定义 applied 优先，否则内置 skin-v1；无则 { '', false }。 */
+  function currentSkinState() {
+    const customApplied = readScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+    if (customApplied && findByCustomId(customApplied)) return { skinId: customApplied, active: true }
+    const builtinApplied = readScoped(storage, STORAGE_SKIN, '')
+    if (builtinApplied && builtinIds.includes(builtinApplied)) return { skinId: builtinApplied, active: true }
+    return { skinId: '', active: false }
+  }
+
+  function registerBundle(item) {
+    // 接入真实引擎（可选）：注册动态 bundle 使其可被 activateSkin 执行。
+    if (engine && typeof engine.registerCustomBundle === 'function') {
+      engine.registerCustomBundle(item)
+    }
+  }
+
+  function deactivateRuntime() {
+    if (engine && typeof engine.deactivateSkin === 'function') engine.deactivateSkin()
+  }
+
+  async function importCustomSkin({ skin, client, a11y } = {}) {
+    // 1) 缺文件
+    if (!skin || !client || client.length === 0) throw fail(ERR.MISSING_FILE, '缺 skin.json 或 client.js')
+    // 2) 元数据（含 id 冲突）
+    const meta = validateSkinMeta(skin, builtinIds)
+    // 3) 契约 + 高危
+    validateBundleFn(client)
+    // 4) 容量：UTF-8 安全的 btoa(皮肤元数据 + client) 不超 256KB
+    const bundleSize = toBase64Utf8(skin + client).length
+    if (bundleSize > MAX_BUNDLE_B64) throw fail(ERR.SIZE, '自定义皮肤包超 256KB')
+    // 5) 数量：新增项后 ≤ 8
+    const items = getCustomItems()
+    const existing = items.some((x) => x.id === meta.id)
+    if (!existing && items.length >= MAX_CUSTOM_COUNT) throw fail(ERR.COUNT, `自定义皮肤最多 ${MAX_CUSTOM_COUNT} 个`)
+    // 6) 全量通过 → commit
+    const item = {
+      id: meta.id, name: meta.name, nameEn: meta.nameEn || '', author: meta.author,
+      license: meta.license, accent: meta.accent, bodyAttr: meta.bodyAttr,
+      order: typeof meta.order === 'number' ? meta.order : 100 + items.length,
+      source: 'custom', bundleText: client, a11yText: typeof a11y === 'string' ? a11y : '',
+    }
+    const next = items.slice()
+    const idx = items.findIndex((x) => x.id === meta.id)
+    if (idx >= 0) next[idx] = item
+    else next.push(item)
+    writeCustomItems(storage, next)
+    registerBundle(item)
+    return { ...item }
+  }
+
+  function previewCustomSkin(id) {
+    const item = findByCustomId(id)
+    if (!item) throw fail(ERR.UNKNOWN_ID, `未知自定义皮肤: ${id}`)
+    deactivateRuntime()
+    registerBundle(item)
+    if (engine && typeof engine.activateSkin === 'function') {
+      const entry = getSkins().find((s) => s.id === id)
+      if (entry) { void engine.activateSkin(entry) }
+    }
+    // preview 不写 applied 键（A3）
+  }
+
+  function applyCustomSkin(id) {
+    const item = findByCustomId(id)
+    if (!item) throw fail(ERR.UNKNOWN_ID, `未知自定义皮肤: ${id}`)
+    deactivateRuntime()
+    registerBundle(item)
+    if (engine && typeof engine.activateSkin === 'function') {
+      const entry = getSkins().find((s) => s.id === id)
+      if (entry) { void engine.activateSkin(entry) }
+    }
+    writeScoped(storage, STORAGE_CUSTOM_APPLIED, id)
+    writeScoped(storage, STORAGE_SKIN, '') // 清内置
+    writeTrack(storage, 'skin')
+  }
+
+  function deleteCustomSkin(id) {
+    if (builtinIds.includes(id)) return // 内置不可删（D5）
+    const items = getCustomItems()
+    if (!items.some((x) => x.id === id)) return
+    writeCustomItems(storage, items.filter((x) => x.id !== id))
+    const applied = readScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+    if (applied === id) {
+      writeScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+      writeScoped(storage, STORAGE_SKIN, '') // 回 none
+      writeTrack(storage, 'skin')
+      deactivateRuntime()
+    }
+  }
+
+  function restoreDefaultSkin() {
+    writeCustomItems(storage, [])
+    writeScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+    writeScoped(storage, STORAGE_SKIN, '')
+    writeTrack(storage, 'skin')
+    deactivateRuntime()
+  }
+
+  function activateSkin(id) {
+    // 内置激活（现有语义保留）：激活 + 持久化
+    if (!builtinIds.includes(id)) throw fail(ERR.UNKNOWN_ID, `未知内置皮肤: ${id}`)
+    deactivateRuntime()
+    if (engine && typeof engine.activateSkin === 'function') {
+      const entry = getSkins().find((s) => s.id === id)
+      if (entry) { void engine.activateSkin(entry) }
+    }
+    writeScoped(storage, STORAGE_SKIN, id)
+    writeScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+    writeTrack(storage, 'skin')
+  }
+
+  function previewSkin(id) {
+    if (!builtinIds.includes(id)) throw fail(ERR.UNKNOWN_ID, `未知内置皮肤: ${id}`)
+    deactivateRuntime()
+    if (engine && typeof engine.activateSkin === 'function') {
+      const entry = getSkins().find((s) => s.id === id)
+      if (entry) { void engine.activateSkin(entry) }
+    }
+  }
+
+  function clearSkin() {
+    writeScoped(storage, STORAGE_SKIN, '')
+    writeScoped(storage, STORAGE_CUSTOM_APPLIED, '')
+    deactivateRuntime()
+  }
+
+  function teardownSkins() {
+    // 只清运行时副作用，不删 storage registry（INTERFACE §3.6）
+    if (engine && typeof engine.teardownSkins === 'function') engine.teardownSkins()
+  }
+
+  function getAppearanceTrack() {
+    return readTrack(storage)
+  }
+
+  return {
+    importCustomSkin,
+    previewCustomSkin,
+    applyCustomSkin,
+    deleteCustomSkin,
+    restoreDefaultSkin,
+    getSkins,
+    currentSkinState,
+    registerCustomBundle: registerBundle,
+    teardownSkins,
+    activateSkin,
+    previewSkin,
+    applySkin: activateSkin,
+    clearSkin,
+    getAppearanceTrack,
+  }
+}
+
 // ---- a11y injector ----
 /**
  * skin-a11y.js — 可访问性修正层（每皮肤增量 override CSS）。
@@ -291,7 +738,7 @@ function createA11yInjector({ a11y, log = console }) {
 }
 
 // ---- plugin client ----
-const STORAGE_SKIN = 'skin-gallery-skin-v1'
+const STORAGE_SKIN_KEY = 'skin-gallery-skin-v1'
 
 function readStored(key, fallback = '') {
   try { return localStorage.getItem(key) || fallback } catch { return fallback }
@@ -299,6 +746,10 @@ function readStored(key, fallback = '') {
 
 function writeStored(key, value) {
   try { localStorage.setItem(key, value) } catch {}
+}
+
+function removeStored(key) {
+  try { localStorage.removeItem(key) } catch {}
 }
 
 const DSH_MODULES = globalThis.__DSH_MODULES__
@@ -313,6 +764,7 @@ const skinEngine = typeof DSH_MODULES !== 'undefined'
 const a11yInjector = createA11yInjector({ a11y: __SKIN_A11Y__ })
 const SKINS = skinEngine ? skinEngine.getSkins() : []
 const listeners = new Set()
+let triedSkinId = null
 const notify = () => { for (const listener of listeners) listener() }
 const subscribe = (listener) => { listeners.add(listener); return () => listeners.delete(listener) }
 
@@ -321,23 +773,37 @@ function clearSkin() {
   const state = skinEngine.currentSkinState()
   if (state.active && state.skinId) a11yInjector.remove(state.skinId)
   skinEngine.deactivateSkin()
-  try { localStorage.removeItem(STORAGE_SKIN) } catch {}
+  triedSkinId = null
+  removeStored(STORAGE_SKIN_KEY)
   notify()
 }
 
-async function activateSkin(skinId) {
+async function loadSkin(skinId) {
   if (!skinEngine) throw new Error('[skin-gallery] missing __DSH_MODULES__')
   const entry = SKINS.find((item) => item.id === skinId)
   if (!entry) throw new Error(`unknown-skin: ${skinId}`)
   await skinEngine.activateSkin(entry, {
     afterApply: () => a11yInjector.inject(entry.id),
   })
-  writeStored(STORAGE_SKIN, skinId)
+  notify()
+}
+
+async function previewSkin(skinId) {
+  await loadSkin(skinId)
+  triedSkinId = skinId
+  notify()
+}
+
+async function applySkin(skinId) {
+  await loadSkin(skinId)
+  triedSkinId = null
+  writeStored(STORAGE_SKIN_KEY, skinId)
   notify()
 }
 
 const currentSkinState = () => skinEngine ? skinEngine.currentSkinState() : { skinId: null, active: false }
 const getSkins = () => SKINS.slice()
+const getPreviewState = () => ({ skinId: triedSkinId, appliedSkinId: readStored(STORAGE_SKIN_KEY, '') })
 
 function teardown() {
   if (skinEngine) skinEngine.teardownSkins()
@@ -346,10 +812,13 @@ function teardown() {
 if (typeof globalThis.__TG_SURFACE__ === 'function') {
   globalThis.__TG_SURFACE__({
     apply,
-    activateSkin,
+    activateSkin: applySkin,
+    previewSkin,
+    applySkin,
     clearSkin,
     currentSkinState,
     getSkins,
+    getPreviewState,
     readStored,
     writeStored,
     teardown,
@@ -364,7 +833,7 @@ const CSS = `
   .skin-gallery-hint { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; }
   .skin-gallery-search { box-sizing: border-box; width: 100%; height: 34px; padding: 0 11px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; outline: none; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; }
   .skin-gallery-search:focus { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent); }
-  .skin-gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; max-height: 300px; overflow: auto; padding: 2px; contain: content; }
+  .skin-gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 2px; }
   .skin-gallery-card { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; padding: 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; text-align: left; }
   .skin-gallery-card:hover { border-color: var(--dsw-alias-brand-primary); }
   .skin-gallery-card.is-active { border-color: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 20%, transparent); }
@@ -383,6 +852,11 @@ const CSS = `
   .skin-gallery-design-option { padding: 5px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 12px; }
   .skin-gallery-design-option.is-selected { color: var(--dsw-alias-label-primary-foreground); border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-brand-primary); }
   .skin-gallery-design-output { min-height: 84px; padding: 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 9px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); font: 12px/18px var(--ds-font-family-code, ui-monospace, monospace); white-space: pre-wrap; }
+  .skin-gallery-import { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+  .skin-gallery-import-title { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+  .skin-gallery-import-text { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+  .skin-gallery-import-field { width: 100%; box-sizing: border-box; min-height: 72px; padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 9px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); font: 12px/18px var(--ds-font-family-code, ui-monospace, monospace); }
+  .skin-gallery-import-err { color: var(--dsw-alias-state-error-primary); font-size: 11px; }
   .skin-gallery-empty { padding: 14px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-secondary); text-align: center; font-size: 12px; }
   @media (max-width: 900px) { .skin-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 680px) { .skin-gallery-grid { grid-template-columns: 1fr; } }
@@ -392,7 +866,12 @@ function apply(ctx) {
   const slots = ctx.get('slots')
   if (slots === undefined) return
 
-  const stored = readStored(STORAGE_SKIN, '')
+  // 自定义皮肤 API：storage 接 localStorage，engine 接真实 skinEngine（受控导入 + 注册 + 试穿/应用）。
+  const customSkinApi = (typeof skinEngine !== 'undefined' && skinEngine !== null)
+    ? createCustomSkinApi({ storage: localStorage, builtinSkins: SKINS, validate: validateCustomBundle, engine: skinEngine })
+    : createCustomSkinApi({ storage: localStorage, builtinSkins: SKINS, validate: validateCustomBundle })
+
+  const stored = readStored(STORAGE_SKIN_KEY, '')
   if (skinEngine && SKINS.some((item) => item.id === stored)) {
     void activateSkin(stored)
   }
@@ -403,6 +882,10 @@ function apply(ctx) {
     const [query, setQuery] = React.useState('')
     const [busy, setBusy] = React.useState(false)
     const [designOpen, setDesignOpen] = React.useState(false)
+    const [skinText, setSkinText] = React.useState('')
+    const [clientText, setClientText] = React.useState('')
+    const [a11yText, setA11yText] = React.useState('')
+    const [importErr, setImportErr] = React.useState('')
     const [designParts, setDesignParts] = React.useState(['颜色', '气泡', '代码块'])
     const [, force] = React.useState(0)
     React.useEffect(() => subscribe(() => force((value) => value + 1)), [])
@@ -412,26 +895,89 @@ function apply(ctx) {
     }
 
     const normalized = query.trim().toLowerCase()
-    const visible = SKINS.filter((item) => !normalized || (item.name + ' ' + item.nameEn + ' ' + item.id).toLowerCase().includes(normalized))
-    const state = currentSkinState()
+    const allSkins = customSkinApi.getSkins()
+    const skinState = customSkinApi.currentSkinState()
+    const state = { skinId: skinState.skinId || null, active: skinState.active }
+    const visible = allSkins.filter((item) => !normalized || (item.name + ' ' + item.nameEn + ' ' + item.id).toLowerCase().includes(normalized))
     const choose = async (id) => {
       setBusy(true)
-      try { await activateSkin(id) } finally { setBusy(false) }
+      try {
+        const isCustom = item => allSkins.find((s) => s.id === id) && allSkins.find((s) => s.id === id).source === 'custom'
+        if (isCustom()) { customSkinApi.applyCustomSkin(id); customSkinApi.currentSkinState() }
+        await activateSkin(id)
+      } finally { setBusy(false) }
     }
     const resetToDefault = () => {
       clearSkin()
+      customSkinApi.restoreDefaultSkin()
       setDesignOpen(false)
     }
     const togglePart = (part) => {
       setDesignParts((parts) => parts.includes(part) ? parts.filter((item) => item !== part) : [...parts, part])
     }
+
+    const doImportCustom = async () => {
+      setImportErr('')
+      try {
+        await customSkinApi.importCustomSkin({ skin: skinText, client: clientText, a11y: a11yText || undefined })
+        setSkinText(''); setClientText(''); setA11yText('')
+        force((v) => v + 1)
+      } catch (e) {
+        setImportErr(e && e.code ? `${e.code}: ${e.message}` : ((e && e.message) || '导入失败'))
+      }
+    }
+
     const designSummary = [
-      '我想创建一个自定义 DSH 皮肤。请先询问我以下信息，再生成实现方案：',
+      '我想创建一个自定义 DSH 皮肤。请按 dsh-skin-gallery 的皮肤包格式交付，不要生成独立 Cordis 插件。',
+      '',
+      '【交付路径】',
+      '把文件放入 dsh-plugins 仓库的：packages/skin-gallery/skins/<skin-id>/',
+      '',
+      '【交付格式】',
+      'packages/skin-gallery/skins/<skin-id>/',
+      '├── skin.json',
+      '├── client.js',
+      '└── a11y.css',
+      '',
+      '【skin.json 必填字段】',
+      '{',
+      '  "id": "<skin-id>",',
+      '  "name": "皮肤中文名",',
+      '  "nameEn": "English Name",',
+      '  "author": "作者名",',
+      '  "license": "MIT 或 BSD-3-Clause",',
+      '  "tagline": "一句话描述",',
+      '  "accent": "#主色",',
+      '  "bodyAttr": "data-dsh-<skin-id>",',
+      '  "order": 100',
+      '}',
+      '',
+      '【client.js 契约】',
+      '1. 必须调用 window.__ModuleLoader__.load({ id, factory })；',
+      '2. factory 必须返回 { apply(ctx) }；',
+      '3. apply(ctx) 产生的 CSS、DOM、事件、定时器必须全部通过 ctx.effect() 注册可逆清理；',
+      '4. 只能使用 ctx.effect() / ctx.get()，禁止读取其他服务；',
+      '5. 禁止 eval、new Function、fetch、XMLHttpRequest、WebSocket、动态 import、require、document.cookie、localStorage/sessionStorage 直读写；',
+      '6. 不允许修改全局键盘/鼠标行为；',
+      '7. 不允许覆盖 html/body 的整体布局；',
+      '8. 如需背景图、标题栏、状态栏、动效或 JavaScript 控件，先说明原因并征得确认。',
+      '',
+      '【a11y.css 标准】',
+      '只写可读性修正：消息气泡、代码块、行内代码、按钮文字、主按钮悬停；必须同时覆盖浅色和深色。',
+      '',
+      '【验收标准】',
+      '交付后必须能通过：',
+      'pnpm --filter dsh-skin-gallery build',
+      'pnpm --filter dsh-skin-gallery check',
+      'pnpm --filter dsh-skin-gallery test',
+      '并在设置页支持：试穿、应用、恢复默认、切换后无残留。',
+      '',
+      '【设计前请先询问】',
       '1. 皮肤名称和整体风格；',
       '2. 浅色/深色背景、主色、文字色、边框色；',
       '3. 消息气泡、代码块、按钮、侧栏、输入框分别如何设计；',
       '4. 是否需要背景图、标题栏、状态栏、动效或特殊控件；',
-      '5. 必须保证消息气泡和代码块背景与文字有足够对比度。',
+      '5. 如何保证气泡和代码块背景与文字有足够对比度。',
       '当前选择的版块：' + designParts.join('、'),
       '请先向我提问确认设计，不要直接生成代码。',
     ].join('\n')
@@ -439,7 +985,7 @@ function apply(ctx) {
     return React.createElement('div', { className: 'skin-gallery-root' },
       React.createElement('div', { className: 'skin-gallery-heading' },
         React.createElement('div', { className: 'skin-gallery-title' }, '完整皮肤'),
-        React.createElement('div', { className: 'skin-gallery-count' }, visible.length + ' / ' + SKINS.length)
+        React.createElement('div', { className: 'skin-gallery-count' }, visible.length + ' / ' + allSkins.length)
       ),
       React.createElement('div', { className: 'skin-gallery-hint' }, '完整皮肤会改变背景、控件与界面装饰。主题包中的轻量主题请回到“精选主题”选择。'),
       React.createElement('div', { className: 'skin-gallery-actions' },
@@ -468,6 +1014,33 @@ function apply(ctx) {
           onFocus: (event) => event.target.select(),
         })
       ),
+      React.createElement('div', { className: 'skin-gallery-import' },
+        React.createElement('div', { className: 'skin-gallery-import-title' }, '自定义皮肤包导入'),
+        React.createElement('div', { className: 'skin-gallery-import-text' }, '受控包格式：skin.json（含 author / license）+ client.js（须注册 __ModuleLoader__.load 并导出 apply(ctx)）+ 可选 a11y.css。仅按契约校验并注入，绝不执行包内文字。'),
+        React.createElement('textarea', {
+          className: 'skin-gallery-import-field', value: skinText, 'aria-label': 'skin.json',
+          placeholder: '{ "id": "my-skin", "name": "我的皮肤", "author": "作者", "license": "BSD-3-Clause" }',
+          onChange: (event) => setSkinText(event.target.value),
+        }),
+        React.createElement('textarea', {
+          className: 'skin-gallery-import-field', value: clientText, 'aria-label': 'client.js',
+          placeholder: 'window.__ModuleLoader__.load({ id: "my-skin", factory: () => ({ apply(ctx) { ctx.effect(...); } }) })',
+          onChange: (event) => setClientText(event.target.value),
+        }),
+        React.createElement('textarea', {
+          className: 'skin-gallery-import-field', value: a11yText, 'aria-label': 'a11y.css',
+          placeholder: 'a11y.css（可选，缺失则降级，皮肤仍可用）：body[data-dsh-my-skin] { --x: 1 }',
+          onChange: (event) => setA11yText(event.target.value),
+        }),
+        importErr && React.createElement('div', { className: 'skin-gallery-import-err' }, importErr),
+        React.createElement('div', { className: 'skin-gallery-actions' },
+          React.createElement('button', {
+            type: 'button', className: 'skin-gallery-action skin-gallery-action-primary',
+            disabled: !skinText.trim() || !clientText.trim(),
+            onClick: doImportCustom,
+          }, '导入皮肤包')
+        )
+      ),
       React.createElement('input', {
         className: 'skin-gallery-search', type: 'search', value: query,
         placeholder: '搜索皮肤…', 'aria-label': '搜索皮肤',
@@ -485,7 +1058,7 @@ function apply(ctx) {
               React.createElement('span', { className: 'skin-gallery-swatch', style: { background: item.accent } }),
               React.createElement('span', { className: 'skin-gallery-copy' },
                 React.createElement('span', { className: 'skin-gallery-name' }, item.name),
-                React.createElement('span', { className: 'skin-gallery-meta' }, item.author)
+                React.createElement('span', { className: 'skin-gallery-meta' }, (item.source === 'custom' ? '自定义 · ' : '') + item.author)
               )
             )
           ))

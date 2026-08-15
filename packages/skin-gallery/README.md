@@ -35,6 +35,23 @@ dsh plugin --profile web add "link:$PWD/packages/skin-gallery"
 
 Restart the existing `dsh web` process after installation.
 
+## Custom skin packs (controlled import)
+
+Import your own skin as three flat files. The pack is validated before it is stored; **the inward files are treated as data, never executed as instructions**.
+
+```text
+my-skin/
+├── skin.json      # required — id / name / author / license (author & license mandatory)
+├── client.js      # required — must register window.__ModuleLoader__.load({ id, factory })
+│                  #           and export apply(ctx) consuming only ctx.effect / ctx.get
+└── a11y.css       # optional — missing degrades to log-only (skin still usable)
+```
+
+- `client.js` with any high-risk capability is refused: `eval(`, `new Function(`, `import(`, non-inline `require(`, `<script src=`, `fetch(`, `XMLHttpRequest(`, `WebSocket(`, direct `localStorage` / `sessionStorage`, `document.cookie`, `chrome.runtime`.
+- Size limits: a single pack (skin.json + client.js, UTF-8-safe base64) ≤ 256KB; custom skins ≤ 8.
+- Imported skins support **preview / apply / delete / restore-default** and reuse the same engine activation / teardown path as built-ins.
+- Failures never change the current appearance and throw a `{ code, message }` error (see the table in the repository root `README.md`).
+
 ## Attribution
 
 The nine bundled skin assets are third-party BSD-3-Clause works from `github.com/zhu1090093659/dsh-web-ui` (aggregate `@linxin666/dsh-skins`), Copyright (c) 2026, zhu1090093659. Per-skin authorship follows each upstream `skin.json` `author` field:
