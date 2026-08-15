@@ -30,6 +30,8 @@
 - 卡点② 验收测试锁定：11 文件 131 用例全绿（黑盒基于 INTERFACE 契约参考实现），TEST-PLAN.md 63 条人话清单，用户确认锁定（LOCK=8fbbc2f）@已提交
 - 04 开发：T1 脚手架 ✅；T0 spike ✅；T2-T10 实现 ✅；验收接驳真实实现 ✅（131/131）；T11 单测 ✅（112）；**全量 243/243 绿**；e2e ✅（headless 加载 + playwright 真实 dsh web）；剩 T12 发布
 - 05 验收：三轮裁判——①不合格（第三层 e2e 缺失）②不合格（无真实按键交互）③**合格**（补齐真实按键 e2e 7 条 + TEST-PLAN 接线说明，250 项全绿：验收131+单测112+e2e7）@已提交；卡点③待用户确认
+- 05.5 安全审计：**可发布**（0 致命/重要，4 建议级；symlink 竞态建议已加固——doSave 写前复核 isSymbolicLink），全量 243 绿 @已提交
+- 06 发布：待卡点4 确认（dsh-plugins monorepo 内合并 + push + awesome PR，与 session-manager 同模式）
 - 主会话已确认的技术事实（供方案代理复用，来自代码阅读）：
   - DSH InputBar 方向键已走 keyboard.arbitrate()：input-trigger 菜单打开时 ↑↓ 被消费、关闭时 pass（放行光标移动）→ 历史导航监听在放行路径上做
   - DSH 无原生输入历史（只有草稿恢复）→ 空白区
