@@ -135,6 +135,74 @@ pnpm check
 
 插件只负责选择主题家族。浅色、深色和跟随系统仍由 DSH 自带的“外观”设置控制，两者不会互相覆盖。
 
+### 自定义主题（CSS-only JSON 导入）
+
+主题画廊支持导入自定义主题。自定义主题只做 CSS 变量注入，**不执行任何 JS**。JSON 形状：
+
+```json
+{
+  "id": "my-jade-tweak",
+  "label": "我的主题",
+  "tokens": {
+    "--dsw-alias-bg-base": { "light": "#fff", "dark": "#111" },
+    "--dsw-alias-brand-primary": { "light": "#07c160", "dark": "#07c160" }
+  }
+}
+```
+
+必须含 `id`、`label`、非空 `tokens`；每个 token 名必须以 `--dsw-` 开头，值是 `{ "light": 字符串, "dark": 字符串 }`。导入后支持**试穿 / 应用 / 删除 / 恢复默认**。非法导入一律不改当前外观，并抛出带 `code` 的错误（见下文错误表）。
+
+## 完整皮肤自定义（skin-gallery）
+
+`dsh-skin-gallery` 内置 9 款完整皮肤复刻，每款支持**试穿**与**应用**，删除/恢复默认后回到 `none`。皮肤包为**受控导入**格式，三文件平铺：
+
+```text
+my-skin/
+├── skin.json      # 元数据（必含 id / name / author / license）
+├── client.js      # 契约：注册 __ModuleLoader__.load 并导出 apply(ctx)
+└── a11y.css       # 可选；缺失则降级（皮肤仍可用，仅无对比修正）
+```
+
+- `skin.json` 缺 `id / name / author / license` 任一拒绝（**author 与 license 必填**，尊重 BSD-3 保留要求）。
+- `client.js` 必须 `window.__ModuleLoader__.load({ id, factory })`、factory 导出 `apply(ctx)`，且 `apply` 只消费 `ctx.effect` / `ctx.get`。
+- **高危能力拒绝**：含 `eval(`、`new Function(`、`import(`、非内联 `require(`、`<script src=`、`fetch(`、`XMLHttpRequest(`、`WebSocket(`、`localStorage`/`sessionStorage` 直读写、`document.cookie`、`chrome.runtime` 任一的包拒绝导入。
+- 单包（skin.json + client.js）UTF-8 安全的 base64 后 ≤ 256KB；自定义皮肤总数 ≤ 8 个。
+
+导入后同样支持**试穿 / 应用 / 删除 / 恢复默认**。
+
+## 状态机与主题↔皮肤互斥
+
+主题与皮肤各维护独立状态机（内置 + 自定义轨共用）：
+
+```text
+none ──import──▶ registry(未选) ──preview──▶ preview ──apply──▶ applied
+  ▲                  │                                               │
+  └───restore_default┴──delete(registry 移出；若为 applied 回默认)───┘
+```
+
+- `preview`：仅运行时生效，刷新即丢，不写 `applied` 键。
+- `applied`：写入 `applied` 键，页面加载时按轨恢复。
+- 两包经共享键 `dsh-appearance-track-v1` **软互斥**（'theme' | 'skin' | ''）：同一时刻至多一个轨激活外观。
+
+## 错误码
+
+导入/操作失败统一抛 `{ code, message }`，且**不改当前外观、不写任何 storage 键**：
+
+| code | 说明 |
+|---|---|
+| `ERR_IMPORT_INVALID_JSON` | 主题 / 皮肤 JSON 解析失败 |
+| `ERR_THEME_MISSING_FIELD` | 主题缺 id/label/tokens 之一，或格式非法 |
+| `ERR_THEME_BAD_TOKEN` | token 名非 `--dsw-` 前缀，或值非 {light,dark} 字符串 |
+| `ERR_THEME_ID_CONFLICT` | 与内置主题 id 冲突 |
+| `ERR_SKIN_MISSING_FILE` | 缺 skin.json / client.js |
+| `ERR_SKIN_BAD_META` | skin.json 缺 id/name/author/license（author/license 必填） |
+| `ERR_SKIN_CONTRACT` | client.js 不满足 __ModuleLoader__/apply/ctx.effect 契约 |
+| `ERR_SKIN_DANGEROUS` | client.js 含高危能力（eval/fetch/…） |
+| `ERR_SKIN_SIZE` | 单包 base64 后超 256KB |
+| `ERR_SKIN_COUNT` | 自定义皮肤超 8 个 |
+| `ERR_UNKNOWN_ID` | 试穿/应用不存在的自定义 id |
+| `ERR_A11Y_MISSING` | a11y.css 缺失（非致命，仅日志，皮肤仍可用） |
+
 ## 许可证
 
 MIT
