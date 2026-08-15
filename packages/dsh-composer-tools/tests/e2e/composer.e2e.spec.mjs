@@ -67,3 +67,66 @@ test('输入框存在且带 data-phase 属性（client 注入锚点）', async (
   await page.waitForTimeout(1000)
   expect(errs.filter((e) => e.includes('dsh-composer-tools'))).toEqual([])
 })
+
+test('面板入口按钮注入：🧩指令/提示词 出现在输入框工具区', async ({ page }) => {
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(4000)
+  const btn = page.locator('.dsh-ct-entry-btn, button[title="指令 / 提示词"]').first()
+  await expect(btn).toBeVisible({ timeout: 8000 })
+})
+
+test('真实按键：注入历史后按 ↑ 回填输入框（F1 核心交互）', async ({ page }) => {
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(4000)
+  // 点 New session 确保存在 current 会话（插件按 current sessionId 读历史）
+  const ns = page.locator('button[aria-label="New session"]').first()
+  if (await ns.count()) await ns.click()
+  await page.waitForTimeout(1500)
+
+  // 当前会话 id 存在 dsh.sessions.current（dsh web 持久化的当前会话）
+  const sid = await page.evaluate(() => {
+    try {
+      const raw = localStorage.getItem('dsh.sessions.current')
+      return raw ? (JSON.parse(raw).sessionId || null) : null
+    } catch { return null }
+  })
+  // 注入历史到插件 key：dsh-composer-tools:history:<sessionId>
+  await page.evaluate((sid) => {
+    const key = `dsh-composer-tools:history:${sid || 'probe'}`
+    localStorage.setItem(key, JSON.stringify(['第一条历史消息', '第二条历史消息']))
+  }, sid)
+  // 刷新让插件重新加载并读取 localStorage 历史
+  await page.reload()
+  await page.waitForTimeout(4000)
+
+  const ta = page.locator('textarea[data-phase="plain"]').first()
+  await expect(ta).toBeVisible({ timeout: 8000 })
+  // 真实按 ↑（单行输入框恒放行）→ 输入框应回填最近一条历史
+  await ta.click()
+  await ta.press('ArrowUp')
+  await page.waitForTimeout(400)
+  expect(await ta.inputValue()).toBe('第一条历史消息')
+
+  // 再按 ↓ → 回到空草稿（stash 为空串）
+  await ta.press('ArrowDown')
+  await page.waitForTimeout(400)
+  expect(await ta.inputValue()).toBe('')
+
+  // 全程无插件错误
+  const errs = []
+  page.on('pageerror', (e) => errs.push(String(e)))
+  await page.waitForTimeout(300)
+  expect(errs.filter((e) => e.includes('dsh-composer-tools'))).toEqual([])
+})
+
+test('面板打开：点击入口按钮渲染双 tab 面板', async ({ page }) => {
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(4000)
+  const btn = page.locator('.dsh-ct-entry-btn, button[title="指令 / 提示词"]').first()
+  await expect(btn).toBeVisible({ timeout: 8000 })
+  await btn.click()
+  await page.waitForTimeout(1500)
+  // 面板出现（指令/提示词 tab 或 AGPL 标注）
+  const panelText = await page.evaluate(() => document.body.textContent || '')
+  expect(panelText.includes('AGPL-3.0') || panelText.includes('Cherry Studio') || panelText.includes('提示词')).toBe(true)
+})

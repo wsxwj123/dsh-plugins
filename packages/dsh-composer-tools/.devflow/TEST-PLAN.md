@@ -11,13 +11,17 @@ node --test "tests/acceptance/*.test.mjs"
 ```
 
 不装任何依赖，纯 Node 内置（node:test + node:assert + node:http）。
-注意：测试目前驱动的是 `tests/acceptance/helpers/` 里的**契约参考实现**
-（把 INTERFACE.md 的契约逐字实现成可执行代码，当基准）。
-真实插件写完后，把各 `*.test.mjs` 顶部那一行 import 源换成插件实际导出的
-同名函数/HTTP 路由即可，**断言一行都不用改**。
+**接线状态（已接驳真实实现）**：`tests/acceptance/helpers/` 里的 contractHost/contractClient
+**不再是契约参考实现**，而是真实实现的转发层——contractHost 用真实 `createCtHandler`（lib/handler.js）
+驱动 ROUTER，discover 纯函数 re-export 自 lib/instructions.js；contractClient 的 gate/history-core/
+history-storage/append 全部 re-export 自 lib/*.js。因此 131 条验收用例验证的就是**真实插件代码**
+（断言行未动，仅 helpers 接驳层切换，属 T11 既定步骤）。白盒单测（tests/unit）同样直接 import 真实 lib/*。
 
 目前共 **131 条用例**，三块：host HTTP 契约（55）、client 纯函数契约（64）、
 cordis 访问纪律（6）+ 指令发现纯函数（12 并入 host 侧辅助）。
+另有**第三层真实环境 e2e**（tests/e2e/，playwright + 真实 dsh web 独立 profile）7 条：
+插件加载无错 / /ct RPC 真实返回 / 780 条+AGPL / 输入框 data-phase 锚点 / 面板按钮注入 /
+真实按键 ↑ 回填历史 / 面板打开渲染双 tab。
 
 ---
 
