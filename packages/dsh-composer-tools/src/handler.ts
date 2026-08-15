@@ -196,6 +196,11 @@ function doSave(body: unknown, opts: CtHandlerOptions): { status: number; json: 
   } catch {
     return { status: 200, json: { ok: false, code: 'file-not-found', message: 'instruction file not found' } }
   }
+  // 安全审计建议：发现（lstat 拒 symlink）与最终写入之间若目标被换成符号链接，
+  // writeFileSync 会跟随写入其指向处。写前复核一次，消除该竞态窗口（低危加固）。
+  if (st.isSymbolicLink()) {
+    return { status: 200, json: { ok: false, code: 'path-out-of-scope', message: 'path is not among the instruction files discovered for cwd' } }
+  }
   if (st.size > MAX_SOURCE_BYTES && allowTruncatedBase !== true) {
     return { status: 200, json: { ok: false, code: 'file-truncated', message: 'file exceeds 1048576 bytes; saving a truncated base would silently drop the tail — edit it with an external editor, or resend with allowTruncatedBase:true' } }
   }
