@@ -353,3 +353,10 @@
 ℹ skipped 0
 ℹ todo 0
 ℹ duration_ms 130.515833
+
+=== 第三层真实环境 e2e（playwright，真实 dsh web）===
+4 passed (8.1s)
+  ✓ 插件加载：dsh web 正常渲染，无插件错误
+  ✓ /ct RPC 从浏览器可调：指令发现真实返回
+  ✓ /ct/prompts 从浏览器可调：780 条 + AGPL 标注
+  ✓ 输入框存在且带 data-phase 属性
