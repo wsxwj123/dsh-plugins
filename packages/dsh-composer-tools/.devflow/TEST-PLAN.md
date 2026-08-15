@@ -153,3 +153,69 @@ cordis 访问纪律（6）+ 指令发现纯函数（12 并入 host 侧辅助）�
 - `tests/acceptance/test-09-client-append.test.mjs` —— 提示词追加
 - `tests/acceptance/test-10-discover-pure.test.mjs` —— 指令发现纯函数（§2.4）
 - `tests/acceptance/test-11-cordis-discipline.test.mjs` —— cordis 访问纪律（严格替身）
+
+---
+
+## 增量：新建项目级 AGENTS.md（新增 /ct/instructions.create 端点 + list 增补字段）
+
+新增端点：POST `/ct/instructions.create`，body 仅 `{cwd}`，落盘目标由 host 按项目根推导。
+新增 list 字段：`projectRootFound`（是否有真项目根）、`canCreateRootAgents`（client 显示「新建项目级 AGENTS.md」入口的唯一信号）。
+带 ⭐ 的是我替你想到、需求没明说的验收点。
+
+### 正常路径
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| A1 | 正常创建 | 造一个含 `.git` 的项目根、cwd 指向其子目录，POST `/ct/instructions.create` | 200 `{ok:true, path, content, mtimeMs}`；content 是定死的 2 行模板全文；`<项目根>/AGENTS.md` 真的出现在磁盘上 |
+| A2 | 磁盘内容抽查 | 创建后读磁盘文件 | 内容逐字等于模板，不多不少 |
+
+### 边界
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| B1 | cwd 就是项目根 | cwd=项目根创建 | 成功，落在 `<项目根>/AGENTS.md` |
+| B2 | cwd 是项目根子目录（多层最深） | cwd 指向最深层 | 仍创建到项目根，不是 cwd |
+| B3 | worktree：项目根用 `.git` 文件（非目录）⭐ | `.git` 写成普通文件作标记 | 识别为项目根，创建成功 |
+
+### 错误路径
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| C1 | cwd 非法 | 传相对路径/空串/非 string | 400 `invalid-cwd`，逐字文案 |
+| C2 | 无项目根 | cwd 祖先链没有任何 `.git`（如临时目录） | 200 `no-project-root`，逐字文案，**且不落盘** |
+| C3 | 根 AGENTS.md 已有 | 先写一个项目根 AGENTS.md 再创建 | 200 `path-exists`，原文件不被覆盖 |
+| C4 | 根 AGENTS.md 被目录占用 ⭐ | 用一个**目录**占住 AGENTS.md 路径 | 200 `path-exists` |
+| C5 | 根 AGENTS.md 是 symlink ⭐ | 把 AGENTS.md 做成指向项目外的符号链接 | 200 `path-exists`，**绝不跟随链接写**，链接目标文件保持原样 |
+| C6 | 写入失败 ⭐ | 把项目目录设成只读再创建 | 200 `system-error`，message=String(err)，磁盘不产生文件（root 环境自动跳过） |
+
+### 反向用例
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| D1 | 不接受客户端 path | body 里带 `path`（甚至越界路径）+ 多余字段 | 仍按推导的项目根目标创建，客户端传的 path 不产生任何文件 |
+| D2 | 不创建到项目根之外 ⭐ | cwd 经 symlink 目录抵达项目 | realpath 校验后文件物理落在真实项目根内，不落项目根外 |
+
+### 幂等 / 并发
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| E1 | 同 cwd 连调两次 | POST 两次 | 第一次 ok，第二次 `path-exists`，内容不被二次改写 |
+| E2 | 并发同 cwd ⭐ | `Promise.all` 同时发两个 create | 恰好一个 ok、一个 `path-exists`，文件内容仍是完整模板（不追逐覆盖） |
+
+### list 增补字段
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| F1 | 有项目根、无 AGENTS.md | 建项目根，POST list | `projectRootFound=true`、`canCreateRootAgents=true`（显示新建入口） |
+| F2 | 无项目根 | cwd 在无 `.git` 目录 | 两者都 `false`（隐藏入口） |
+| F3 | 有项目根且 AGENTS.md 已有 | 先建根 AGENTS.md 再 list | `true/false`（已存在 → 无新建入口） |
+| F4 | 根 AGENTS.md 是 symlink ⭐ | symlink 占住 AGENTS.md 再 list | `true/false`（symlink 视为已存在，不显示入口怕误导） |
+
+### 与 save 的衔接
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| G1 | create→save 编辑流 | 用 create 返回的 mtimeMs 当 save 的 expectedMtimeMs 改内容 | save 成功，内容写入 |
+| G2 | 创建后被外部改再 save ⭐ | create 后外部改文件再 save | mtime 乐观锁照常拦截，返回 `mtime-conflict` |
+
+> 本增量共 **22 条**验收用例（新增 `tests/acceptance/test-12-host-create.test.mjs`）。当前 feature 未实现，测试对现有 router **全红（端点返回 404）**，属预期——开发实现后应转绿。未覆盖：write 的 `EROFS` 只读文件系统分支（难稳定构造，`EACCES` 只读目录已覆盖 system-error 类）；`file-not-found` 竞态分支（create 原子 `wx` 天然规避，无需）。
