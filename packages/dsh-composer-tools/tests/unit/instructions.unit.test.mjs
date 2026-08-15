@@ -9,8 +9,8 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync, realpathSync } from 'node:fs'
+import { join, resolve, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import {
   resolveDshHomeLocal,
@@ -18,6 +18,9 @@ import {
   ancestorChain,
   discoverInstructions,
   isDiscoveredPath,
+  canCreateProjectRootAgents,
+  projectRootAgentsTarget,
+  createProjectAgentsTemplate,
   INSTRUCTION_CANDIDATES,
   LOCAL_INSTRUCTION_CANDIDATES,
   PROJECT_ROOT_MARKERS,
@@ -224,6 +227,152 @@ test.describe('instructions.unit', () => {
         const d = discoverInstructions({ cwd: tree.project, dshHome: ghostHome })
         assert.equal(d.dshHome, ghostHome)
         assert.equal(d.files.some((f) => f.level === 'global'), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+  })
+
+  test.describe('discoverInstructions 增补字段 projectRootFound / canCreateRootAgents', () => {
+    test('有项目根（.git 标记）且根无 AGENTS.md → projectRootFound=true, canCreateRootAgents=true', () => {
+      const tree = buildTree()
+      try {
+        const d = discoverInstructions({ cwd: tree.sub, dshHome: tree.home })
+        assert.equal(d.projectRootFound, true)
+        assert.equal(d.canCreateRootAgents, true)
+        assert.equal(d.projectRoot, tree.project)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('有项目根但根 AGENTS.md 已存在 → projectRootFound=true, canCreateRootAgents=false', () => {
+      const tree = buildTree()
+      try {
+        tree.write('AGENTS.md', 'exists')
+        const d = discoverInstructions({ cwd: tree.sub, dshHome: tree.home })
+        assert.equal(d.projectRootFound, true)
+        assert.equal(d.canCreateRootAgents, false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('有项目根但根 AGENTS.md 被 symlink 占用 → projectRootFound=true, canCreateRootAgents=false', () => {
+      const tree = buildTree()
+      try {
+        const outside = join(tree.path('outside'), 'real.md')
+        mkdirSync(tree.path('outside'), { recursive: true })
+        writeFileSync(outside, 'real', 'utf8')
+        symlinkSync(outside, join(tree.project, 'AGENTS.md'), 'file')
+        const d = discoverInstructions({ cwd: tree.sub, dshHome: tree.home })
+        assert.equal(d.projectRootFound, true)
+        assert.equal(d.canCreateRootAgents, false, 'symlink 占用视为已存在，无新建入口')
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('无项目根（祖先链无 .git）→ projectRootFound=false, canCreateRootAgents=false', () => {
+      const tree = buildTree()
+      try {
+        // 在临时根下但不属于 project 树、且其祖先链无 .git 的位置
+        const ghost = tree.path('nowhere', 'deep')
+        const d = discoverInstructions({ cwd: ghost, dshHome: tree.home })
+        assert.equal(d.projectRootFound, false)
+        assert.equal(d.canCreateRootAgents, false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+  })
+
+  test.describe('createProjectAgentsTemplate', () => {
+    test('返回 INTERFACE §1.5 定死的 2 行中文模板全文', () => {
+      const tpl = createProjectAgentsTemplate()
+      assert.equal(
+        tpl,
+        '# 项目指令（AGENTS.md）\n\n<!-- 记录本项目的团队约定、编码规范、任务要求与常用命令。此文件会被 DSH 作为本项目的指令自动加载。 -->\n',
+      )
+    })
+  })
+
+  test.describe('canCreateProjectRootAgents', () => {
+    test('真项目根且无 AGENTS.md → true', () => {
+      const tree = buildTree()
+      try {
+        assert.equal(canCreateProjectRootAgents(tree.project), true)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('真项目根但 AGENTS.md 已存在 → false', () => {
+      const tree = buildTree()
+      try {
+        tree.write('AGENTS.md', 'x')
+        assert.equal(canCreateProjectRootAgents(tree.project), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('真实物理根（realpath 后）有 .git 但词法路径经 symlink 也命中 → true', () => {
+      const tree = buildTree()
+      try {
+        // alias 是指向真项目根的 symlink 目录，realpath 解开后仍是同一物理项目
+        const alias = tree.path('alias')
+        symlinkSync(tree.project, alias, 'dir')
+        assert.equal(canCreateProjectRootAgents(alias), true)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('非项目根（目录存在但无 .git 标记）→ false', () => {
+      const tree = buildTree()
+      try {
+        mkdirSync(tree.path('plain'), { recursive: true })
+        assert.equal(canCreateProjectRootAgents(tree.path('plain')), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('目录不存在（realpath 失败）→ false', () => {
+      const tree = buildTree()
+      try {
+        assert.equal(canCreateProjectRootAgents(tree.path('dead', 'bean')), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+  })
+
+  test.describe('projectRootAgentsTarget', () => {
+    test('词法 projectRoot → 目标 = realpath(projectRoot)/AGENTS.md', () => {
+      const tree = buildTree()
+      try {
+        const t = projectRootAgentsTarget(tree.project)
+        assert.ok(t.endsWith('AGENTS.md'), '目标应以 AGENTS.md 结尾')
+        assert.equal(dirname(t), realpathSync(tree.project), '目标目录 = realpath(projectRoot)')
+        assert.equal(t, join(realpathSync(tree.project), 'AGENTS.md'))
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('projectRoot 经 symlink 目录抵达 → 目标落在真实物理目录内', () => {
+      const tree = buildTree()
+      try {
+        const alias = tree.path('alias')
+        symlinkSync(tree.project, alias, 'dir')
+        const t = projectRootAgentsTarget(alias)
+        // realpath 解开 alias 后应指向真项目根（物理目录）
+        assert.equal(dirname(t), realpathSync(tree.project))
+        // 词法 alias/AGENTS.md 与物理目标经 realpath 指向同一物理文件（alias 解链后落在真物理目录内）
+        writeFileSync(t, 'probe', 'utf8')
+        assert.equal(realpathSync(join(alias, 'AGENTS.md')), realpathSync(t))
       } finally {
         tree.cleanup()
       }
