@@ -14,8 +14,8 @@
  *     5 body read failure → 400 JSON {ok:false, code:'bad-request', message:'request body read failed'}
  *     6 invalid JSON      → 400 JSON {ok:false, code:'bad-request', message:'invalid JSON'}
  *     7 method not in table → 404 JSON {ok:false, error:'not found'}
- *   §1 (endpoints): /ct/instructions.list|read|save + /ct/prompts each with
- *     their own strict ordering (see doList/doRead/doSave/doPrompts).
+ *   §1 (endpoints): /ct/instructions.list|read|save|create + /ct/prompts each with
+ *     their own strict ordering (see doList/doRead/doSave/doCreate/doPrompts).
  *
  * cordis discipline: ctx is held in the closure and ctx.logger.* is ALWAYS
  * fetched freshly at call site — never cached in a local across an async
@@ -29,16 +29,18 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { isTrustedCtRequest } from './trust-fence.js'
 import {
+  createProjectAgentsTemplate,
   discoverInstructions,
   isDiscoveredPath,
   MAX_SOURCE_BYTES,
+  projectRootAgentsTarget,
   type DiscoveryResult,
 } from './instructions.js'
 import { loadPrompts } from './prompts-store.js'
 
 export const MAX_BODY_BYTES = 2097152
 
-const ENDPOINTS = new Set(['/ct/instructions.list', '/ct/instructions.read', '/ct/instructions.save', '/ct/prompts'])
+const ENDPOINTS = new Set(['/ct/instructions.list', '/ct/instructions.read', '/ct/instructions.save', '/ct/instructions.create', '/ct/prompts'])
 
 const INSTRUCTION_BASENAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md'])
 
@@ -107,7 +109,17 @@ function doList(body: unknown, opts: CtHandlerOptions): { status: number; json: 
     return { status: 400, json: { ok: false, code: 'invalid-cwd', message: 'invalid cwd: must be an absolute path string' } }
   }
   const disc = discoverInstructions({ cwd, dshHome: opts.dshHome })
-  return { status: 200, json: { ok: true, dshHome: disc.dshHome, projectRoot: disc.projectRoot, files: disc.files } }
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      dshHome: disc.dshHome,
+      projectRoot: disc.projectRoot,
+      projectRootFound: disc.projectRootFound,
+      canCreateRootAgents: disc.canCreateRootAgents,
+      files: disc.files,
+    },
+  }
 }
 
 /** §1.2 instructions.read */
@@ -221,6 +233,86 @@ function doSave(body: unknown, opts: CtHandlerOptions): { status: number; json: 
   return { status: 200, json: { ok: true, mtimeMs: newSt ? newSt.mtimeMs : 0 } }
 }
 
+/** §1.5 instructions.create — 新建项目级 AGENTS.md（body 仅 cwd，目标由 host 按 projectRoot 严格推导） */
+function doCreate(body: unknown, opts: CtHandlerOptions): { status: number; json: unknown } {
+  const cwd = (body as Record<string, unknown>)?.cwd
+  if (typeof cwd !== 'string' || cwd.trim().length === 0 || !path.isAbsolute(cwd)) {
+    return { status: 400, json: { ok: false, code: 'invalid-cwd', message: 'invalid cwd: must be an absolute path string' } }
+  }
+  // 判定 3：现场发现。无真项目根（cwd→fs 根链无 '.git' 标记）不落盘。
+  const disc = discoverInstructions({ cwd, dshHome: opts.dshHome })
+  if (disc.projectRootFound !== true) {
+    return {
+      status: 200,
+      json: {
+        ok: false,
+        code: 'no-project-root',
+        message: 'no project root found for cwd: no .git marker on the path up to the fs root',
+      },
+    }
+  }
+  // 判定 4：目录链 symlink 防护。realpath 解开 projectRoot 得物理目录 realRoot，
+  // 对 realRoot 复核 '.git' 标记（与发现段对同一物理位置判定一致），不符 → path-out-of-scope。
+  // 实际落盘目标 = realpath(projectRoot)/AGENTS.md（物理安全）；返回给 client 的 path
+  // 为词法 projectRoot/AGENTS.md——这样 create 产物才能被后续 save 的发现成员比对命中
+  // （发现用词法与物理同一物理位置）。
+  let target: string
+  let realRoot: string
+  try {
+    target = projectRootAgentsTarget(disc.projectRoot) // realpath(projectRoot)/AGENTS.md
+    realRoot = path.dirname(target)
+  } catch {
+    return {
+      status: 200,
+      json: {
+        ok: false,
+        code: 'path-out-of-scope',
+        message: 'project root resolves outside the discovered instruction scope',
+      },
+    }
+  }
+  const responsePath = path.join(disc.projectRoot, 'AGENTS.md')
+  let hasMarker = false
+  try {
+    fs.lstatSync(path.join(realRoot, '.git'))
+    hasMarker = true
+  } catch {
+    hasMarker = false
+  }
+  if (!hasMarker) {
+    return {
+      status: 200,
+      json: {
+        ok: false,
+        code: 'path-out-of-scope',
+        message: 'project root resolves outside the discovered instruction scope',
+      },
+    }
+  }
+  // 判定 5：原子创建（O_CREAT|O_EXCL，无 TOCTOU）。EEXIST → path-exists；其余 IO → system-error。
+  const content = createProjectAgentsTemplate()
+  try {
+    fs.writeFileSync(target, content, { flag: 'wx' })
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e && e.code === 'EEXIST') {
+      return {
+        status: 200,
+        json: { ok: false, code: 'path-exists', message: 'project-level AGENTS.md already exists; create refused to overwrite' },
+      }
+    }
+    return { status: 200, json: { ok: false, code: 'system-error', message: String(err) } }
+  }
+  // 判定 6：写后重新 lstat 取新 mtime（可直接作 save 基线）。
+  let st
+  try {
+    st = fs.lstatSync(target)
+  } catch {
+    st = null
+  }
+  return { status: 200, json: { ok: true, path: responsePath, content, mtimeMs: st ? st.mtimeMs : 0 } }
+}
+
 /** §1.4 prompts — empty body or {} both accepted; otherwise must be an object. */
 async function doPrompts(body: unknown, opts: CtHandlerOptions): Promise<{ status: number; json: unknown }> {
   if (body !== undefined && !bodyIsObject(body)) {
@@ -294,6 +386,8 @@ export function createCtHandler(ctx: Context, opts: CtHandlerOptions = {}): CtHa
           result = doList(body, opts)
         } else if (pathname === '/ct/instructions.read') {
           result = doRead(body, opts)
+        } else if (pathname === '/ct/instructions.create') {
+          result = doCreate(body, opts)
         } else {
           result = doSave(body, opts)
         }
