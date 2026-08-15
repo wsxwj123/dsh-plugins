@@ -1,0 +1,8 @@
+# dsh-composer-tools bundle patch
+#
+# Declared via package.json `dsh.bundle.patch`: `dsh plugin --profile web add`
+# reconciles the profile's bundle stack and mounts this plugin row (node half
+# entry = package main `lib/index.js`).
+- insert:
+    - id: composer-tools
+      name: 'dsh-composer-tools'
