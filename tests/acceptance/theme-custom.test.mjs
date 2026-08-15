@@ -187,4 +187,18 @@ describe('主题 内置不可删 (§8.4 D5)', () => {
   })
 })
 
+describe('主题↔皮肤软互斥边界 (§8.2 B3)', () => {
+  afterEach(() => api.restoreDefaultTheme())
+  it('对侧 skin 已激活时，主题包不主动覆盖 track；本包用户明确应用时才写入 theme', async () => {
+    if (!api.getAppearanceTrack) return
+    // 模拟皮肤包已写 track=skin：主题包只是读取，不应在加载/导入时覆盖。
+    api.setAppearanceTrack('skin')
+    await api.importCustomTheme(validThemeJSON)
+    assert.equal(api.getAppearanceTrack(), 'skin', '导入主题不应抢占 skin track')
+    // 用户明确应用本包主题时才允许切换为 theme。
+    api.applyCustomTheme('my-theme')
+    assert.equal(api.getAppearanceTrack(), 'theme', '明确应用主题后才写 theme')
+  })
+})
+
 
