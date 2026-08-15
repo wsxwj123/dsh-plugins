@@ -18,7 +18,8 @@
 
 ## 阶段进度
 
-- 卡点⓪ 立项确认：工作文件夹=dsh-plugins monorepo 新包 packages/dsh-composer-tools；需求定稿（输入历史门槛按用户标准：首/末行任意列；历史持久化；指令面板放输入框；提示词库复用 claude gui 780 条）@未提交
+- 卡点⓪ 立项确认：工作文件夹=dsh-plugins monorepo 新包 packages/dsh-composer-tools；需求定稿（输入历史门槛按用户标准：首/末行任意列；历史持久化；指令面板放输入框；提示词库复用 claude gui 780 条）@已提交（chore: 立项）
+- 02 方案：调研子代理已派出（input 注入可行性 / 指令数据源 / 提示词库打包），等结果后出方案
 
 ## 关键决策
 
