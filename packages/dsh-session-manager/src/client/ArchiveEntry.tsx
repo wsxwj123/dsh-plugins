@@ -9,11 +9,34 @@ import { createElement, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import type { Context } from './context-types.ts'
 import { getArchiveOpen, setArchiveOpen, subscribeArchive } from './archiveState.ts'
-import { ARCHIVE_SVG } from './icons.ts'
 import css from './rail.module.css'
 
 const getOpen = (): boolean => getArchiveOpen()
 const sub = (l: () => void): (() => void) => subscribeArchive(l)
+
+/**
+ * Archive icon as a direct <svg> child, matching how the official Settings
+ * trigger renders its icon (no extra span wrapper). A wrapper span changes the
+ * inline layout and makes the icon sit visually higher than the Settings icon.
+ */
+const archiveIcon = createElement(
+  'svg',
+  {
+    width: 16,
+    height: 16,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+    focusable: 'false',
+  },
+  createElement('rect', { width: 20, height: 5, x: 2, y: 3, rx: 1 }),
+  createElement('path', { d: 'M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8' }),
+  createElement('path', { d: 'M10 12h4' }),
+)
 
 /**
  * Toggle the archive overlay. The icon is a static, trusted inline SVG (no user
@@ -26,13 +49,13 @@ export function ArchiveEntry({ ctx, wide }: { ctx: Context; wide: boolean }): Re
     'button',
     {
       type: 'button',
-      className: css.entryButton,
+      className: wide ? css.entryButton : css.entryButtonRail,
       'aria-pressed': open,
       'aria-label': '归档',
       onClick: () => setArchiveOpen(!open),
       title: '归档',
     },
-    createElement('span', { 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ARCHIVE_SVG } }),
+    archiveIcon,
     wide ? createElement('span', null, '归档') : null,
   )
 }

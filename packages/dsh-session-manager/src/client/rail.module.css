@@ -158,24 +158,61 @@
   display: block;
 }
 
-/* Archive-entry button rendered in the sidebar footer actions. */
+/* Archive-entry button rendered in the sidebar footer actions.
+ * Wide mode fills the footer action row like the Settings trigger below it, so
+ * the entire visible row area is clickable — not just the icon/label box. */
 .entryButton {
-  display: inline-flex;
+  box-sizing: border-box;
+  flex: none;
+  min-width: 0;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
   border: none;
   background: none;
-  color: var(--dsw-alias-label-secondary, rgba(230, 230, 236, 0.82));
+  color: var(--dsw-alias-label-primary, #e8e8ec);
   font-family: var(--dsw-font-body, system-ui, sans-serif);
   font-size: 14px;
-  line-height: 20px;
-  border-radius: 8px;
-  padding: 6px 10px;
+  line-height: 22px;
+  width: calc(100% + 8px);
+  height: 34px;
+  margin: 4px -4px;
+  padding: 6px 2px 6px 10px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .entryButton:hover {
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+/* Keep the archive icon centered as a flex item (no extra span wrapper). */
+.entryButton svg,
+.entryButtonRail svg {
+  display: block;
+}
+
+/* Collapsed 56px rail: match the Settings rail icon button geometry. */
+.entryButtonRail {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 8px 0 10px;
+  padding: 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary, #e8e8ec);
+  border-radius: 50%;
+}
+
+.entryButtonRail:hover {
   color: var(--dsw-alias-label-primary, #e8e8ec);
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
 }
