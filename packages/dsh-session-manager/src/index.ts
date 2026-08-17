@@ -24,6 +24,7 @@
  * web profile where they all exist.
  */
 
+import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -83,32 +84,101 @@ export function resolveRoots(config: SessionManagerConfig) {
 }
 
 /**
- * Absolute locations that must never serve as the trash root, even if a
- * misconfigured `SM_TRASH_ROOT` / config points at them (SECURITY-REPORT S1).
- * The startup check is the PRIMARY defense: empty() recursively removes the
- * root's contents, so a root aimed at (or containing) user/system data would
- * turn "empty trash" into a destructive delete of unrelated files.
+ * Absolute locations that must never serve as the trash root (nor CONTAIN it),
+ * even if a misconfigured `SM_TRASH_ROOT` / config points at them
+ * (SECURITY-REPORT S1 / H4). The startup check is the PRIMARY defense: empty()
+ * recursively removes the root's contents, so a root aimed at (or inside)
+ * user/system data would turn "empty trash" into a destructive delete of
+ * unrelated files. Matched as SUBTREES, not by string equality — `/etc/x` and
+ * `C:\Program Files\x` are exactly as dangerous as their parents.
  */
-const SYSTEM_TRASH_ROOT_DENYLIST = [
-  '/tmp', '/var', '/var/tmp', '/usr', '/etc', '/bin', '/sbin', '/lib', '/opt',
+const POSIX_SYSTEM_DIRS = [
+  '/tmp', '/var', '/usr', '/etc', '/bin', '/sbin', '/lib', '/opt',
   '/System', '/Library', '/Applications', '/private',
-  'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\ProgramData', 'C:\\Users',
 ]
 
 /**
+ * Windows system trees (compared case-insensitively via path.win32). `C:\Users`
+ * is the home-ANCESTOR guard: the home-subtree exemption in
+ * trashRootUnsafeReason runs first, so the only normal Windows location
+ * (`C:\Users\<me>\.dsh\session-manager-trash`) stays usable while `C:\Users`
+ * itself and other users' trees stay refused.
+ */
+const WINDOWS_SYSTEM_DIRS = [
+  'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\ProgramData', 'C:\\Users',
+]
+
+/** A Windows-style absolute path (drive letter or UNC), recognizable on any host. */
+const WINDOWS_ABSOLUTE = /^([A-Za-z]:[\\/]|\\\\)/
+
+/**
+ * Resolve a path through symlinks WITHOUT requiring it to exist yet: realpath
+ * the deepest existing ancestor and re-attach the remaining segments. A trash
+ * root that does not exist on first run is created by the TrashStore right
+ * after these checks, so resolving only fully-existing paths would leave the
+ * common case (fresh install, symlinked parent) unprotected (H4).
+ */
+function realpathish(target: string): string {
+  const resolved = path.resolve(target)
+  const tail: string[] = []
+  let cur = resolved
+  for (;;) {
+    try {
+      const real = fs.realpathSync(cur)
+      return tail.length === 0 ? real : path.join(real, ...tail.slice().reverse())
+    } catch {
+      /* not created yet — try the parent */
+    }
+    const parent = path.dirname(cur)
+    if (parent === cur) return resolved // nothing along the way exists
+    tail.push(path.basename(cur))
+    cur = parent
+  }
+}
+
+/** The system temp dir, plus its realpath (macOS: /var/folders → /private/var/folders). */
+function tempRoots(): string[] {
+  const tmp = path.resolve(os.tmpdir())
+  const real = realpathish(tmp)
+  return real === tmp ? [tmp] : [tmp, real]
+}
+
+/**
  * Why `trashRoot` is unsafe as the recycle-bin root, or null when it is safe.
- * Rejects: the filesystem root, the home directory, any ANCESTOR of home
- * (e.g. /Users, /home, C:\Users — empty() would reach real user data), the
- * system temp dir, and the known system directories above.
+ * Rejects: the filesystem root (incl. `C:\` and a UNC share root), the home
+ * directory, any ANCESTOR of home (e.g. /Users, /home, C:\Users — empty() would
+ * reach real user data), the system temp dir itself, and anything INSIDE a known
+ * system directory.
+ *
+ * Exempt (checked before the denylist): the user's own home subtree and the
+ * system-temp subtree. Without those two, `~/.dsh/session-manager-trash` under a
+ * system-rooted home and every temp-dir fixture / CI run would be refused
+ * (os.tmpdir() lives under /var on macOS, /tmp on Linux).
+ *
+ * Windows semantics apply whenever the input LOOKS like a Windows path (and
+ * always on win32): path.posix would treat `C:\Windows\x` as one relative
+ * segment and compare case-sensitively, which made every Windows entry in the
+ * denylist dead code (W1).
  */
 export function trashRootUnsafeReason(trashRoot: string, home: string = os.homedir()): string | null {
-  const resolved = path.resolve(trashRoot)
-  if (resolved === path.parse(resolved).root) return 'the filesystem root'
-  if (resolved === path.resolve(home)) return 'the home directory'
-  if (isInsideOrEqual(resolved, home)) return 'an ancestor of the home directory'
-  if (resolved === path.resolve(os.tmpdir())) return 'the system temp directory'
-  for (const sys of SYSTEM_TRASH_ROOT_DENYLIST) {
-    if (path.resolve(sys) === resolved) return `the system directory ${sys}`
+  const win = process.platform === 'win32' || WINDOWS_ABSOLUTE.test(trashRoot.trim())
+  const p = win ? path.win32 : path.posix
+  const inside = (parent: string, child: string): boolean => isInsideOrEqual(parent, child, p)
+  const same = (a: string, b: string): boolean => inside(a, b) && inside(b, a)
+
+  const resolved = p.resolve(trashRoot)
+  if (same(resolved, p.parse(resolved).root)) return 'the filesystem root'
+  if (same(resolved, home)) return 'the home directory'
+  if (inside(resolved, home)) return 'an ancestor of the home directory'
+  const temps = tempRoots()
+  if (temps.some((tmp) => same(resolved, tmp))) return 'the system temp directory'
+
+  // Exemptions (see the doc comment): own home subtree / system-temp subtree.
+  if (inside(home, resolved)) return null
+  if (temps.some((tmp) => inside(tmp, resolved))) return null
+
+  for (const sys of win ? WINDOWS_SYSTEM_DIRS : POSIX_SYSTEM_DIRS) {
+    if (inside(sys, resolved)) return `the system directory ${sys}`
   }
   return null
 }
@@ -155,7 +225,14 @@ function sendJson(res: ServerResponse, status: number, json: unknown): void {
 }
 
 export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void {
-  const { sessionsRoot, trashRoot } = resolveRoots(config)
+  const configured = resolveRoots(config)
+  // H4: resolve BOTH roots through symlinks before any boundary judgment. A
+  // trashRoot that is a symlink into the sessions tree passed every check on its
+  // literal path, and the host session scan would then re-discover (resurrect)
+  // moved sessions. Everything below — and the running handler — uses the
+  // resolved paths, so the checks and the file operations agree.
+  const sessionsRoot = realpathish(configured.sessionsRoot)
+  const trashRoot = realpathish(configured.trashRoot)
   // Hard safety invariant (INTERFACE §4 / PLAN risk 2): the trash half must not
   // sit inside the sessions root, or the host session scan would re-discover
   // moved sessions and "resurrect" them. We enforce it at startup. (S-1: reuse

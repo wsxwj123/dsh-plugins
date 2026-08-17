@@ -130,11 +130,23 @@ export function lookupProjectDir(root: string, cwd: unknown): ProjectLookup {
  * True when `child` resolves strictly inside `parent` (or equals `parent`).
  * Backs the path-out-of-bounds gate (target must stay under the configured
  * sessions root) and confirms the trash root lives outside the sessions scan.
+ *
+ * @param impl - path flavor to judge with; defaults to the running platform.
+ *   Pass `path.win32` to apply Windows semantics (backslash separator, `C:`/UNC
+ *   roots, CASE-INSENSITIVE comparison — NTFS is case-insensitive, so
+ *   `c:\windows` and `C:\Windows` are the same directory) from any host, which
+ *   is what makes the Windows entries in the trash-root denylist real
+ *   protection instead of dead strings (W1).
  */
-export function isInsideOrEqual(parent: string, child: string): boolean {
-  const p = path.resolve(parent)
-  const c = path.resolve(child)
-  return c === p || c.startsWith(p + path.sep)
+export function isInsideOrEqual(parent: string, child: string, impl: typeof path = path): boolean {
+  const caseInsensitive = impl.sep === '\\'
+  const norm = (v: string): string => {
+    const r = impl.resolve(v)
+    return caseInsensitive ? r.toLowerCase() : r
+  }
+  const p = norm(parent)
+  const c = norm(child)
+  return c === p || c.startsWith(p + impl.sep)
 }
 
 /**
