@@ -52,6 +52,7 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
   "projectRoot": "/abs/project/root",
   "projectRootFound": true,
   "canCreateRootAgents": true,
+  "canCreateGlobalAgents": true,
   "files": [
     {
       "path": "/Users/x/.dsh/AGENTS.md",
@@ -81,12 +82,17 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
 - `mtimeMs` 取自 `fs.lstat` 的 `mtimeMs` 原值（可为浮点）。
 - `projectRootFound`（additive，供诊断/显示的"是否有真项目根"信号）：`true` ⇔ cwd 到文件系统
   根链上存在 `.git` 标记；`false` ⇔ `projectRoot` 只是 `resolve(cwd)` 的回退（无项目根）。
-- `canCreateRootAgents`（additive，**client 显示新建入口的唯一判定信号**）：host 在发现阶段
+- `canCreateRootAgents`（additive，**client 显示项目级新建入口的唯一判定信号**）：host 在发现阶段
   用 realpath 计算（见 §2.4）——`true` ⇔ `projectRootFound=true` 且 `realpath(projectRoot)/AGENTS.md`
   当前**不存在**（lstat 探测，符号链接/目录占用一律视为"已存在"）。**client 只读此字段**决定
   新建入口显隐，不在 client 侧重复推导 projectRoot/realpath/file-exists 逻辑，也避免
   symlink 造成的"列表无此文件但磁盘有"的显示误导。
-- 以上两字段均 additive：client 忽略未知字段不报错；本插件旧 client 无此字段时按"无新建能力"处理。
+- `canCreateGlobalAgents`（additive，**client 显示全局新建入口的唯一判定信号**，增量 2 新增）：
+  同样由 host 用 realpath 计算（见 §2.4）——`true` ⇔ `realpath(dshHome)/AGENTS.md` 当前
+  **不存在**（lstat 探测，符号链接/目录占用一律视为"已存在"）。全局入口与项目根有无 `.git`
+  标记无关（dshHome 是 host 解析的固定目录）；`dshHome` 本身不可解析（realpath 失败）→ `false`
+  并按不可新建处理。
+- 以上三字段均 additive：client 忽略未知字段不报错；本插件旧 client 无此字段时按"无新建能力"处理。
 
 ### 1.2 POST /ct/instructions.read — 读单个指令文件
 
@@ -160,71 +166,153 @@ client 半经同源 `fetch` POST JSON 调用；host 半挂 loopback trust fence�
 - `items` 字段与源数据一致；`prompt`/`description` 中的 `\r\n` 由 host 统一归一为 `\n` 后下发。
 - host 进程内缓存一次，后续请求不重读磁盘（重启生效更新）。
 
-### 1.5 POST /ct/instructions.create — 新建项目级 AGENTS.md
+### 1.5 POST /ct/instructions.create — 新建指令文件（项目级 / 全局）
 
 **请求**
 ```json
-{ "cwd": "/abs/session/cwd" }
+{ "cwd": "/abs/session/cwd", "scope": "project" }
 ```
-- body **仅含 `cwd`，不接受、不关心客户端传来的任何目标路径**。目标路径由 host 按「发现的
-  projectRoot（§2.4，复用 discoverInstructions）+ `AGENTS.md`」严格推导——这是本文对
-  read/save「路径白名单」风格的加强：create 本质上不存在"集合外的合法目标"，比收 path
-  再比对更稳。多余字段忽略。
+- `scope` 可选，`'project' | 'global'`，**缺省 `'project'`**（与 §7 既有行为完全一致，
+  向后兼容）。`'project'` → 目标 `realpath(projectRoot)/AGENTS.md`；`'global'` →
+  目标 `realpath(dshHome)/AGENTS.md`。
+- body **不接收、不关心客户端传来的任何目标路径**。目标路径由 host 按 scope + 发现结果
+  （§2.4）严格推导——延续本文对 read/save「路径白名单」风格的加强：create 本质上
+  不存在"集合外的合法目标"，比收 path 再比对更稳。多余字段忽略。
 
 **判定顺序**（顺序是契约）
 1. body 对象（否则公共契约 400 `body must be an object`）。
 2. `cwd` 校验 → 400 `{ok:false, code:'invalid-cwd', message:'invalid cwd: must be an absolute path string'}`（同 1.1）。
-3. 现场发现（复用 `discoverInstructions`，§2.4）：若 `projectRootFound !== true`（cwd 到
-   文件系统根链上**均无 `.git` 标记**，`findProjectRootSync` 仅回退到 `resolve(cwd)` 本身）
-   → **200** `{ok:false, code:'no-project-root', message:'no project root found for cwd: no .git marker on the path up to the fs root'}`。**在无真项目根的目录不创建文件**（避免在 /tmp 等非项目目录落盘）。
-4. **目录链 symlink 防护（写前 realpath，杜绝"字符在范围内、物理越界"）**：对 `projectRoot`
-   做 `fs.realpathSync`，得到物理目录 `realRoot`；再对 `realRoot` 复核存在 `.git` 标记
-   （与发现对同一物理位置判定一致）。`realRoot` 与发现段不一致或以 `.git` 复核失败 →
-   **200** `{ok:false, code:'path-out-of-scope', message:'project root resolves outside the discovered instruction scope'}`。
-   目标 = `path.join(realRoot, 'AGENTS.md')`——创建落在 projectRoot 的**真实物理目录**内，
-   不信任字符路径上可能存在的任意 symlink 组件。
-5. **原子创建**：`fs.writeFileSync(target, content, { flag: 'wx' })`（O_CREAT|O_EXCL，
+3. `scope` 若提供必须 ∈ `{'project','global'}` → 否则 **400** `{ok:false, code:'invalid-scope', message:'invalid scope: must be "project" or "global"'}`。缺省视为 `'project'`。
+4. 现场发现（复用 `discoverInstructions`，§2.4）：
+   - scope=`project`：若 `projectRootFound !== true`（cwd 到文件系统根链上**均无 `.git` 标记**，
+     `findProjectRootSync` 仅回退到 `resolve(cwd)` 本身）→ **200** `{ok:false, code:'no-project-root', message:'no project root found for cwd: no .git marker on the path up to the fs root'}`。**在无真项目根的目录不创建文件**。
+   - scope=`global`：无类似前置（dshHome 为 host 解析的固定目录，不要求任何 `.git` 标记）。
+5. **目录链 symlink 防护（写前 realpath，杜绝"字符在范围内、物理越界"）**：
+   - scope=`project`：对 `projectRoot` 做 `fs.realpathSync`，得到物理目录 `realRoot`。**只以
+     `realRoot` 复核存在 `.git` 标记为准**（与发现对同一物理位置判定一致）——复核失败 →
+     **200** `{ok:false, code:'path-out-of-scope', message:'project root resolves outside the discovered instruction scope'}`；
+     realpathSync 本身抛错（目录被删/不可读）→ **200** `{ok:false, code:'system-error', message: String(err)}`。
+     注意：**不要求 `realRoot` 与字符级 `projectRoot` 字符串相等**——经 symlink 访问的合法
+     项目（字符路径与 realpath 不同但指向同一物理项目）是正常用法，不因此拒绝。目标 =
+     `path.join(realRoot, 'AGENTS.md')`。
+   - scope=`global`：对 `dshHome` 做 `fs.realpathSync` 得到 `realHome`（解开 `~`/dshHome
+     目录链上可能存在的任意 symlink 组件）；realpath 失败（dshHome 目录不存在/不可读）→
+     **200** `{ok:false, code:'system-error', message: String(err)}`。目标 = `path.join(realHome, 'AGENTS.md')`。
+     创建落在 dshHome 的**真实物理目录**内，不信任字符路径上的 symlink 组件；目标即
+     DSH 实际加载的全局指令位置。
+6. **原子创建**：`fs.writeFileSync(target, content, { flag: 'wx' })`（O_CREAT|O_EXCL，
    **"不存在才创建"，原子保证无 TOCTOU**）。`EEXIST`（目标已被常规文件/目录/符号链接占用，
-   含并发竞态下对方先建成的场景）→ **200** `{ok:false, code:'path-exists',
-   message:'project-level AGENTS.md already exists; create refused to overwrite'}`；
+   含并发竞态下对方先建成的场景）→ **200** `{ok:false, code:'path-exists', message:<按 scope>}`，
+   其中 scope=`project` 时 `message:'project-level AGENTS.md already exists; create refused to overwrite'`，
+   scope=`global` 时 `message:'global AGENTS.md already exists; create refused to overwrite'`；
    `EPERM`/`EROFS` 等其他 IO 错误 → 200 `{ok:false, code:'system-error', message: String(err)}`。
    因 `wx` 原子性，本端点**绝不覆盖、绝不跟随符号链接写入**，且**不依赖"先探测后写入"的
    非原子窗口**。
-6. 写后重新 lstat 取新 mtime。
+7. 写后重新 lstat 取新 mtime。
 
-**并发语义（调用方契约，与 #1 原子性配套）**：两个 create 并发到同一 `cwd` → 恰好一个返回
-`ok:true`（先建成），另一个返回 `path-exists`（`wx` 触发 EEXIST）；不会出现两次成功、不会
-出现覆盖。client 收到 `path-exists` 时重载 list 即可看到现成文件，无需重试创建。
+**并发语义（调用方契约，与原子性配套）**：两个 create 并发到同一 scope 同一目标（同一 cwd
+的项目级目标，或任意 cwd 的全局目标——全局目标不依赖 cwd，任意会话并发也成立）→ 恰好一个
+返回 `ok:true`（先建成），另一个返回 `path-exists`（`wx` 触发 EEXIST）；不会出现两次成功、
+不会出现覆盖。client 收到 `path-exists` 时重载 list 即可看到现成文件，无需重试创建。
 
 **成功响应 200**
 ```json
 { "ok": true, "path": "/abs/project/root/AGENTS.md", "content": "# 项目指令（AGENTS.md）\n\n<!-- 记录本项目的团队约定、编码规范、任务要求与常用命令。此文件会被 DSH 作为本项目的指令自动加载。 -->\n", "mtimeMs": 1750000000000.0 }
 ```
+- `path` 为 realpath 后的实际落盘路径（scope=`global` 时为 `realpath(dshHome)/AGENTS.md`）。
 - `content` 为实际写入的模板全文（utf8 原样；\n 归一由 host 落盘前完成）。
 - `mtimeMs` 为写入后重新 stat 的值，**可直接作为后续 save 的 `expectedMtimeMs` 基线**。
 
-**模板**（2 行：一级标题 + 中文注释；utf8 远小于 `MAX_SOURCE_BYTES`，无截断风险）
+**模板（按 scope 区分；均为 2 行：一级标题 + 中文注释；utf8 远小于 `MAX_SOURCE_BYTES`，无截断风险）**
+- scope=`project`：
 ```markdown
 # 项目指令（AGENTS.md）
 
 <!-- 记录本项目的团队约定、编码规范、任务要求与常用命令。此文件会被 DSH 作为本项目的指令自动加载。 -->
 ```
+- scope=`global`：
+```markdown
+# 全局指令（AGENTS.md）
 
-**与 save 的关系**：新建后 `<projectRoot>/AGENTS.md` 立即成为发现集合成员（`level:'project'`），
+<!-- 记录所有会话通用的全局约定、编码规范与常用命令。此文件会被 DSH 作为全局指令自动加载。 -->
+```
+- 响应 `content` 恒为**本 scope 实际写入的那个模板**；client 直接展示，无需拼接。
+
+**与 save 的关系**：新建后目标文件立即成为发现集合成员（`level:'project'` 或 `'global'`），
 随后的编辑保存**直接复用 `/ct/instructions.save`，无需任何新契约**——create 返回的
 `mtimeMs` 直接作 save 基线；若创建后到保存前文件被外部改动，save 的 mtime 乐观锁照常拦截。
 
-**client UI 行为契约**（详见 PLAN §7.2）：
-- **显示**：新建按钮在指令 tab 文件列表区顶部（「重新加载」旁）出现，**仅当 list 响应
-  `ok:true && canCreateRootAgents === true`**（该字段已由 host 用 realpath + 存在性计算好，
-  client 不重复推导，见 §1.1）。
-- **隐藏**：`canCreateRootAgents !== true`（含无项目根、根 AGENTS.md 已存在、根为 symlink
-  ——symlink 被建视为已存在故为 false）——隐藏，不禁用。
-- **点击**：调 `ctInstructionsCreate(cwd)`；期间按钮禁用并显示「创建中…」。
-- **成功**：重载 `instructions.list`，随后把新 `path` 设为展开（Editor 复用现有
-  read-on-mount 读入，内容即模板，用户直接编辑 → save）。
+**client UI 行为契约**（详见 PLAN §7.2 / §8.2）：
+- **项目级入口显示**：仅当 list 响应 `ok:true && canCreateRootAgents === true`
+  （该字段已由 host 用 realpath + 存在性计算好，见 §1.1）。点击调 `ctInstructionsCreate(cwd, 'project')`。
+- **全局入口显示**：仅当 `ok:true && canCreateGlobalAgents === true`。点击调 `ctInstructionsCreate(cwd, 'global')`。
+- **两者互不干扰**：全局入口只看 `canCreateGlobalAgents`（与项目根有无 `.git` 无关）；
+  项目级入口只看 `canCreateRootAgents`。同面板可同时显示两个入口（全局缺 + 项目根缺）。
+- **隐藏**：对应 `canCreate*Agents !== true` 即隐藏，不禁用。
+- **点击**：对应按钮置禁用并显示「创建中…」。**全局新建（scope='global'）在发起请求前必须
+  二次确认**（`window.confirm`，文案明示"将创建全局指令文件，该指令对**所有会话**生效"）；
+  项目级新建不需要确认（§8.2 决策），与删除的确认强度区分。
+- **成功**：重载 `instructions.list`，随后进入「新文件编辑态」（§8.2 状态机），自动展开
+  该文件编辑器，内容即模板；提供「保存」与「返回列表」两个出口。
 - **失败**：面板内提示 `{code}: {message}`；`path-exists` 时重载 list（文件届时已在列表，
   进入正常展开/编辑流），不重复报错。
+
+### 1.6 POST /ct/instructions.delete — 删除指令文件
+
+**请求**
+```json
+{ "cwd": "/abs/cwd", "path": "/abs/path/AGENTS.md" }
+```
+- 与 read/save 相同的"收 path + 白名单校验"风格（对比 create 的"不收 path"）：delete 必须
+  删除**发现集合内**的具体文件，所以需要 client 指明 path，再由 host 用发现集合白名单拦。
+
+**判定顺序**（顺序是契约）
+1. body 对象（否则公共契约 400 `body must be an object`）。
+2. `cwd` 校验 → 400 `invalid-cwd`（同 1.1）。
+3. `path` 校验：必须是 string、绝对路径、basename ∈ {`AGENTS.md`, `CLAUDE.md`,
+   `AGENTS.local.md`, `CLAUDE.local.md`} → 否则 **400** `{ok:false, code:'invalid-path', message:'invalid path: must be an absolute path to AGENTS.md / CLAUDE.md / AGENTS.local.md / CLAUDE.local.md'}`（与 1.2 相同）。
+4. **范围校验**：以 `cwd` 现场重跑发现（§2.4），`path.resolve(path)` 不在发现结果绝对路径
+   集合内 → **200** `{ok:false, code:'path-out-of-scope', message:'path is not among the instruction files discovered for cwd'}`。发现已拒收 symlink，集合成员必非符号链接——**delete 无法通过发现集合之外或符号链接的 path**（与 read/save 同闸门）。
+5. **父目录链 realpath 包含性校验（防目录链 symlink 物理越界）**：对 `path.dirname(path)`
+   做 `fs.realpathSync` 得 `realParent`。目标文件的合法物理前缀按其在发现中的 level 取：
+   - level=`global`（即 `~/.dsh/AGENTS.md`）→ 前缀 = `realpath(dshHome)`；
+   - 其他（project/local）→ 前缀 = `realpath(projectRoot)`。
+   `realParent` 不在对应前缀**包含关系**内（`path.resolve(realParent)` 不是前缀自身或其
+   子目录）→ **200** `{ok:false, code:'path-out-of-scope', message:'path is not among the instruction files discovered for cwd'}`；
+   realpathSync 抛错（目录被删/不可读）→ **200** `{ok:false, code:'system-error', message: String(err)}`。
+   理由：字符级成员比对只拦最终组件 symlink，拦不住"父目录链某层是 symlink 指向项目根外"
+   的路径——如项目内 `sub/` 是指向 `/etc` 的 symlink 时，`sub/AGENTS.md` 的字符路径在
+   projectRoot 前缀内、成员比对通过，但 unlink 会物理删除 `/etc/AGENTS.md`。realpath 父
+   目录后物理位置暴露，前缀包含性校验拒绝。
+6. **写前复核（防 TOCTOU）**：`fs.lstatSync(path)` 失败（列出后被删/不存在）→ **200**
+   `{ok:false, code:'file-not-found', message:'instruction file not found'}`；
+   `lstat.isSymbolicLink()` 为真（发现后到删除前被换成符号链接）→ **200** `{ok:false, code:'path-out-of-scope', message:'path is not among the instruction files discovered for cwd'}`（对齐 save 的竞态加固，**绝不跟随符号链接删除**）。
+7. 删除（`fs.unlinkSync`）。IO 失败 → 200 `{ok:false, code:'system-error', message: String(err)}`。
+
+**成功响应 200**
+```json
+{ "ok": true }
+```
+- 删除后目标不再在发现集合；client 应重载 list 刷新显示。
+
+**契约补充**
+- **可删范围**：发现集合内任意 level 均可删——全局（`~/.dsh/AGENTS.md`）、项目级、local
+  变体。全局文件的删除**移除 DSH 实际加载的全局指令**，会改变模型行为，UI 必须确认
+  （§8.2 / client 行为契约）。
+- **幂等/并发（契约层明确定义）**：两个 delete 并发到**同一 `path`** → 恰好一个执行 `unlink`
+  成功返回 `ok:true`（先到者），另一个返回 `file-not-found`（文件已被前一个删除；
+  unlink 对已不存在路径抛 ENOENT，映射为 `file-not-found`）——**一 ok 一 file-not-found，
+  永不双 ok、永不双删**。两个 delete 并发到不同 path → 各自独立判定，互不影响。
+  **删除永不重新创建文件**，与 create 的 `wx` 原子语义互补（create 并发一 ok 一
+  path-exists，delete 并发一 ok 一 file-not-found，对称）。
+- **与 create 的关系**：create 成功后文件可删（同一发现集合成员），无额外契约。
+
+**client UI 行为契约**（详见 PLAN §8.2）：
+- 每行文件（全局/项目级）提供「删除」按钮；点击 → `window.confirm` 确认（文案明示"删除
+  不可恢复"；全局文件追加"将移除 DSH 加载的全局指令、影响模型行为"）→ 确认后调
+  `ctInstructionsDelete(cwd, path)`。
+- 成功：重载 list；文件从列表消失。
+- 失败：面板内提示 `{code}: {message}`，文件行保持原状（不静默消失）。
 
 ---
 
@@ -343,6 +431,7 @@ export interface DiscoveryResult {
   projectRootFound: boolean   // true ⇔ cwd 到文件系统根链上存在 '.git' 标记（真项目根）；
                               // false ⇔ findProjectRootSync 回退到 resolve(cwd) 本身（无项目根）。
   canCreateRootAgents: boolean // 见下方 helper；host 计算，作为 §1.5 / §1.1 的统一信号。
+  canCreateGlobalAgents: boolean // 见下方 helper；host 计算，§1.1 增量 2 新增。
   files: DiscoveredInstruction[]   // 排序契约见 1.1
 }
 
@@ -384,6 +473,17 @@ export function projectRootAgentsTarget(projectRoot: string): string
 // 返回 create 的落盘目标：`path.join(fs.realpathSync(projectRoot), 'AGENTS.md')`。
 // realpathSync 解开目录链上可能存在的任意 symlink 组件，保证目标在项目的真实物理目录内
 // （§1.5 判定 4）。realpath 失败（目录被删等）抛错由调用方映射为 system-error。
+
+export function canCreateGlobalAgents(dshHome: string): boolean
+// 计算 §1.1 的 canCreateGlobalAgents（增量 2，host 同步）：`true` ⇔
+// `realpath(dshHome)/AGENTS.md` 当前不存在（lstat 探测，符号链接/目录占用一律视为
+// "已存在"）。`realpath(dshHome)` 失败（dshHome 不存在/不可读）→ false。与项目根有无
+// `.git` 标记无关。这是"全局新建入口是否显示"的权威判定（§8.2）。
+
+export function dshHomeAgentsTarget(dshHome: string): string
+// 返回 scope='global' 的 create 落盘目标：`path.join(fs.realpathSync(dshHome), 'AGENTS.md')`。
+// realpathSync 解开 ~/dshHome 目录链上可能存在的任意 symlink 组件（§1.5 判定 5 的 global 分支）。
+// realpath 失败由调用方映射为 system-error。
 ```
 
 ### 2.5 提示词追加拼接（append.ts）
@@ -398,6 +498,52 @@ export function appendPromptToDraft(current: string, prompt: string): string
 4. 其余 → `current + '\n\n' + prompt`（先补一个空行再追加）。
 
 永不覆盖、永不自动发送；`prompt` 的 `\r\n` 已由 host 归一（1.4）。
+
+### 2.6 指令面板视图状态机（client，instruction-view.ts）
+
+增量 2 把 InstructionsTab 的 `phase + expanded` 组合收敛为显式视图状态机（PLAN §8.2）。
+状态机抽为**纯 reducer**（无 DOM/React 依赖，node 单测可直接驱动）。视图/事件的契约：
+
+```ts
+export type InstructionView =
+  | { kind: 'list' }
+  | { kind: 'create'; scope: 'project' | 'global'; pending?: boolean; path?: string }
+  | { kind: 'edit'; path: string; dirty?: boolean }
+
+export type InstructionViewEvent =
+  | { type: 'open-list' }                                  // 返回列表 / 初始
+  | { type: 'start-create'; scope: 'project' | 'global' }  // 点新建入口
+  | { type: 'create-pending' }                             // 已发 create 请求，等待响应
+  | { type: 'create-succeeded'; path: string }             // create ok → 停留编辑态载入编辑器
+  | { type: 'create-failed' }                              // create 非 ok → 回 list（面板内提示）
+  | { type: 'open-edit'; path: string }                    // 点开已有文件
+  | { type: 'mark-dirty' }                                 // 编辑器草稿 ≠ 已存内容
+  | { type: 'saved'; path: string }                        // save ok → 回 list
+  | { type: 'cancel-edit' }                                // 返回列表（草稿丢弃/确认）
+
+export function instructionViewReducer(
+  view: InstructionView,
+  event: InstructionViewEvent,
+): InstructionView
+```
+
+判定规则（自上而下命中，纯函数、不改入参）：
+1. `open-list` → `{ kind:'list' }`（任何状态都可回列表）。
+2. `start-create` → `{ kind:'create', scope, pending:true }`（若已在 `{kind:'create',scope}`
+   则原样返回，防重复点击）。
+3. `create-pending` → 保持当前 `create` 态、`pending:true`。
+4. `create-succeeded` 且当前 ∈ `{kind:'create', scope}` → `{ kind:'create', scope, pending:false, path }`
+   （文件已落盘，载入编辑器；未确认保存前 `dirty` 不置位）。
+5. `create-failed` → `{ kind:'list' }`（错误已在调用层提示）。
+6. `open-edit` → `{ kind:'edit', path, dirty:false }`。
+7. `mark-dirty` 且当前为 `edit`/`create`（含 path）→ 置 `dirty:true`。
+8. `saved` 且 path 匹配当前编辑目标 → `{ kind:'list' }`（保存成功回列表初始态）。
+9. `cancel-edit`：当前为 `{kind:'edit', dirty:true}` 或 `{kind:'create', path, pending:false}`
+   且草稿未保存 → 由调用层先确认（"放弃未保存的修改？"），确认后 `{ kind:'list' }`；
+   无未保存内容 → 直接 `{ kind:'list' }`。
+
+不覆盖的边界（实现自由）：`dirty` 由编辑器 onChange 与已存内容比对产生（调用层决定何时发
+`mark-dirty`）；`create` 成功但未保存即 `cancel-edit` 时的确认文案属 UI 层。
 
 ---
 
@@ -432,3 +578,10 @@ export function appendPromptToDraft(current: string, prompt: string): string
   external）；返回 false → UI 提示「复制失败」。
 - sessionId/cwd 来源：`ctx.sessions.list` 快照（current 会话 id + byId[id].cwd）；
   历史按 sessionId 隔离（2.3 key 规则）。
+- **面板 header 拖拽（增量 2 Bug 修复，纯 client 内部，不影响任何 RPC 契约）**：面板
+  header 的 `onMouseDown=startDrag` 必须排除交互目标——`(e.target as HTMLElement).closest(
+  'button, a, input, textarea, [data-stop-drag]')` 命中即不启动拖动（tab 按钮/关闭按钮在
+  header 内，点击不冒泡进拖动）。拖拽的 left/top 落点用 React state 固化（拖拽结束 commit
+  进 state，`mouseup` 清 dragCtx 不影响已固化的 left/top），并显式置 `insetInlineEnd:auto`，
+  避免"从 CSS 右下定位切到 left/top 后 left/top 短暂为 undefined → 面板塌陷消失"（§8.6）。
+  本条目只约束 client DOM 交互，不新增/变更 /ct 端点。

@@ -362,3 +362,164 @@ client 显示只读 `canCreateRootAgents`，不重复推导真实路径/存在�
 4. 根 AGENTS.md 是符号链接 → 无新建按钮（`canCreateRootAgents=false`），不误导。
 5. 并发两次 create 同一 cwd → 恰好一个 `ok:true`、一个 `path-exists`，无覆盖。
 6. `no-project-root` / `path-exists` / `path-out-of-scope` / `system-error` 四种失败场景反馈明确、不静默。
+
+---
+
+## 8. 增量 2：全局新建 + 删除 + 返回流程 + 拖拽修复
+
+来源：用户实测后的增量需求（原文整理）——① 全局 `~/.dsh/AGENTS.md` 缺失时也要能新建；
+② 已存在/新建的指令文件（全局/项目级）可删除（破坏性，必须确认）；③ 新建保存完能回到
+初始面板（返回流程）；④ 修面板 header 拖拽手柄吞 tab 点击的 Bug。
+接口契约见 `.devflow/INTERFACE.md §1.1`（`canCreateGlobalAgents`）、`§1.5`（scope 扩展）、
+`§1.6`（delete）、`§2.4`（新增 helper）、`§3`（拖拽修复条目，纯 client）。
+
+### 8.1 需求
+
+1. **全局新建**：`~/.dsh/AGENTS.md` 不存在（`canCreateGlobalAgents=true`）时，指令 tab 显示
+   「新建全局 AGENTS.md」入口；点击 → host 创建 `<realpath(dshHome)>/AGENTS.md`（同模板），
+   成功进入新文件编辑态。
+2. **删除**：指令 tab 每行文件（全局/项目级）提供删除，走新端点 `/ct/instructions.delete`；
+   client 强制确认（window.confirm，全局文件明示影响 DSH 行为）。
+3. **返回流程**：InstructionsTab 引入显式状态机（列表态 / 新文件编辑态 / 已有文件编辑态），
+   编辑态提供「保存」与「返回列表」两个出口；保存成功回到列表初始态。
+4. **拖拽 Bug 修复**：startDrag 排除 button/a 等交互目标 + 拖拽结束固化 left/top 到 state。
+5. 明确不做：不加重命名、不加重置默认模板、不做批量新建/删除、本地（AGENTS.local.md/
+   CLAUDE.local.md）不提供新建（只保留现有可编辑；delete 天然支持因为走发现集合白名单）。
+
+### 8.2 UI 交互设计
+
+**状态机（InstructionsTab 核心改动，纯 reducer 契约见 INTERFACE §2.6）**
+- 用 `InstructionView = 'list' | { kind:'create', scope:'project'|'global' } | { kind:'edit', path }`
+  替代现在的 `phase + expanded` 组合。**状态迁移逻辑抽为纯函数 `instructionViewReducer`**
+  （`src/client/instruction-view.ts`，无 DOM/React 依赖，node 单测直接驱动，INTERFACE §2.6）——
+  组件只负责「把事件喂给 reducer、把结果渲染」，状态迁移正确性由单测保证：
+  - `'list'`：初始态。显示文件列表 + 「重新加载」+ 两个新建入口（按 §1.1 两字段显隐）。
+  - `{ kind:'create', scope }`：新建态。点「新建…」进入，按钮置禁用（创建中）；create
+    成功 → 保持此态并自动载入新文件编辑器（内容=create 响应的模板，按 scope 取项目模板或
+    全局模板，§1.5）；编辑器顶部两个出口：**「保存」**（走 save）与**「返回列表」**。
+  - `{ kind:'edit', path }`：已有文件编辑态（点开列表中的文件进入，等价于现在 `expanded`）。
+    编辑器同样提供「返回列表」。
+
+**新建入口显隐（两独立规则，互不干扰）**
+| 入口 | 显示条件（读 list 响应） | 点击调用 |
+|---|---|---|
+| 新建项目级 AGENTS.md | `canCreateRootAgents === true` | `ctInstructionsCreate(cwd, 'project')` |
+| 新建全局 AGENTS.md | `canCreateGlobalAgents === true` | `ctInstructionsCreate(cwd, 'global')` |
+
+- 全部隐藏/显示由 host 计算字段决定，client 不重复推导（§1.1 契约）。两入口可同时显示
+  （全局缺 + 项目根缺）；也可都不显示。
+- **全局新建（scope='global'）点击后先 `window.confirm`**：文案明示「将创建全局指令文件，
+  该指令对**所有会话**生效」——全局指令影响所有会话，可逆性弱于项目级，确认强度与删除
+  对齐（审查建议）；项目级新建不加确认（§7 决策）。
+
+**新建 → 编辑 → 保存 → 返回（用户要的闭环，事件名见 INTERFACE §2.6）**
+1. 点「新建全局/项目级」→ reducer `start-create` → `{kind:'create', scope, pending:true}`，
+   按钮「创建中…」→ `ctInstructionsCreate`（scope='global' 先过 §8.2 确认）。
+2. 成功：reducer `create-succeeded(path)` → 停留 `{kind:'create', path}` 并载入编辑器
+   （草稿=create 响应的模板，按 scope 取对应模板）。
+3. 用户编辑（草稿变更 → `mark-dirty`）→ 点「保存」→ `ctInstructionsSave(cwd, path,
+   content, create 返回的 mtimeMs)`（mtime-conflict / file-truncated 处理沿用 §7 已有逻辑）。
+4. 保存成功 → reducer `saved(path)` → **回到 `'list'`**（重载列表）——即用户要的
+   "新建保存完之后回到初始面板"。
+5. 中途点「返回列表」→ reducer `cancel-edit`：若草稿未保存（dirty 或 create 已成功未保存）
+   → confirm「放弃未保存的修改？」（确认后回列表，文件保留）；无未保存内容 → 直接回列表。
+
+**删除交互**
+- 每行文件右侧「删除」按钮 → `window.confirm`：
+  - 项目级/local：「删除该指令文件？此操作不可恢复。」
+  - 全局：「删除全局指令文件？将移除 DSH 加载的全局指令，影响模型行为。此操作不可恢复。」
+- 确认 → `ctInstructionsDelete(cwd, path)` → 成功重载 list；失败面板内提示 `{code}: {message}`。
+
+### 8.3 host 端点设计（增量）
+
+1. **create 扩展（§1.5）**：复用现有端点，body 增加可选 `scope:'project'|'global'`
+   （缺省 `'project'`，向后兼容 §7）。判定顺序：cwd → `invalid-scope`(400) → scope 分支
+   （project 需 `projectRootFound`；global 无前置）→ realpath 目录链防护（**project 分支
+   realpathSync 抛错 → `system-error`；global 同样**；project 仅以 realRoot 复核 `.git`
+   标记为准，不要求字符级路径与 realpath 相等，不误杀 symlink 访问的合法项目）→
+   原子 `wx` 创建（`path-exists`，文案按 scope 区分 project-level/global-level）→ 成功
+   `{path, content, mtimeMs}`（`content` 为按 scope 选择的模板：project 用项目模板、
+   global 用全局模板，§1.5）。**不接收客户端路径**（body 仍只有 cwd+scope）。
+2. **delete（§1.6）**：新端点 `/ct/instructions.delete`，body `{cwd, path}`，与 read/save
+   同款白名单校验风格（发现集合成员）；判定顺序：cwd → path 校验(400) → 发现集合范围
+   (`path-out-of-scope`) → **父目录链 realpath 包含性校验**（对 `dirname(path)` realpath，
+   按文件 level 校验落在 `realpath(dshHome)` 或 `realpath(projectRoot)` 前缀内，防目录链
+   symlink 物理越界；realpath 抛错 → `system-error`）→ lstat 复核（`file-not-found` /
+   symlink→`path-out-of-scope`）→ unlink → 成功 `{ok:true}`。删除全局文件 = 移除 DSH 实际
+   加载的指令，client 确认已覆盖。
+3. **list 扩展（§1.1）**：响应新增 `canCreateGlobalAgents: boolean`（additive）。
+
+### 8.4 文件结构变更清单
+
+| 文件 | 变更 |
+|---|---|
+| `src/instructions.ts` | `DiscoveryResult` 增 `canCreateGlobalAgents`；新增 `canCreateGlobalAgents(dshHome)`、`dshHomeAgentsTarget(dshHome)` 纯函数（§2.4）；模板函数按 scope 返回（project 模板 / global 模板，§1.5） |
+| `src/handler.ts` | `ENDPOINTS` 加 `/ct/instructions.delete`；`doCreate` 扩 scope 分支（`invalid-scope`、project/global realpath 抛错均 → `system-error`、path-exists 文案按 scope）；新增 `doDelete`（§1.6 判定顺序，含父目录 realpath 包含性校验） |
+| `src/client/bridge.ts` | `ctInstructionsCreate(cwd, scope?)` 加 scope 参数；新增 `ctInstructionsDelete(cwd, path)` |
+| `src/client/instruction-view.ts` | **新增（建议 C）**：`instructionViewReducer` 纯函数（INTERFACE §2.6，无 DOM 依赖，node 单测驱动） |
+| `src/client/InstructionsTab.tsx` | 状态机（对接 reducer：事件→reducer→渲染）+ 两个新建入口 + 全局新建确认 + 每行删除按钮/确认 + 保存/返回出口 |
+| `src/client/Panel.tsx`（或 header 所在组件） | 拖拽修复：startDrag 排除交互目标 + left/top 状态固化（§8.6） |
+| `tests/…` | create scope 正反用例（global 成功 / global 已存在 / invalid-scope / project|global realpath 失败）；delete 全判定顺序正反用例（不存在 / 越界 / **父目录 symlink 越界** / symlink / **并发双删一 ok 一 file-not-found** / 成功）；**`instructionViewReducer` 全事件单测**；list 断言 `canCreateGlobalAgents` |
+
+### 8.5 任务拆解
+
+| # | 任务 | 依赖 | 并行 |
+|---|------|------|------|
+| T-E1 | instructions.ts：`canCreateGlobalAgents` + `dshHomeAgentsTarget` + 模板按 scope | — | — |
+| T-E2 | handler.ts：`doCreate` scope 分支（invalid-scope + project/global realpath → system-error）+ `doDelete`（父目录 realpath 校验）+ ENDPOINTS | T-E1 | — |
+| T-E3 | bridge.ts：create 加 scope；新增 `ctInstructionsDelete` | — | 可与 T-E1/T-E2 并行 |
+| T-E4 | instruction-view.ts：`instructionViewReducer` 纯函数（建议 C，先于 T-E5 可独立完成并单测） | — | 可与 T-E1/T-E2 并行 |
+| T-E5 | InstructionsTab：对接 reducer + 两新建入口 + 全局新建确认 + 删除按钮/确认 + 保存/返回出口 | T-E2 T-E3 T-E4 | — |
+| T-E6 | 拖拽修复（Panel header） | — | 可与 T-E5 并行 |
+| T-E7 | 测试 + 真实环境实测（headless / 本机 profile）：含 reducer 单测、并发双删、父目录 symlink 越界用例 | T-E2 T-E3 T-E4 T-E5 T-E6 | — |
+
+### 8.6 拖拽 Bug 修复设计（纯 client）
+
+**根因**：面板 header 整行挂 `onMouseDown=startDrag`，tab 按钮（指令/提示词）在 header 内；
+点击 tab 的 mousedown 冒泡到 header → `startDrag` 把面板从 CSS 右下定位（`insetInlineEnd`/
+`bottom`）切到 `left/top` 定位并记 dragCtx；`mouseup` 后 dragCtx 清空，但 `left/top` 从未
+固化 → 定位回退为 undefined 的同时 `insetInlineEnd` 已是 auto → 面板塌陷视觉消失。
+
+**修复（两处，缺一不可）**：
+1. **startDrag 前置排除**：`const el = e.target as HTMLElement; if (el.closest('button, a,
+   input, textarea, [data-stop-drag]')) return;` —— tab/关闭按钮等交互元素上的 mousedown
+   不启动拖动；拖拽只从 header 空白区发起。交互元素加 `data-stop-drag` 作为显式逃生口。
+2. **拖拽结束固化定位**：把「当前 left/top」提升为 React state（如 `dragPos: {left, top} |
+   null`）；`mousemove` 期间更新 state（或临时 ref），`mouseup`/`mouseleave` 时**把最终
+   left/top commit 进 state** 且同时置 `insetInlineEnd:'auto'`，然后才清 dragCtx。面板样式
+   从 `dragPos` state 派生——即使 dragCtx 清空，left/top 仍是 state 里的确定值，不会塌陷。
+
+**验证**：面板默认不拖动 → 样式仍走 CSS 右下定位；拖动过一次 → left/top 固化、可继续拖；
+点击 tab 不触发拖动、面板位置不变。回归点：现有点击 tab 切换、关闭面板、拖动均正常。
+
+**对 INTERFACE 的影响**：无——纯 client DOM 交互修复，不涉及任何 /ct 端点、不改变响应
+schema（已在 INTERFACE §3 注明）。
+
+### 8.7 风险清单（rules.md 格式）
+
+| # | What/Where | 失败模式 | 缓解 |
+|---|---|---|---|
+| R-E1 | create scope 扩展（host）——**高风险** | 误把全局目标解析到客户端可控位置；`scope` 值混乱导致目标推导错 scope；project/global realpath 失败未归类 | 目标仍全由 host 推导（`dshHomeAgentsTarget` = realpath(dshHome)+AGENTS.md；project 同款 realpath），body 只有 cwd+scope，无 path；`invalid-scope`(400) 卡死非法值；**project 分支 realpathSync 抛错与 global 一样 → `system-error`**（§1.5 判定 5），不发明新错误码 |
+| R-E2 | delete 越界/误删（host）——**高风险** | 客户端传任意 path 把项目外/系统文件删掉；symlink 被跟随删除；**父目录链含 symlink 时字符级通过但物理删除范围外文件** | delete 走三闸门：basename 白名单(400) + 发现集合成员比对(`path-out-of-scope`) + **父目录 realpath 包含性校验**（按文件 level 验 `realpath(dirname(path))` ∈ `realpath(dshHome)` / `realpath(projectRoot)` 前缀；realpath 抛错 → `system-error`，§1.6 判定 5）；写前 lstat 复核防 TOCTOU（§1.6 判定 6） |
+| R-E3 | 删除全局文件影响 DSH 行为（product 风险） | 用户误删全局 AGENTS.md，DSH 全局指令消失，模型行为变化 | client 强制确认（window.confirm 明示"移除 DSH 加载的全局指令、影响模型行为、不可恢复"）；方案层明确这是用户主动行为（§8.2）。不做回收站（范围外，不过度设计） |
+| R-E4 | 状态机回归（client）——**高风险** | 「返回列表」与「保存」出口顺序写错导致保存后仍停编辑态；create 成功但未保存返回时草稿丢失误导 | **状态迁移抽纯 reducer（建议 C，INTERFACE §2.6）**，全事件正反例单测兜底（start-create/create-succeeded/saved/cancel-edit/dirty 边界）；保存成功 → `saved` → `'list'`+重载；未保存返回 → 调用层先确认再 `cancel-edit` |
+| R-E5 | 拖拽修复不彻底（client） | 只排除 button 没排除 a/输入框/其他交互元素；或 left/top 未固化仍塌陷 | 双改齐上：closest 白名单（button,a,input,textarea,data-stop-drag）+ dragPos 状态固化 + `insetInlineEnd:auto` 显式；e2e/手测覆盖"点 tab 位置不变、拖一次后不塌陷"（§8.6） |
+| R-E6 | 全局与项目级入口混淆（client） | 两入口按钮文案/行为混淆，点错 scope | 文案明确「新建全局 AGENTS.md」vs「新建项目级 AGENTS.md」；显隐各自只看自己的 canCreate 字段；create 响应 `path` 用于后续 save 基线，与 scope 无关 |
+| R-E7 | 模板按 scope 分发（host，审查重要④）——**中风险** | 把项目模板写进全局文件（或反之），语义错配、内容误导 | 模板函数按 scope 返回单一来源（project 模板 / global 模板，§1.5 契约）；单测断言两个 scope 的 `content` 分别等于对应模板；响应 `content` 恒为实际写入的模板 |
+
+### 8.8 成功标准
+
+1. `~/.dsh/AGENTS.md` 缺失 → 显示「新建全局 AGENTS.md」；点击经确认 → 创建成功（内容是**全局模板**而非项目模板）、进入编辑态、保存后回到列表初始态（文件在列表、可再展开）。
+2. 全局文件已存在 → 无全局新建入口；项目级入口逻辑同 §7.8 不变（两入口独立）。
+3. 行内删除：确认后文件消失；全局删除确认文案含"影响模型行为"；`file-not-found`/`path-out-of-scope`/`system-error` 失败反馈明确、不静默。
+4. 新建→编辑→保存→返回闭环一次走通；「返回列表」在编辑态可用且在未保存时给出明确提示。
+5. 拖拽后面板不塌陷；点击 tab 不触发拖动、面板位置不变。
+6. create 新 scope 与 delete 全判定顺序测试绿（含**并发双删一 ok 一 file-not-found**、**父目录 symlink 越界**用例）；`instructionViewReducer` 全事件单测绿；list 响应含 `canCreateGlobalAgents`。
+
+### 8.9 其他建议项处理
+
+| 审查建议 | 处理 | 落点 |
+|---|---|---|
+| dshHome 目录缺失边界 | **已覆盖**：global create 的 realpath 失败 → `system-error`（§1.5 判定 5）；`canCreateGlobalAgents` 在 dshHome realpath 失败 → false（§2.4）。不另加错误码 | §1.5 / §2.4 |
+| 拖拽视口 clamp | **不采纳**：面板拖出视口是用户主动行为，可拖回；clamp 增加定位耦合与测试面，非本次 bug 核心。若后续用户反馈"面板拖不回来"再加 | §8.6 不变 |
+| 编辑态未保存返回提示 | **已覆盖**：§8.2 闭环步骤 5 + reducer `cancel-edit` 语义（dirty 或 create 未保存 → confirm） | §2.6 / §8.2 |
