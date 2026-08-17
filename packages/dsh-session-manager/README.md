@@ -47,8 +47,14 @@ dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
 
 - 删除只把会话目录移入回收站（软删除），不立即销毁磁盘内容；「清空回收站」才是不可撤销的硬删。
 - 会话文件移走后，host 的会话注册表不会自动移除该条目——插件在 client 侧用 localStorage 持久化"已删除 id"保持列表隐藏；host 重启后重新扫描磁盘，会话彻底消失。
-- macOS 优先；Windows/Linux 尽力而为（未专项测试）。
+- macOS 优先；Windows 路径语义（盘符/UNC/保留设备名/大小写不敏感）已在代码里做判定，但未在 Windows 真机跑过全套测试。
 - 归档/取消归档复用 DSH 官方的 archive set 机制。
+- **「取消归档」当场生效、刷新可能回滚（已知限制）**：DSH 没有对外暴露 unarchive
+  接口，插件只能直接写 `workspace` 存储域。而官方 `dsh-workspace` 的归档集是
+  启动时读一次的内存缓存、且不监听域变更，所以：活着的页面会即时更新（apiproxy
+  监听 `domain/changed`），**刷新页面或下一次官方归档写入会把该会话又标回已归档**。
+  磁盘上的域文件是正确的——重启 `dsh web` 后以磁盘为准。要彻底修需要上游提供
+  unarchive API 或让 `dsh-workspace` 监听域变更。
 
 ## License
 

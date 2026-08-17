@@ -197,6 +197,17 @@ export function ArchiveView({
     rows.push({ ...s, id })
   }
 
+  // H1: honest note about the unarchive limitation. DSH exposes no unarchive
+  // API, so we write the workspace domain directly — but dsh-workspace caches
+  // the archive set in memory (read once at start, no domain listener), so a
+  // page refresh (or the next official archive write) can roll the change back.
+  // The domain file on disk IS correct; restarting `dsh web` re-reads it.
+  const unarchiveNote = createElement(
+    'div',
+    { className: css.trashCount },
+    '注意：取消归档当场生效，但刷新页面后可能回滚（DSH 内存缓存未同步）；重启 dsh web 后以磁盘为准。',
+  )
+
   let body: ReactNode
   if (rows.length === 0) {
     body = createElement('div', { className: css.empty }, '暂无归档会话')
@@ -314,6 +325,7 @@ export function ArchiveView({
       ),
       error && createElement('div', { className: css.errorBanner, role: 'alert' }, error),
       body,
+      rows.length > 0 && unarchiveNote,
       trashList,
       trashBar,
     ),
