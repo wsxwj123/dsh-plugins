@@ -27,6 +27,19 @@ import { assertValidId, isStableSegment } from './paths.js'
  */
 export const SESSION_MARKER = 'session.jsonl.zstd'
 
+/**
+ * Every filename that marks a directory as a DSH session directory. A
+ * `compression:'none'` deployment writes the PLAINTEXT `session.jsonl` instead
+ * of the zstd one, and only accepting the compressed name made every delete on
+ * such a deployment fail with `not-a-session` (M3). Order = most common first.
+ */
+export const SESSION_MARKERS: readonly string[] = [SESSION_MARKER, 'session.jsonl']
+
+/** True when `dir` carries a session log under any supported marker name. */
+export function hasSessionMarker(dir: string): boolean {
+  return SESSION_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))
+}
+
 /** The metadata sub-directory inside the trash root. */
 export const METADATA_DIR = '_metadata'
 
