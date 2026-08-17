@@ -18,7 +18,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { TrashStore, SESSION_MARKERS, hasSessionMarker } from './trash.js'
-import { MAX_TITLE_LEN, WORKSPACE_DOMAIN } from './constants.js'
+import { MAX_TITLE_LEN, NO_TRASH_ARTIFACT, WORKSPACE_DOMAIN } from './constants.js'
 import {
   assertValidId,
   isStableSegment,
@@ -122,6 +122,16 @@ function bodyIsObject(body: unknown): body is Record<string, unknown> {
 /** A value that must be awaited (the real `domain.global.set` return). */
 function isThenable(v: unknown): v is Promise<unknown> {
   return typeof (v as { then?: unknown } | null | undefined)?.then === 'function'
+}
+
+/**
+ * Mark a SUCCESSFUL delete response as "nothing landed in the recycle bin"
+ * (M5). Failures pass through untouched — they already carry their own code.
+ */
+function tagNoArtifact(res: SmResponse | Promise<SmResponse>): SmResponse | Promise<SmResponse> {
+  const tag = (r: SmResponse): SmResponse =>
+    r.json.ok === true ? { status: r.status, json: { ...r.json, code: NO_TRASH_ARTIFACT } } : r
+  return isThenable(res) ? res.then(tag) : tag(res)
 }
 
 /**
@@ -292,7 +302,10 @@ export function createSmHandler(deps: SmHandlerDeps): {
     //  - neither live nor persisted     → a genuine not-found (unchanged).
     if (!fs.existsSync(targetDir)) {
       if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)
-      if (liveSession) return doArchivedCleanup(id as string)
+      // M5: tag this success — the delete is effective but leaves NO recycle-bin
+      // entry, so the client must not un-hide the row when it later reconciles
+      // its hidden set against /sm/trash (there is nothing to find).
+      if (liveSession) return tagNoArtifact(doArchivedCleanup(id as string))
       return fail('session-dir-not-found', 'session dir not found')
     }
 

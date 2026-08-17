@@ -12,3 +12,12 @@ export const MAX_TITLE_LEN = 256
  * `archivedSessionIds` archive set (INTERFACE §3.1/§3.4).
  */
 export const WORKSPACE_DOMAIN = 'workspace'
+
+/**
+ * Marker code on a SUCCESSFUL /sm/delete whose session had nothing on disk to
+ * move (live-but-never-persisted): the delete is effective, but the recycle bin
+ * holds no entry for it. The client must remember such an id permanently —
+ * reconciling the hidden-rows set against /sm/trash would otherwise un-hide it
+ * and the row would come back (M5 ghost row).
+ */
+export const NO_TRASH_ARTIFACT = 'no-trash-artifact'
