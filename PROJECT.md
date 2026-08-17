@@ -14,6 +14,8 @@
 | 硬约束 2 | settings.general.item 槽位遮盖语义：同 id 不同 priority 合法，数值最低者渲染；运行时 priority: -1 遮盖入口 0，不得删 |
 | 验证方式 | `dsh web --port 3199` 隔离实例，日志 grep "failed to apply loader entry\|failed to import loader entry" 计数为 0 |
 | 不回退 | 70c230d（另一会话的修复提交）保留 |
+| 硬约束 3 | 新包 peerDependencies 中所有 @deepseek-ai/* 框架包版本范围必须写 `"*"`（防 pnpm autoInstallPeers 补装第二份框架副本导致 Symbol 分裂崩溃，dsh discussion #783 族）；框架包严禁进 dependencies。三仓存量 20 个 package.json 已按此修复（74982f8 / a878f4a / 0f537e2）@2026-08-17 |
+| 硬约束 4 | **Windows 兼容**（用户 2026-08-17 补充）：所有插件 macOS + Windows 双平台可用。构建/校验脚本跨平台（node:path、无 shell 专属语法、无 macOS 专属工具）；session-manager 修复中所有路径逻辑（home 解析、trash 名单、realpath）必须平台感知（Windows 系统目录名单、盘符、大小写不敏感、保留名）；文档给 PowerShell 等价命令。BRIEF 已补"平台范围"节 |
 
 ## 待办
 
@@ -34,5 +36,7 @@
 - 02 Step 3 盲审完成：PLAN-REVIEW.md（446 行）——1 致命（G1 归因实验证不了主因+无预案）+ 12 重要，结论"需修订后定稿" @2026-08-17
 - 02 Step 4 修订完成：F1 归因实验三组对照+Paint flashing、rAF spike 提前阶段 0、补两条预案分支、P9 升卡点；I1–I12 全采纳（状态归属表、panel deps 签名、a11y 三门禁+信任边界、串行化约定、门禁数值 TBD+900KB 兜底等）；新增待实证仅 S6（WebP 试压）@2026-08-17
 - **卡点1已确认**：方案定稿（PLAN.md 756 行 / INTERFACE.md 348 行），形态 A（入口按钮+二级面板）用户重选后维持 @2026-08-17
-- 03 测试设计：进行中
+- 03 测试设计完成：黑盒代理产出 tests/acceptance/appearance-gallery/（458 条 node --test，对契约 harness 393 绿 65 skip）+ e2e 16 条 + TEST-PLAN.md；守卫检查通过（无实现细节泄露）@2026-08-17
+- **卡点2已确认**：验收测试锁定（软互斥按 INTERFACE §3.5；A1–A8 七处契约歧义 20 条 skip 挂账，解冻后先由方案代理补 INTERFACE 再解锁）@2026-08-17
+- **任务冻结**（用户拍板省额度）：合并任务停在测试锁定态；解冻路径=方案代理补 A1–A8 契约 → 测试解 skip → 04 开发（开发代理用本会话模型）。SM 修复线优先推进 @2026-08-17
 - 并行事项：dsh-session-manager 盲审完成（报告 packages/dsh-session-manager/.devflow/REVIEW-BLIND-20260817.md，在 claude 副本）——3 致命 4 高 5 中 6 低；**用户拍板：18 条全修（3致命+4高+5中+6低）**（dev-flow 修 bug 模式，工作基线=claude 副本 main 对齐 70c230d 后开 fix 分支，与合并任务物理隔离并行）@2026-08-17
