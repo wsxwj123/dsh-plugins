@@ -6,7 +6,8 @@
 - 2026-08-14：新需求「回合刻度显示所有回合（含未加载的历史）」进入 02 方案（轻量档）
 - 2026-08-15：spike #0/#0.5 实测通过（sessionPersistence 可用、turn 号 1 基、compacted 判定 269/276、RPC 协议确认；preview 取最后一条 user/message）
 - 2026-08-15：卡点①②合并确认（方案定稿 + 测试清单锁定 41 项）@commit 0991836（docs: 回合刻度全量方案定稿）
-- 2026-08-15：开发中（feature/turn-index-full，开发代理 263174f2 后台运行）
+- 2026-08-15：开发完成（feature/turn-index-full，8+1 commit；单测 25/25、typecheck、构建全绿）
+- 2026-08-15：05 验收中——契约偏差已修正（sessionId 缺失→bad-request，connection.rpc 固定 HTTP 200）；待重启 dsh web 后跑端点验收 + 裁判盲判
 
 ## 待办
 
