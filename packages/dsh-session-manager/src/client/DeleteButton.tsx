@@ -97,8 +97,23 @@ export function createDeleteController(
   }
 
   const injectIntoRow = (row: HTMLElement, action: MatchedSession): void => {
-    // Skip rows already carrying our button (React may reuse a row DOM node).
-    if (row.querySelector(DELETE_BTN_SEL) !== null) return
+    // L3: a row already carrying our button may have been REUSED by React for a
+    // different session, while our button still closes over the old id (the
+    // binding is captured at injection time on purpose — see the click handler).
+    // So compare the recorded binding instead of returning unconditionally: same
+    // id → nothing to do; different id → drop the stale button and re-inject.
+    const existing = row.querySelector(DELETE_BTN_SEL)
+    if (existing !== null) {
+      if (row.dataset.dshSmBoundId === action.id) {
+        rowById.set(action.id, row) // keep the map pointing at the live node
+        return
+      }
+      existing.remove()
+    }
+    // Forget the mapping of whatever session this row used to represent.
+    const previous = row.dataset.dshSmBoundId
+    if (previous !== undefined && rowById.get(previous) === row) rowById.delete(previous)
+    row.dataset.dshSmBoundId = action.id
     rowById.set(action.id, row)
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -173,6 +188,10 @@ export function createDeleteController(
   const dispose = (): void => {
     document.querySelectorAll(DELETE_BTN_SEL).forEach((el) => el.remove())
     document.querySelectorAll('#dsh-session-manager-delete-hover').forEach((el) => el.remove())
+    // Drop our binding marker too, so a later re-apply starts from a clean row.
+    document
+      .querySelectorAll<HTMLElement>('[data-dsh-sm-bound-id]')
+      .forEach((el) => delete el.dataset.dshSmBoundId)
     rowById.clear()
   }
 
