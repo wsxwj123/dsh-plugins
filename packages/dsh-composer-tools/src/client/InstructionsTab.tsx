@@ -1,24 +1,33 @@
 /**
- * InstructionsTab — 指令 tab。
+ * InstructionsTab — 指令 tab（增量 2：显式视图状态机 + 全局新建 + 删除 + 返回流程）。
  *
- * 能力（PLAN §1.3-5）：
+ * 能力（PLAN §1.3-5 / §8.2）：
  *   - 打开即 ctInstructionsList(cwd)：列出发现的指令文件 + level 标签。
- *   - 展开文件即 ctInstructionsRead 读全文，textarea 只读预览；可切编辑并保存。
- *   - 「重新加载」重跑 list 并使内容缓存失效。
- *   - 跨文件全文搜索：首次搜索把未读文件 read 一遍，面板本次打开期间缓存 read
- *     结果（重新加载失效），按 标题/路径/正文 过滤，命中列「文件+行号+行片段」。
- *   - 编辑保存：保存前 window.confirm 确认「会改变模型行为」→ ctInstructionsSave
- *     (cwd, path, content, mtimeMs)；mtime-conflict 提示重载/覆盖，file-truncated
- *     提示用外部编辑器。
+ *   - 视图状态机（src/client/instruction-view.ts 纯 reducer，INTERFACE §2.6）：
+ *     list（列表）/ create(scope)（新建→新文件编辑态）/ edit(path)（已有文件编辑态）。
+ *     组件只负责「事件→reducer→渲染」，状态迁移正确性由 reducer 单测兜底。
+ *   - 工具栏两个新建入口：项目级（canCreateRootAgents）/ 全局（canCreateGlobalAgents），
+ *     显隐各自只读 list 响应字段（host 已用 realpath + lstat 算好，client 不重复推导）。
+ *     全局新建发起请求前 window.confirm（指令对所有会话生效）；项目级不确认。
+ *   - 编辑态两个出口：「保存」（ctInstructionsSave，mtime 乐观锁冲突给重载/覆盖选择）
+ *     与「返回列表」（未保存内容先 confirm 放弃）。保存成功 → saved → 回列表初始态。
+ *   - 每行文件提供「删除」：window.confirm（全局文件追加"影响模型行为"）→
+ *     ctInstructionsDelete → 成功重载 list；失败面板内提示 {code}: {message}。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import {
   ctInstructionsCreate,
+  ctInstructionsDelete,
   ctInstructionsList,
   ctInstructionsRead,
   ctInstructionsSave,
   type CtResult,
 } from './bridge.ts'
+import {
+  instructionViewReducer,
+  type InstructionScope,
+  type InstructionView,
+} from './instruction-view.ts'
 
 export interface InstructionFile {
   path: string
@@ -33,7 +42,15 @@ interface ReadState {
   content: string
   mtimeMs: number
   truncated: boolean
-  raw: { path: string; content: string; mtimeMs: number; truncated?: boolean }
+}
+
+/** 编辑器种子：新建成功（create 响应模板）或冲突重载后直接注入，免再次 read。 */
+interface EditorSeed {
+  path: string
+  content: string
+  mtimeMs: number
+  truncated: boolean
+  nonce: number // 变化即强制 Editor 重挂载
 }
 
 interface Props {
@@ -44,22 +61,26 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   const [files, setFiles] = useState<InstructionFile[]>([])
   const [phase, setPhase] = useState<string>('loading')
   const [err, setErr] = useState<string>('')
-  // 新建项目级 AGENTS.md 入口判定：host 已用 realpath + lstat 算好（§1.1/§1.5），
-  // client 只读此值、不重复推导。'ready' 时才显示按钮。
+  // 新建入口显隐：只读 list 响应字段（§1.1 契约），不重复推导。
   const [canCreateRootAgents, setCanCreateRootAgents] = useState(false)
+  const [canCreateGlobalAgents, setCanCreateGlobalAgents] = useState(false)
+  // 视图状态机：list / create(scope) / edit(path)（§2.6 纯 reducer）
+  const [view, dispatch] = useReducer(instructionViewReducer, { kind: 'list' } as InstructionView)
   // 新建中（按钮禁用 + 「创建中…」）
   const [creating, setCreating] = useState(false)
-  // [path -> readState]：面板打开期间缓存；重新加载失效。
-  const contentCache = useRef<Map<string, ReadState>>(new Map())
-  const [expanded, setExpanded] = useState<string | null>(null)
+  // 编辑器种子（新建模板 / 冲突重载注入）
+  const [seed, setSeed] = useState<EditorSeed | null>(null)
+  // 当前编辑器草稿是否脏（Editor onDirtyChange 上报；返回确认用）
+  const dirtyRef = useRef(false)
 
+  // 重载列表数据（不触碰视图状态机；视图回列表由 saved/cancel-edit/open-list 事件负责）
   const loadList = async (): Promise<void> => {
     setPhase('loading')
     setErr('')
-    setCanCreateRootAgents(false)
-    contentCache.current.clear()
-    setExpanded(null)
     if (cwd === undefined) {
+      setFiles([])
+      setCanCreateRootAgents(false)
+      setCanCreateGlobalAgents(false)
       setPhase('no-cwd')
       return
     }
@@ -71,74 +92,96 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     }
     setFiles((res.files as InstructionFile[]) ?? [])
     setCanCreateRootAgents(res.canCreateRootAgents === true)
+    setCanCreateGlobalAgents(res.canCreateGlobalAgents === true)
     setPhase('ready')
   }
 
   useEffect(() => {
+    dirtyRef.current = false
+    setSeed(null)
+    dispatch({ type: 'open-list' })
     void loadList()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
-  const getRead = async (f: InstructionFile): Promise<ReadState | null> => {
-    const hit = contentCache.current.get(f.path)
-    if (hit !== undefined) return hit
-    const res: CtResult = await ctInstructionsRead(cwd ?? '', f.path)
-    if (!res.ok) return null
-    const state: ReadState = {
-      content: String(res.content ?? ''),
-      mtimeMs: Number(res.mtimeMs ?? 0),
-      truncated: res.truncated === true,
-      raw: res as any,
+  // —— 新建（§1.5 client UI 契约）——
+  // 全局新建先 window.confirm（指令对所有会话生效）；项目级不确认。
+  // 成功 → create-succeeded：停留 create 态，编辑器直接注入 create 响应的模板
+  // （content/mtimeMs 即 save 基线），随后重载列表。path-exists → 重载列表回列表态，
+  // 不重复报错（文件届时已在列表，进入正常展开/编辑流）。
+  const startCreate = async (scope: InstructionScope): Promise<void> => {
+    if (cwd === undefined || creating) return
+    if (scope === 'global' && !window.confirm('将创建全局指令文件，该指令对所有会话生效。是否继续？')) return
+    dispatch({ type: 'start-create', scope })
+    setCreating(true)
+    setErr('')
+    try {
+      const res = await ctInstructionsCreate(cwd, scope)
+      if (res.ok) {
+        const p = String(res.path ?? '')
+        dirtyRef.current = false
+        setSeed({
+          path: p,
+          content: String(res.content ?? ''),
+          mtimeMs: Number(res.mtimeMs ?? 0),
+          truncated: false,
+          nonce: Date.now(),
+        })
+        dispatch({ type: 'create-succeeded', path: p })
+        await loadList()
+      } else if (res.code === 'path-exists') {
+        await loadList()
+        dispatch({ type: 'create-failed' })
+      } else {
+        setErr(`${res.code}: ${res.message}`)
+        dispatch({ type: 'create-failed' })
+      }
+    } finally {
+      setCreating(false)
     }
-    contentCache.current.set(f.path, state)
-    return state
   }
 
-  const toggleFile = async (f: InstructionFile): Promise<void> => {
-    if (expanded === f.path) {
-      setExpanded(null)
-      return
-    }
-    setExpanded(f.path)
-    await getRead(f) // 预热缓存，展开前先读好
+  // —— 打开已有文件 → 编辑态 ——
+  const openFile = (f: InstructionFile): void => {
+    dirtyRef.current = false
+    setSeed(null) // 无种子：Editor read-on-mount
+    dispatch({ type: 'open-edit', path: f.path })
   }
 
-  const save = async (f: InstructionFile, newContent: string): Promise<void> => {
-    const st = contentCache.current.get(f.path)
-    if (st === undefined) return
-    // 直接落盘（对齐 claude gui）：保存即写入，不做保存前确认。
-    const res = await ctInstructionsSave(cwd ?? '', f.path, newContent, st.mtimeMs)
+  // —— 保存（两个编辑态共用；保存成功 → saved → 回列表初始态并重载）——
+  const save = async (path: string, content: string, mtimeMs: number): Promise<void> => {
+    const res = await ctInstructionsSave(cwd ?? '', path, content, mtimeMs)
     if (res.ok) {
-      contentCache.current.get(f.path)!.mtimeMs = Number(res.mtimeMs ?? st.mtimeMs)
+      dirtyRef.current = false
+      dispatch({ type: 'saved', path })
       await loadList()
       return
     }
     if (res.code === 'mtime-conflict') {
-      const overwrite = window.confirm('文件已被外部修改。重新加载？')
-      if (!overwrite) {
-        // 覆盖更新 mtime 基线重存
-        const res2 = await ctInstructionsSave(
-          cwd ?? '',
-          f.path,
-          newContent,
-          Number(res.currentMtimeMs ?? st.mtimeMs) - 1,
-        )
-        if (res2.ok) {
-          contentCache.current.get(f.path)!.mtimeMs = Number(res2.mtimeMs ?? st.mtimeMs)
-          await loadList()
-        } else {
-          alert(`保存失败：${res2.code} ${res2.message}`)
+      const reload = window.confirm('文件已被外部修改。重新加载？')
+      if (reload) {
+        // 重新读入最新内容，停留编辑态（注入种子强制 Editor 重挂载）
+        const rd: CtResult = await ctInstructionsRead(cwd ?? '', path)
+        if (rd.ok) {
+          dirtyRef.current = false
+          setSeed({
+            path,
+            content: String(rd.content ?? ''),
+            mtimeMs: Number(rd.mtimeMs ?? 0),
+            truncated: rd.truncated === true,
+            nonce: Date.now(),
+          })
         }
         return
       }
-      const rd = await ctInstructionsRead(cwd ?? '', f.path)
-      if (rd.ok && (rd as any).content) {
-        contentCache.current.set(f.path, {
-          content: String((rd as any).content),
-          mtimeMs: Number((rd as any).mtimeMs),
-          truncated: false,
-          raw: rd as any,
-        })
+      // 强制覆盖：以当前磁盘 mtime 为基线重存
+      const res2 = await ctInstructionsSave(cwd ?? '', path, content, Number(res.currentMtimeMs ?? mtimeMs))
+      if (res2.ok) {
+        dirtyRef.current = false
+        dispatch({ type: 'saved', path })
+        await loadList()
+      } else {
+        alert(`保存失败：${res2.code} ${res2.message}`)
       }
       return
     }
@@ -149,110 +192,146 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     alert(`保存失败：${res.code} ${res.message}`)
   }
 
-  // 新建项目级 AGENTS.md（INTERFACE §1.5 client UI 契约）。
-  // 成功 → await loadList() 完成后 setExpanded(新 path)（editor 复用现有 read-on-mount
-  // 读入模板，用户直接编辑 → save）。
-  // path-exists → 文件届时已在列表，重载进入正常展开/编辑流，不重复报错。
-  const createRootAgents = async (): Promise<void> => {
-    if (cwd === undefined || creating) return
-    setCreating(true)
-    setErr('')
-    try {
-      const res = await ctInstructionsCreate(cwd)
-      if (res.ok) {
-        const newPath = String(res.path ?? '')
-        await loadList()
-        if (newPath !== '') setExpanded(newPath)
-      } else if (res.code === 'path-exists') {
-        await loadList() // 文件已由并发的同类操作（或外部）创建，重载展示即可
-      } else {
-        setErr(`${res.code}: ${res.message}`)
-      }
-    } finally {
-      setCreating(false)
+  // —— 返回列表（§8.2 步骤 5：未保存内容先确认放弃）——
+  const backToList = (): void => {
+    const needsConfirm =
+      view.kind === 'create'
+        ? view.path !== undefined // create 已成功未保存（文件已落盘，草稿未保存）
+        : view.kind === 'edit' && dirtyRef.current
+    if (needsConfirm && !window.confirm('放弃未保存的修改？')) return
+    dirtyRef.current = false
+    setSeed(null)
+    dispatch({ type: 'cancel-edit' })
+  }
+
+  // —— 删除（§1.6 client UI 契约：确认 → delete → 成功重载 / 失败面板内提示）——
+  const removeFile = async (f: InstructionFile): Promise<void> => {
+    const msg =
+      f.level === 'global'
+        ? '删除全局指令文件？将移除 DSH 加载的全局指令，影响模型行为。此操作不可恢复。'
+        : '删除该指令文件？此操作不可恢复。'
+    if (!window.confirm(msg)) return
+    const res = await ctInstructionsDelete(cwd ?? '', f.path)
+    if (res.ok) {
+      await loadList()
+    } else {
+      setErr(`${res.code}: ${res.message}`) // 失败：文件行保持原状，不静默消失
     }
   }
 
+  const editingPath =
+    view.kind === 'edit' ? view.path : view.kind === 'create' ? view.path : undefined
+  const editingFile = editingPath !== undefined ? files.find((f) => f.path === editingPath) : undefined
+
   return (
     <div className="dsh-ct-instr">
-      <div className="dsh-ct-search">
-        <button className="dsh-ct-icon-btn" onClick={() => void loadList()} title="重新加载">
-          重新加载
-        </button>
-        {phase === 'ready' && canCreateRootAgents === true && (
-          <button
-            className="dsh-ct-icon-btn"
-            onClick={() => void createRootAgents()}
-            disabled={creating}
-            title="新建项目级 AGENTS.md"
-          >
-            {creating ? '创建中…' : '新建项目级 AGENTS.md'}
+      {view.kind === 'list' && (
+        <div className="dsh-ct-search">
+          <button className="dsh-ct-icon-btn" onClick={() => void loadList()} title="重新加载">
+            重新加载
           </button>
-        )}
-      </div>
+          {phase === 'ready' && canCreateRootAgents === true && (
+            <button
+              className="dsh-ct-icon-btn"
+              onClick={() => void startCreate('project')}
+              disabled={creating}
+              title="新建项目级 AGENTS.md"
+            >
+              {creating ? '创建中…' : '新建项目级 AGENTS.md'}
+            </button>
+          )}
+          {phase === 'ready' && canCreateGlobalAgents === true && (
+            <button
+              className="dsh-ct-icon-btn"
+              onClick={() => void startCreate('global')}
+              disabled={creating}
+              title="新建全局 AGENTS.md（对所有会话生效）"
+            >
+              {creating ? '创建中…' : '新建全局 AGENTS.md'}
+            </button>
+          )}
+        </div>
+      )}
 
       {err !== '' && <div className="dsh-ct-err">{err}</div>}
 
-      {phase === 'loading' && <div className="dsh-ct-hint">加载中…</div>}
-      {phase === 'no-cwd' && <div className="dsh-ct-empty">无当前会话目录</div>}
-      {phase === 'ready' && files.length === 0 && (
-        <div className="dsh-ct-empty">未发现指令文件</div>
+      {view.kind === 'list' && (
+        <>
+          {phase === 'loading' && <div className="dsh-ct-hint">加载中…</div>}
+          {phase === 'no-cwd' && <div className="dsh-ct-empty">无当前会话目录</div>}
+          {phase === 'ready' && files.length === 0 && <div className="dsh-ct-empty">未发现指令文件</div>}
+          {phase === 'ready' &&
+            files.map((f) => (
+              <div className="dsh-ct-short" key={f.path}>
+                <div className="dsh-ct-file-row" onClick={() => openFile(f)}>
+                  <span className="dsh-ct-file-path">{f.displayPath}</span>
+                  <span className={`dsh-ct-lvl ${f.level}`}>{lvlLabel(f.level)}</span>
+                  <button
+                    className="dsh-ct-icon-btn"
+                    title="删除"
+                    onClick={(e) => {
+                      e.stopPropagation() // 删除不触发行展开
+                      void removeFile(f)
+                    }}
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+        </>
       )}
-      {phase === 'ready' &&
-        files.map((f) => (
-          <ShortFile
-            key={f.path}
-            f={f}
-            cwd={cwd ?? ''}
-            expanded={expanded === f.path}
-            onToggle={() => void toggleFile(f)}
-            onSave={(content) => void save(f, content)}
-          />
-        ))}
-    </div>
-  )
-}
 
-function ShortFile({
-  f,
-  cwd,
-  expanded,
-  onToggle,
-  onSave,
-}: {
-  f: InstructionFile
-  cwd: string
-  expanded: boolean
-  onToggle: () => void
-  onSave: (content: string) => void
-}): JSX.Element {
-  return (
-    <div className="dsh-ct-short">
-      <div className="dsh-ct-file-row" onClick={onToggle}>
-        <span className="dsh-ct-file-path">{f.displayPath}</span>
-        <span className={`dsh-ct-lvl ${f.level}`}>{lvlLabel(f.level)}</span>
-      </div>
-      {expanded && <Editor f={f} cwd={cwd} onSave={onSave} />}
+      {view.kind === 'create' && view.path === undefined && (
+        <div className="dsh-ct-hint">创建中…</div>
+      )}
+
+      {editingPath !== undefined && (
+        <Editor
+          key={`${view.kind}:${editingPath}:${seed?.nonce ?? 0}`}
+          cwd={cwd ?? ''}
+          path={editingPath}
+          displayPath={editingFile?.displayPath ?? editingPath}
+          initial={seed !== null && seed.path === editingPath ? seed : null}
+          onSave={(content, mtimeMs) => void save(editingPath, content, mtimeMs)}
+          onBack={backToList}
+          onDirtyChange={(d) => {
+            dirtyRef.current = d
+            if (d) dispatch({ type: 'mark-dirty' })
+          }}
+        />
+      )}
     </div>
   )
 }
 
 function Editor({
-  f,
   cwd,
+  path,
+  displayPath,
+  initial,
   onSave,
+  onBack,
+  onDirtyChange,
 }: {
-  f: InstructionFile
   cwd: string
-  onSave: (content: string) => void
+  path: string
+  displayPath: string
+  /** 新建模板/冲突重载注入的种子；null → read-on-mount。 */
+  initial: ReadState | null
+  onSave: (content: string, mtimeMs: number) => void
+  onBack: () => void
+  onDirtyChange: (dirty: boolean) => void
 }): JSX.Element {
-  const [st, setSt] = useState<ReadState | null>(null)
-  const [draft, setDraft] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [st, setSt] = useState<ReadState | null>(initial)
+  const [draft, setDraft] = useState(initial?.content ?? '')
+  const [loading, setLoading] = useState(initial === null)
+
   useEffect(() => {
+    if (initial !== null) return // 有种子：无需再读
     let alive = true
     setLoading(true)
-    void ctInstructionsRead(cwd, f.path).then((res: CtResult) => {
+    void ctInstructionsRead(cwd, path).then((res: CtResult) => {
       if (!alive) return
       if (!res.ok) {
         setLoading(false)
@@ -262,7 +341,6 @@ function Editor({
         content: String(res.content ?? ''),
         mtimeMs: Number(res.mtimeMs ?? 0),
         truncated: res.truncated === true,
-        raw: res as any,
       }
       setSt(state)
       setDraft(state.content)
@@ -271,15 +349,26 @@ function Editor({
     return () => {
       alive = false
     }
-  }, [f.path, cwd])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, cwd])
 
   return (
     <div>
+      <div className="dsh-ct-actions">
+        <button className="dsh-ct-icon-btn" onClick={onBack} title="返回列表">
+          ← 返回列表
+        </button>
+        <span className="dsh-ct-file-path">{displayPath}</span>
+      </div>
       <textarea
-        id={'dsh-ct-editor-' + safeId(f.path)}
+        id={'dsh-ct-editor-' + safeId(path)}
         className="dsh-ct-edit-area"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          const v = e.target.value
+          setDraft(v)
+          onDirtyChange(st !== null && v !== st.content)
+        }}
         readOnly={loading}
         placeholder={loading ? '读取中…' : ''}
       />
@@ -288,7 +377,7 @@ function Editor({
         <button
           className="dsh-ct-btn-primary"
           disabled={loading || st === null}
-          onClick={() => onSave(draft)}
+          onClick={() => st !== null && onSave(draft, st.mtimeMs)}
         >
           保存
         </button>
