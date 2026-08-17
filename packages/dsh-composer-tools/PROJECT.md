@@ -54,3 +54,7 @@
 ## 增量：新建项目级 AGENTS.md（轻量档）
 
 - 卡点①②（合并确认）：方案定稿 + 测试锁定——PLAN §7 / INTERFACE §1.5（POST /ct/instructions.create，只收 cwd，realpath 目标，flag:'wx' 原子创建，list 增补 projectRootFound/canCreateRootAgents）+ test-12 22 条黑盒用例（LOCK=52846fc）@用户确认 23:12
+
+## 增量 2：全局新建 + 删除 + 返回 + 拖拽修复（轻量档）
+
+- 卡点①②（合并确认）：PLAN §8 / INTERFACE §1.5 扩展+§1.6 delete+§2.4+§2.6 reducer+§3 拖拽修复；审查修订后定稿（5 重要项全处理）；test-13 31 条锁定（LOCK=f2c5c4b）@用户确认 08-17 09:xx
