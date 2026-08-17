@@ -910,6 +910,7 @@ function apply(ctx) {
     const skinState = customSkinApi.currentSkinState()
     const state = { skinId: skinState.skinId || null, active: skinState.active }
     const visible = allSkins.filter((item) => !normalized || (item.name + ' ' + item.nameEn + ' ' + item.id).toLowerCase().includes(normalized))
+    const customSkins = allSkins.filter((item) => item.source === 'custom')
     const choose = async (id) => {
       setBusy(true)
       try {
