@@ -46,6 +46,10 @@ dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
 ## 边界与已知限制
 
 - 删除只把会话目录移入回收站（软删除），不立即销毁磁盘内容；「清空回收站」才是不可撤销的硬删。
+- 回收站**不会自动过期清理**：`/sm/trash` 给出 `deletedAt`（真实删除时间）与
+  `deadline = deletedAt + 30 天`，`deadline` 只是"可以考虑清理了"的参考值，到点不会
+  自动删任何东西——自动销毁会话数据正是回收站要消除的风险。清理入口只有用户手动
+  「清空回收站」（或单条「恢复」）。
 - 会话文件移走后，host 的会话注册表不会自动移除该条目——插件在 client 侧用 localStorage 持久化"已删除 id"保持列表隐藏；host 重启后重新扫描磁盘，会话彻底消失。
 - macOS 优先；Windows 路径语义（盘符/UNC/保留设备名/大小写不敏感）已在代码里做判定，但未在 Windows 真机跑过全套测试。
 - 归档/取消归档复用 DSH 官方的 archive set 机制。

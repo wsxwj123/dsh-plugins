@@ -18,7 +18,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { TrashStore, SESSION_MARKERS, hasSessionMarker } from './trash.js'
-import { MAX_TITLE_LEN, NO_TRASH_ARTIFACT, WORKSPACE_DOMAIN } from './constants.js'
+import { MAX_TITLE_LEN, NO_TRASH_ARTIFACT, TRASH_RETENTION_MS, WORKSPACE_DOMAIN } from './constants.js'
 import {
   assertValidId,
   isStableSegment,
@@ -466,6 +466,11 @@ export function createSmHandler(deps: SmHandlerDeps): {
   }
 
   // ---- /sm/trash ----
+  // Item shape (INTERFACE §3.5): id + title only — never originalDir/projectKey
+  // (path-leak guard, F-1). `deletedAt` is the real deletion time; `deadline` is
+  // deletedAt + the advisory retention (L2: it used to be deletedAt itself, i.e.
+  // already expired on arrival). Nothing purges automatically — see
+  // TRASH_RETENTION_MS.
   function doTrash(): SmResponse {
     return {
       status: 200,
@@ -474,7 +479,8 @@ export function createSmHandler(deps: SmHandlerDeps): {
         items: deps.trash.records().map((r) => ({
           id: r.id,
           title: r.title ?? undefined,
-          deadline: r.deletedAt,
+          deletedAt: r.deletedAt,
+          deadline: r.deletedAt + TRASH_RETENTION_MS,
         })),
       },
     }
