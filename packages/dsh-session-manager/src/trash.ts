@@ -227,18 +227,20 @@ export class TrashStore {
    * still-present items restorable. Any rm failure leaves that item's record
    * intact.
    *
-   * SECURITY-REPORT S1: only entries that are recognizable trash items may be
-   * removed — those with a durable record, or (orphans whose record was lost)
-   * names that pass the same id gates /sm/delete applies. Everything else
-   * under the root is left untouched, so a misconfigured trash root can never
-   * turn "empty trash" into a blind rm -rf of unrelated content.
+   * SECURITY-REPORT S1 + H3: only entries that are recognizable trash items may
+   * be removed. "Recognizable" is a SUBSTANTIVE judgment, not just a name shape:
+   * either the entry has a durable record, or (orphan whose record was lost) it
+   * is a directory that actually carries a session marker. The name gates alone
+   * let every ordinary filename through (`.DS_Store`, `notes.txt`, any user
+   * directory), so a misconfigured trash root turned "empty trash" into a blind
+   * rm -rf of unrelated content.
    */
   empty(): string[] {
     if (!fs.existsSync(this.root)) return []
     const failed: string[] = []
     for (const entry of fs.readdirSync(this.root)) {
       if (entry === METADATA_DIR) continue
-      if (!this.hasRecord(entry) && !isValidTrashItemShape(entry)) continue
+      if (!this.isTrashItem(entry)) continue
       try {
         const removed = this.rmItem(entry, this.root)
         if (removed === false) {
@@ -258,15 +260,29 @@ export class TrashStore {
     }
     return failed
   }
-}
 
-/**
- * True when a trash-root entry name could be a trash item id — mirrors the
- * delete-side id gates (assertValidId + isStableSegment) so empty() stays
- * aligned with what records()/moveToTrash actually produce (S1).
- */
-function isValidTrashItemShape(name: string): boolean {
-  return assertValidId(name) && isStableSegment(name)
+  /**
+   * Whether a trash-root entry is really one of OUR items, i.e. safe for
+   * empty() to remove recursively (H3). Two ways to qualify:
+   *  1. a durable record exists for the name → we put it there;
+   *  2. no record (lost in a crash between the record write and the rename), but
+   *     the name passes the delete-side id gates AND the entry is a directory
+   *     that carries a session marker → a moved session dir, i.e. our orphan.
+   * Everything else — dotfiles, user documents, unrelated directories — is left
+   * alone. `empty()` is the only recursive removal in this plugin, so this is
+   * the gate that keeps a misconfigured root from becoming data loss.
+   */
+  private isTrashItem(name: string): boolean {
+    if (this.hasRecord(name)) return true
+    if (!assertValidId(name) || !isStableSegment(name)) return false
+    const p = this.itemPath(name)
+    try {
+      if (!fs.statSync(p).isDirectory()) return false
+    } catch {
+      return false // vanished / unreadable: not ours to delete
+    }
+    return hasSessionMarker(p)
+  }
 }
 
 /** Default removal: recursive, force, absent-safe. */
