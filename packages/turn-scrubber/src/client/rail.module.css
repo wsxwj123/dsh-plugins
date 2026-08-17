@@ -32,11 +32,34 @@
   margin: 0;
   background: none;
   cursor: pointer;
+  /* Fisheye translateY follows the pointer smoothly. */
+  transition: transform 0.09s ease-out;
+}
+
+/* Compacted (shadowed) turns render as gray placeholders — the bar color is
+   overridden inline in TurnRail, this keeps the hit area consistent with a
+   loaded line while signaling "no live content here". */
+.compacted {
+  cursor: pointer;
+}
+
+.compacted .bar {
+  opacity: 0.28;
+}
+
+/* Light in-rail loading hint while an unloaded turn pages older history. */
+.loading {
+  position: absolute;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.6));
+  pointer-events: none;
+  white-space: nowrap;
+  animation: tip-in 0.14s ease-out;
 }
 
 .bar {
   display: block;
-  height: 2px;
   border-radius: 1px;
   flex: none;
   /* Short transform transition: the wave follows the pointer with a hint of

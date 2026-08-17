@@ -8,4 +8,4 @@ import { rm } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
 
 await rm('lib', { recursive: true, force: true })
-execSync('node node_modules/.bin/tsdown', { stdio: 'inherit' })
+execSync('./node_modules/.bin/tsdown', { stdio: 'inherit' })
