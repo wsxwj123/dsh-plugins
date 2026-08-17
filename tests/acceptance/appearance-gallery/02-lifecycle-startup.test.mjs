@@ -111,13 +111,13 @@ test('引擎不可用_缺__DSH_MODULES__时engine为null', async () => {
   assert.equal(h.engine, null);
 });
 
-test('引擎不可用_皮肤区渲染指定占位文案', async () => {
+test('引擎不可用_皮肤区占位文案逐字全等', async () => {
+  // A5 裁决：无反引号、无额外空格、结尾中文句号
   const h = await createSubject({ modules: false });
   h.start(FULL);
   const tree = h.entry.openPanel();
-  const text = textOf(tree);
-  assert.ok(text.includes(TEXT.skinUnavailableHead), `缺占位文案，实际：${text}`);
-  assert.ok(text.includes(TEXT.skinUnavailableToken));
+  assert.ok(textOf(tree).includes(TEXT.skinUnavailable), `缺占位文案，实际：${textOf(tree)}`);
+  assert.equal(TEXT.skinUnavailable, '皮肤轨道不可用：宿主未提供 __DSH_MODULES__。');
 });
 
 test('引擎不可用_占位态下不渲染皮肤卡片', async () => {

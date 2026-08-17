@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createSubject } from './helpers/subject.mjs';
-import { ERR, MAX_A11Y_BYTES } from './helpers/contract.mjs';
+import { ERR, MAX_A11Y_BYTES, TEXT, BODY_ATTR_RE } from './helpers/contract.mjs';
 import { themeJson, skinJson, clientJs, skinParts } from './helpers/fixtures.mjs';
 
 const FULL = { services: { theme: {}, slots: {} } };
@@ -55,9 +55,15 @@ test('Windows保留名_带扩展名的con.txt因含点号被拒', async () => {
   await assert.rejects(h.themeApi.importCustomTheme(themeJson({ id: 'con.txt' })), code(ERR.THEME_MISSING_FIELD));
 });
 
-test('Windows保留名_designSummary建议的目录名是否需回避保留名待定', async (t) => {
-  t.skip('INTERFACE §3.3 只要求 designSummary 里的仓库路径换成 packages/appearance-gallery/skins/<skin-id>/，'
-    + '没规定 <skin-id> 为 con/nul/aux 时 Windows 无法建同名目录该怎么办 —— 需 INTERFACE 补契约');
+test('Windows保留名_designSummary带出保留名提示且不收紧id正则', async () => {
+  // A7-1 裁决：只加文档提示，不加校验（受控导入不落磁盘目录）
+  const h = await started();
+  h.entry.openPanel();
+  assert.ok(h.entry.skinPanel.designSummary().includes(TEXT.winReservedHint), 'designSummary 缺保留名提示');
+  assert.equal(
+    TEXT.winReservedHint,
+    'id 不要用 Windows 保留名（con / prn / aux / nul / com1-9 / lpt1-9），否则在 Windows 上无法创建同名目录。',
+  );
 });
 
 // ---------------- Windows 文件名非法字符 ----------------
@@ -94,9 +100,62 @@ test('Windows非法字符_皮肤name含这些字符时应被原样接受', async
   assert.equal(r.name, name);
 });
 
-test('Windows非法字符_bodyAttr含非法属性名字符时的处置待定', async (t) => {
-  t.skip('INTERFACE §3.7 把 bodyAttr 列为"可选字符串"且不做校验，没规定 '
-    + '`data-x<y="z"` 这种无法作为 HTML 属性名的值该拒还是该消毒 —— 需 INTERFACE 补契约');
+// A7-2 裁决：bodyAttr 必须匹配 /^data-[a-z0-9-]{1,64}$/，否则 ERR_SKIN_BAD_META（校验顺序 4b）
+test('bodyAttr_含非法属性名字符时抛ERR_SKIN_BAD_META', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr: 'data-x<y="z"' } })),
+    code(ERR.SKIN_BAD_META),
+  );
+});
+
+test('bodyAttr_不以data-开头时抛ERR_SKIN_BAD_META', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr: 'skin-demo' } })),
+    code(ERR.SKIN_BAD_META),
+  );
+});
+
+test('bodyAttr_含大写字母时抛ERR_SKIN_BAD_META', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr: 'data-Demo' } })),
+    code(ERR.SKIN_BAD_META),
+  );
+});
+
+test('bodyAttr_只有data-前缀没有后续字符时抛ERR_SKIN_BAD_META', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr: 'data-' } })),
+    code(ERR.SKIN_BAD_META),
+  );
+});
+
+test('bodyAttr_后缀正好64字符是上边界应通过', async () => {
+  const h = await started();
+  const bodyAttr = `data-${'a'.repeat(64)}`;
+  assert.equal(BODY_ATTR_RE.test(bodyAttr), true, '前置条件：样本必须落在边界上');
+  const r = await h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr } }));
+  assert.equal(r.bodyAttr, bodyAttr);
+});
+
+test('bodyAttr_后缀65字符越界抛ERR_SKIN_BAD_META', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ meta: { id: 'demo', bodyAttr: `data-${'a'.repeat(65)}` } })),
+    code(ERR.SKIN_BAD_META),
+  );
+});
+
+test('bodyAttr_非法时先于id冲突报错', async () => {
+  // 校验顺序 4b 在第 5 步（id 冲突）之前
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ skin: skinJson({ id: 'miku', bodyAttr: 'bad!' }) })),
+    code(ERR.SKIN_BAD_META),
+  );
 });
 
 // ---------------- CRLF 换行（Windows 记事本 / PowerShell 默认）----------------
@@ -149,39 +208,84 @@ test('CRLF_主题token值含CRLF时不属于危险字符应被接受', async () 
 });
 
 // ---------------- BOM（Windows 记事本默认存 UTF-8 with BOM）----------------
-test('BOM_主题JSON带BOM时按JSON解析失败抛INVALID_JSON', async () => {
+// A7-3 裁决：只对要 JSON.parse 的文本剥前导 BOM；client.js / a11y.css 一律不动
+test('BOM_主题JSON带BOM时剥掉BOM后导入成功', async () => {
   const h = await started();
-  await assert.rejects(h.themeApi.importCustomTheme(`\uFEFF${themeJson()}`), code(ERR.IMPORT_INVALID_JSON));
+  const r = await h.themeApi.importCustomTheme(`﻿${themeJson({ id: 'bom' })}`);
+  assert.equal(r.id, 'bom');
 });
 
-test('BOM_skin.json带BOM时按JSON解析失败抛INVALID_JSON', async () => {
+test('BOM_skinjson带BOM时剥掉BOM后导入成功', async () => {
+  const h = await started();
+  const r = await h.customSkinApi.importCustomSkin(skinParts({ skin: `﻿${skinJson()}` }));
+  assert.equal(r.id, 'demo');
+});
+
+test('BOM_剥离不放松任何安全闸', async () => {
   const h = await started();
   await assert.rejects(
-    h.customSkinApi.importCustomSkin(skinParts({ skin: `\uFEFF${skinJson()}` })),
-    code(ERR.IMPORT_INVALID_JSON),
+    h.customSkinApi.importCustomSkin(skinParts({ skin: `﻿${skinJson({ id: 'miku' })}` })),
+    code(ERR.THEME_ID_CONFLICT),
   );
 });
 
-test('BOM_client.js带BOM时不影响契约校验仍导入成功', async () => {
+test('BOM_只剥一个前导BOM_两个BOM仍解析失败', async () => {
   const h = await started();
-  const withBom = `\uFEFF${clientJs('demo')}`;
+  await assert.rejects(h.themeApi.importCustomTheme(`﻿﻿${themeJson()}`), code(ERR.IMPORT_INVALID_JSON));
+});
+
+test('BOM_clientjs的BOM不被剥离原文入库', async () => {
+  const h = await started();
+  const withBom = `﻿${clientJs('demo')}`;
   const r = await h.customSkinApi.importCustomSkin(skinParts({ client: withBom }));
-  assert.equal(r.bundleText, withBom);
+  assert.equal(r.bundleText, withBom, 'client 文本必须原样保留，否则体积计算与用户粘贴内容不一致');
+  assert.equal(r.bundleText.charCodeAt(0), 0xFEFF);
 });
 
-test('BOM_是否应在导入前剥离BOM待定', async (t) => {
-  t.skip('Windows 记事本默认存 UTF-8 with BOM，用户会拿到 ERR_IMPORT_INVALID_JSON 却看不懂原因。'
-    + 'INTERFACE 未规定是否剥离 BOM 或给专门提示 —— 需 INTERFACE 补契约');
+test('BOM_a11y的BOM不被剥离原文入库', async () => {
+  const h = await started();
+  const withBom = `﻿:root{--dsh-focus:2px}`;
+  const r = await h.customSkinApi.importCustomSkin(skinParts({ a11y: withBom }));
+  assert.equal(r.a11yText, withBom);
 });
 
-// ---------------- a11y 远程资源的 Windows 形态 ----------------
-test('a11y_UNC路径url的处置待定', async (t) => {
-  t.skip('INTERFACE §3.7 只拦 url() 后紧跟 http 或 // 的情况；Windows UNC 写法 '
-    + 'url(\\\\server\\share\\x.png) 同样是远程取资源却不在拦截范围 —— 需 INTERFACE 补契约');
+// ---------------- a11y 的 url() 门禁：A7-4 裁决后拦 6 种前缀 ----------------
+test('a11y_UNC路径url抛ERR_SKIN_DANGEROUS', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ a11y: 'body{background:url(\\\\server\\share\\x.png)}' })),
+    code(ERR.SKIN_DANGEROUS),
+  );
 });
 
-test('a11y_file协议url的处置待定', async (t) => {
-  t.skip('url(file:///C:/x.png) 不匹配 http 也不匹配 //，当前契约放行 —— 需 INTERFACE 补契约');
+test('a11y_file协议url抛ERR_SKIN_DANGEROUS', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ a11y: 'body{background:url(file:///C:/x.png)}' })),
+    code(ERR.SKIN_DANGEROUS),
+  );
+});
+
+test('a11y_ftp协议url抛ERR_SKIN_DANGEROUS', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ a11y: 'body{background:url(ftp://h/x.png)}' })),
+    code(ERR.SKIN_DANGEROUS),
+  );
+});
+
+test('a11y_websocket协议url抛ERR_SKIN_DANGEROUS', async () => {
+  const h = await started();
+  await assert.rejects(
+    h.customSkinApi.importCustomSkin(skinParts({ a11y: 'body{background:url(wss://h/x)}' })),
+    code(ERR.SKIN_DANGEROUS),
+  );
+});
+
+test('a11y_同目录相对路径url仍被允许', async () => {
+  const h = await started();
+  const r = await h.customSkinApi.importCustomSkin(skinParts({ a11y: 'body{background:url(bg.png)}' }));
+  assert.ok(r.a11yText.includes('url(bg.png)'));
 });
 
 // ---------------- 平台无关性：同一份输入两平台同结论 ----------------

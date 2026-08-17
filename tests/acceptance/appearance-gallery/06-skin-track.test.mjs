@@ -73,11 +73,14 @@ test('S2试穿内置皮肤_未知id时不改body也不写storage', async () => {
   assert.deepEqual(snap(h), before);
 });
 
-test('S2试穿内置皮肤_内嵌bundle缺失时按引擎层message抛错', async () => {
+test('S2试穿内置皮肤_内嵌bundle缺失时message全文精确匹配', async () => {
+  // A4 裁决：以 70c230d 的 skin-engine.js:145 原文为准，可断言全文
   const h = await started({ dropBundle: 'qq98' });
   await assert.rejects(
     h.skinRuntime.previewSkin('qq98'),
-    (e) => e.code === undefined && e.message.includes(runtimeUnknownSkin('qq98')),
+    (e) => e.code === undefined
+      && e.message === '[theme-gallery-skin] unknown-skin: qq98 (no embedded bundle)'
+      && e.message === runtimeUnknownSkin('qq98'),
   );
 });
 

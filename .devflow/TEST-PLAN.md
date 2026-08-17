@@ -11,7 +11,7 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 
 - **引号必须留着**：POSIX shell 会自己展开 `*`，引号让 node 用内建 glob（Windows cmd/PowerShell 不展开，行为一致）。
 - Node 25.9 起 `node --test <目录>` 会把目录当模块加载并报 `MODULE_NOT_FOUND`，**别用目录形式**。
-- 当前结果：**458 条，0 失败，65 跳过**（跳过 = 45 条等 `packages/appearance-gallery/` 落地的静态门禁 + 20 条真机/契约待补项）。
+- 当前结果：**471 条，0 失败，58 跳过**（跳过 = 51 条等 `packages/appearance-gallery/` 落地的门禁 + 7 条真机/说明性项；**契约门控的 skip 已全部解锁，剩 0 条**）。
 - 04 之后换成真实实现：`APPEARANCE_SUBJECT=real node --test "…"`，接线点只有一个文件 `helpers/subject.mjs`。
 - UI 流程（`e2e/appearance-gallery.spec.mjs`，16 条）：`pnpm add -D @playwright/test` → `dsh web --port 3199` → `DSH_E2E_BASE_URL=http://localhost:3199 npx playwright test tests/acceptance/appearance-gallery/e2e`。**现在只做了语法检查，没真跑。**
 
@@ -45,7 +45,7 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 02-10 | 自定义皮肤优先于内置 | 两个键都有值 | 生效的是自定义那个 |
 | 02-11 | 恢复后仍在列表里 | 预置自定义皮肤 + applied | 该皮肤出现在皮肤列表 |
 | 02-12 | 宿主没给模块能力 | 去掉 `__DSH_MODULES__` | 皮肤引擎为 null |
-| 02-13 | 皮肤区降级文案 | 同上，打开面板 | 显示「皮肤轨道不可用：宿主未提供 `__DSH_MODULES__`。」 |
+| 02-13 | 皮肤区降级文案 | 同上，打开面板 | 文案**逐字全等** `皮肤轨道不可用：宿主未提供 __DSH_MODULES__。`（**A5 已裁决**：无反引号、结尾中文句号） |
 | 02-14 | 降级时不渲染皮肤卡 | 同上 | 一张皮肤卡片都没有 |
 | 02-15 | 降级时不渲染皮肤搜索框 | 同上 | 没有皮肤搜索框 |
 | 02-16 | 降级时不渲染皮肤按钮 | 同上 | 「导入皮肤」「删除皮肤」「恢复默认外观」「创建自定义皮肤」全部不出现 |
@@ -63,7 +63,8 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 03-2 | 摘要区不塞卡片 | 同上 | 摘要里没有任何主题卡/皮肤卡 |
 | 03-3 | 自定义主题摘要 | applied 指向真实存在的 mine | 摘要显示该主题的 label |
 | 03-4 | 皮肤生效时摘要让位给皮肤 | 预置内置皮肤生效 | 摘要前缀是「完整皮肤 · 」而不是「精选主题 · 」 |
-| 03-5 | 「默认外观」文案 | — | **跳过**：INTERFACE 未定义触发条件（见文末歧义 A2） |
+| 03-5 | 全新安装（8 键全空） | 干净环境不点开 | 摘要 = 「精选主题 · 竹青」（**A2 已裁决**：摘要只有两种文案） |
+| 03-5b | 「默认外观」已从契约删除 | 干净环境 | 页面上找不到「默认外观」这四个字 |
 | 03-6 | 闭合态很轻 | 不点入口 | 渲染节点数 ≤ 10 |
 | 03-7 | 闭合态无主题卡 | 不点入口 | 没有主题卡片 |
 | 03-8 | 闭合态无皮肤卡 | 不点入口 | 没有皮肤卡片 |
@@ -126,7 +127,8 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 05-11 | id 是空串 | `id:""` | `ERR_THEME_MISSING_FIELD` |
 | 05-12 | id 是数字 | `id:123` | `ERR_THEME_MISSING_FIELD` |
 | 05-13 | label 是空串 | `label:""` | `ERR_THEME_MISSING_FIELD` |
-| 05-14 | tokens 是非空数组 | — | **跳过**：INTERFACE 未定义落哪个码（见歧义 A3） |
+| 05-14 | tokens 是非空数组 | `tokens:[{…}]` | `ERR_THEME_MISSING_FIELD`（**A3 已裁决**：数组按「缺字段」处理，走第 3 步，不落第 7 步） |
+| 05-14b | tokens 是空数组 | `tokens:[]` | `ERR_THEME_MISSING_FIELD` |
 | 05-15 | id 有大写 | `Mine` | `ERR_THEME_MISSING_FIELD` |
 | 05-16 | id 开头是连字符 | `-mine` | `ERR_THEME_MISSING_FIELD` |
 | 05-17 | id 有空格 | `my theme` | `ERR_THEME_MISSING_FIELD` |
@@ -172,7 +174,7 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 06-7 | 试穿不落盘 | 同上 | 8 个键一个都没写 |
 | 06-8 | 试穿不存在的皮肤 | 传乱 id | `ERR_UNKNOWN_ID` |
 | 06-9 | 试穿失败不留痕 | 同上 | body 干净，storage 不变 |
-| 06-10 | 皮肤代码丢了 | 内嵌 bundle 缺失 | 抛 `[theme-gallery-skin] unknown-skin: qq98`（无 code） |
+| 06-10 | 皮肤代码丢了 | 内嵌 bundle 缺失 | message **全文精确等于** `[theme-gallery-skin] unknown-skin: qq98 (no embedded bundle)`（无 code；**A4 已裁决**） |
 | 06-11 | 皮肤执行中途炸了 | 注入失败 | body 回滚到快照，半成品标记不残留 |
 | 06-12 | 炸了要先清场再报错 | 同上 | 已注册的清理函数跑完 1 轮，然后才抛错 |
 | 06-13 | 应用内置皮肤 | 点「应用」 | skin-v1=id、custom-applied=''、track='skin' |
@@ -457,11 +459,17 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 15-9 | 大写 CON | 主题 id | 被拒（正则不许大写）`ERR_THEME_MISSING_FIELD` |
 | 15-10 | 大写 AUX | 皮肤 id | 被拒 `ERR_SKIN_BAD_META` |
 | 15-11 | 带扩展名 | `con.txt` | 被拒（点号不在允许字符里） |
-| 15-12 | 保留名与目录建议冲突 | — | **skip：需 INTERFACE 补契约**（designSummary 让用户建 `skins/con/` 目录，Windows 建不了） |
+| 15-12 | 保留名与目录建议冲突 | 看 designSummary | 含提示「id 不要用 Windows 保留名（con / prn / aux / nul / com1-9 / lpt1-9），否则在 Windows 上无法创建同名目录。」（**A7-1 已裁决**：只加文档提示，**不收紧 id 正则**） |
 | 15-13~28 | Windows 文件名非法字符做 id | `< > : " \| ? *` 和 `\` 各试主题与皮肤 | 16 次全被拒（主题 `ERR_THEME_MISSING_FIELD` / 皮肤 `ERR_SKIN_BAD_META`） |
 | 15-29 | 这些字符做 label | 主题 label 含全套 | **接受并原样保留**（INTERFACE 对 label 内容无限制） |
 | 15-30 | 这些字符做皮肤名 | `C:\皮肤<测试>\|1` | 接受并原样保留 |
-| 15-31 | bodyAttr 含非法属性名字符 | — | **skip：需 INTERFACE 补契约**（`data-x<y="z"` 该拒还是该消毒未定义） |
+| 15-31 | bodyAttr 含非法属性名字符 | `data-x<y="z"` | `ERR_SKIN_BAD_META`（**A7-2 已裁决**：必须匹配 `/^data-[a-z0-9-]{1,64}$/`，校验顺序 4b） |
+| 15-31b | bodyAttr 不以 data- 开头 | `skin-demo` | `ERR_SKIN_BAD_META` |
+| 15-31c | bodyAttr 含大写 | `data-Demo` | `ERR_SKIN_BAD_META` |
+| 15-31d | bodyAttr 只有前缀 | `data-` | `ERR_SKIN_BAD_META`（后缀至少 1 字符） |
+| 15-31e | bodyAttr 后缀正好 64 字符 | 边界内 | 导入成功 |
+| 15-31f | bodyAttr 后缀 65 字符 | 越界 | `ERR_SKIN_BAD_META` |
+| 15-31g | bodyAttr 非法 + id 撞车 | 两处都错 | 先报 `ERR_SKIN_BAD_META`（4b 在第 5 步之前） |
 | 15-32 | CRLF 换行的 client.js | Windows 记事本存的文件 | 导入成功，原文保留 |
 | 15-33 | CRLF 不影响黑名单 | CRLF + document.cookie | 照样 `ERR_SKIN_DANGEROUS` |
 | 15-34 | CRLF 不影响 ctx 白名单 | CRLF + ctx.nope | 照样 `ERR_SKIN_CONTRACT` |
@@ -469,12 +477,17 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 15-36 | CRLF 的 \r 也算字节 | 32768 组 CRLF = 65536 字节 | 正好过线 |
 | 15-37 | 多一组 CRLF | 65538 字节 | `ERR_SKIN_SIZE` |
 | 15-38 | token 值里有 CRLF | 换行不是危险字符 | 接受 |
-| 15-39 | 带 BOM 的主题 JSON | 记事本默认存 UTF-8 with BOM | `ERR_IMPORT_INVALID_JSON`（JSON.parse 认不了 BOM） |
-| 15-40 | 带 BOM 的 skin.json | 同上 | `ERR_IMPORT_INVALID_JSON` |
-| 15-41 | 带 BOM 的 client.js | client 不走 JSON.parse | 导入成功 |
-| 15-42 | 是否该剥 BOM | — | **skip：需 INTERFACE 补契约**（Windows 用户会拿到看不懂的 JSON 错） |
-| 15-43 | a11y 里的 UNC 路径 | `url(\\\\server\\share\\x.png)` | **skip：需 INTERFACE 补契约**（是远程取资源但不匹配 `http`/`//`，当前契约放行） |
-| 15-44 | a11y 里的 file 协议 | `url(file:///C:/x.png)` | **skip：需 INTERFACE 补契约**（当前契约放行） |
+| 15-39 | 带 BOM 的主题 JSON | 记事本默认存 UTF-8 with BOM | **导入成功**（**A7-3 已裁决**：JSON 文本先剥前导 BOM 再解析） |
+| 15-40 | 带 BOM 的 skin.json | 同上 | **导入成功** |
+| 15-41 | 剥 BOM 不放松安全闸 | BOM + id 撞 miku | 照样 `ERR_THEME_ID_CONFLICT` |
+| 15-42 | 只剥一个 BOM | 连着两个 BOM | `ERR_IMPORT_INVALID_JSON`（不吃掉正文里的 BOM） |
+| 15-42b | client.js 的 BOM 不剥 | BOM + client | 导入成功，`bundleText` 首字符仍是 BOM（否则体积计算与用户粘贴内容不一致） |
+| 15-42c | a11y 的 BOM 不剥 | BOM + a11y | `a11yText` 原文保留 |
+| 15-43 | a11y 里的 UNC 路径 | `url(\\server\share\x.png)` | `ERR_SKIN_DANGEROUS`（**A7-4 已裁决**：拦 `http`/`//`/`\\`/`file:`/`ftp`/`ws` 六种前缀） |
+| 15-44 | a11y 里的 file 协议 | `url(file:///C:/x.png)` | `ERR_SKIN_DANGEROUS` |
+| 15-44b | a11y 里的 ftp | `url(ftp://h/x.png)` | `ERR_SKIN_DANGEROUS` |
+| 15-44c | a11y 里的 websocket | `url(wss://h/x)` | `ERR_SKIN_DANGEROUS` |
+| 15-44d | a11y 里的同目录相对路径 | `url(bg.png)` | 允许（只放 `data:` 与同目录相对路径） |
 | 15-45 | 落盘形态与平台无关 | 导入后查字段 | 11 个字段，无任何平台相关字段 |
 | 15-46 | 键名不含路径分隔符 | 跑一轮后查键名 | 无 `/` 也无 `\` |
 
@@ -501,32 +514,42 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 
 ---
 
-## 契约歧义（写测试时发现，需 INTERFACE 定稿，现在按标注处理）
+## 契约歧义 A1–A8：**已全部裁决、已全部解锁**（INTERFACE 2026-08-17 版）
 
-| 编号 | 歧义 | 现在怎么处理 |
+| 编号 | 原歧义 | 裁决结果 | 测试落点（已解锁，无 skip） |
+|---|---|---|---|
+| A1 | `activateFamily` 未知 id：静默 no-op 还是抛 `ERR_UNKNOWN_ID` | **静默 no-op**，8 键一个不改；皮肤内置激活相反（抛错），两侧差异是刻意的 | 04-7 / 04-8 / 12-24（原断言已符合裁决，无需改） |
+| A2 | E1 摘要的第三种文案「默认外观」何时出现 | **删掉第三种**，只留「完整皮肤 · name」与「精选主题 · label」；全新安装 8 键全空 → 显示 jade 的 label | 03-5（8 键全空 → `精选主题 · 竹青`）+ 03-5b（反向：找不到「默认外观」） |
+| A3 | 非空数组 tokens 落第 3 步还是第 7 步 | **一律按「缺字段」走第 3 步** → `ERR_THEME_MISSING_FIELD` | 05-14（非空数组）+ 05-14b（空数组） |
+| A4 | 引擎层 unknown-skin 的 message 两处写法不一致 | 以 `70c230d` 原文为准：**全文含 ` (no embedded bundle)`** | 06-10 改为 message 全文精确匹配 |
+| A5 | 皮肤降级文案是否含反引号 | **无反引号、无额外空格、结尾中文句号** | 02-13 改为逐字全等断言 |
+| A6 | 「清空」写 `setItem('')` 还是 `removeItem` | **一律沿用 `70c230d`，不统一**；track 与 touched 走 removeItem，其余 setItem('')；registry 清空写空 items 不 removeItem | 原口径（功能语义断言「读出来是 ''」+ 两个键精确断言 `null`）已符合裁决，无需改 |
+| A7-1 | Windows 保留名做 id 怎么办 | **只在 designSummary 加一句文档提示，不收紧 id 正则**（受控导入不落磁盘目录） | 15-12（断言提示原文）；15-2~15-8 保留名仍合法 |
+| A7-2 | bodyAttr 是否该校验 | **新增门禁**：必须匹配 `/^data-[a-z0-9-]{1,64}$/`，否则 `ERR_SKIN_BAD_META`（顺序 4b） | 15-31 及 b~g 共 7 条（非法字符 / 前缀 / 大写 / 空后缀 / 64 边界 / 65 越界 / 顺序优先级） |
+| A7-3 | 是否剥 BOM | **剥**，但只对要 `JSON.parse` 的文本；`client.js` / `a11y.css` 一律不动 | 15-39 / 15-40 断言改为导入成功；15-41 安全闸不放松；15-42 只剥一个；15-42b/c 断言 client 与 a11y 的 BOM 保留 |
+| A7-4 | UNC / file: 协议的 url() 放行是否合理 | **不合理，扩到 6 种前缀**：`http`/`//`/`\\`/`file:`/`ftp`/`ws`，只放 `data:` 与同目录相对路径 | 15-43 / 15-44 / 15-44b / 15-44c 全部改为断言 `ERR_SKIN_DANGEROUS`；15-44d 断言相对路径仍允许 |
+| A8 | 「主题轨激活时皮肤轨必须让位」与 §3.5 软互斥冲突 | **§3.5 未改，软互斥维持**：不主动抢占对侧、不因读到对侧值而卸载对侧 | 10-22（应用主题不卸皮肤）保持不变 |
+
+**剩余 58 条 skip 与契约无关**，分两批：
+
+| 批次 | 条数 | 什么时候自动生效 |
 |---|---|---|
-| A1 | §3.3 T2 说 `activateFamily` 未知 id **静默 no-op**；§3.8 错误表把「内置 activate」列进 `ERR_UNKNOWN_ID` 的触发面 | 按 §3.3 的逐条目表实现断言（静默 no-op）。若定稿改成抛错，04-7/04-8 与 12-24 需同步改 |
-| A2 | §3.3 E1 列了三种摘要文案，但「主题永远回落 jade」让「默认外观」不可达（是否用 `touched` 键区分「没碰过的原生 jade」未说） | 03-5 标 skip，不猜 |
-| A3 | §3.6 字段规则要求 tokens「非数组」，但校验顺序表没说**非空**数组落第 3 步还是第 7 步 | 05-14 标 skip；空数组按第 3 步断言（`ERR_THEME_MISSING_FIELD`） |
-| A4 | 引擎层 unknown-skin 的 message：§3.3 S2 写 `[theme-gallery-skin] unknown-skin: <id>`，§3.8 写 `… <id> (no embedded bundle)` | 只断言两者共有的前缀 |
-| A5 | §3.2 皮肤降级文案里 `__DSH_MODULES__` 在 md 里带反引号，实际渲染是否含反引号未定 | 只断言「皮肤轨道不可用：宿主未提供」+「__DSH_MODULES__」两个片段都在 |
-| A6 | `family`/`applied` 类键写 `''` 时是 `setItem('')` 还是 `removeItem`（§3.5 只对 track 键明确「写 '' 走 removeItem」，§3.3 T7 只对 touched 明确 removeItem） | 这两处按 removeItem 精确断言；其余键断言「读出来是 ''」，不锁死存储表示 |
-| A7 | Windows：保留名 id、bodyAttr 消毒、BOM 剥离、UNC/file 协议 url | 见 15-12 / 15-31 / 15-42 / 15-43 / 15-44，全部标 skip + 「需 INTERFACE 补契约」 |
-| A8 | 任务书曾说「主题轨激活时皮肤轨必须让位」，与 §3.5「软互斥、不主动抢占对侧、不因读到对侧值而卸载对侧」冲突 | **按 INTERFACE 实现断言**（10-22：应用主题不卸皮肤）。若产品要「让位」，先改 INTERFACE |
+| 包门控（`packages/appearance-gallery/` 尚未创建） | 51（13 号文件 45 条 + 14 号文件的 P1/P4a/P4b/P5/P8a/P8b 6 条） | 目录一出现即生效，**测试一个字都不用改** |
+| 真机 / 说明性 | 7（P2、P3、P9、P10、P11 五条真机；P5-TBD 等 T3.4 落定数值；P7-ref 是与 03 去重的说明） | 需 `dsh web --port 3199` 实测；P9 是卡点项 |
 
 ## 覆盖了什么
 
 | 类别 | 条数 |
 |---|---|
-| 正常路径（BRIEF 每条主路径） | 90 |
-| 边界（0/1/空/极值/临界/超长/Unicode） | 41 |
-| 错误路径（乱输入、缺参、类型错、依赖不可用、状态损坏） | 140 |
+| 正常路径（BRIEF 每条主路径） | 92 |
+| 边界（0/1/空/极值/临界/超长/Unicode） | 43 |
+| 错误路径（乱输入、缺参、类型错、依赖不可用、状态损坏） | 149 |
 | 反向用例（不该发生的事没发生） | 56 |
 | 幂等 / 并发 | 23 |
-| 用户没想到的（老用户迁移、emoji、Windows 双平台） | 46 |
+| 用户没想到的（老用户迁移、emoji、Windows 双平台） | 48 |
 | 静态门禁（源码与产物） | 45 |
 | 性能门禁 | 17 |
-| **node --test 合计** | **458（0 失败，65 跳过）** |
+| **node --test 合计** | **471（0 失败，58 跳过，其中契约门控 0 条）** |
 | UI 真实流程（Playwright，只语法检查未真跑） | 16 |
 
 ## 没覆盖什么（如实声明）
@@ -534,9 +557,9 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 1. **「变快了」没被证明。** P1/P4/P5 是静态计数，只证明源码里 fixed 背景与 blur 变少了、产物变小了。真正回答用户「滑动不卡」的是 P9/P10/P11 三组真机采样，现在全是 skip。**P1 绿而 P9 没跑 = 不算达标。**
 2. **真实浏览器行为一条没跑。** 皮肤 bundle 的真实执行、Blob-URL 注入、a11y `<style>` 真实生效、React hooks 真实行为、宿主槽位真实渲染顺序 —— 全靠 harness 模拟。e2e 16 条只做了语法检查。
 3. **harness 不是实现。** 现在全绿只说明「测试自身与契约自洽」。真实实现接进来（`APPEARANCE_SUBJECT=real`）才可能暴露差异；harness 与真实实现有分歧时，**以 INTERFACE 为准**，两边都不算权威。
-4. **45 条静态门禁在等包目录。** `packages/appearance-gallery/` 一出现就自动生效；在此之前它们是 skip，**不能当成绿**。
+4. **51 条门禁在等包目录。** `packages/appearance-gallery/` 一出现就自动生效；在此之前它们是 skip，**不能当成绿**。A1–A8 裁决后契约门控的 skip 已清零，剩下的 58 条全是包门控（51）与真机（7）。
 5. **安全闸只测到契约边界。** 12 条黑名单是纯子串匹配的防手滑闸；INTERFACE 已声明未覆盖 `indexedDB`/`new Worker(`/`sendBeacon`/`caches`/`top.location` 与 `window['ev'+'al']` 这类拼接绕过 —— 这些**没测**，因为契约明确不承诺拦得住。别把这批测试全绿读成「导入第三方皮肤是安全的」。
 6. **构建脚本本身没跑。** `build`/`check` 的语义（内存串全通过才写盘、check 只读且逐字节比对）只在产物结果上断言，没有验证「失败时 lib/ 不被改」这条过程性保证。
 7. **宿主侧槽位遮盖语义没测。** 同 id 同 priority 抛错、不同 priority 时数值最低者渲染 —— 那是宿主的行为，本插件只保证不传 priority（13-3）。
-8. **Windows 覆盖情况**：测到的是**输入侧**——保留名/非法字符做 id 与 label、CRLF 换行、BOM、CRLF 的字节计数、产物与源码里无盘符与 UNC 字面量、构建脚本无 POSIX 硬编码与 mac 专属命令、测试自身用 `node:path`。**留给真机的**：Windows 上真的跑一遍 `node --test` 与 `pnpm build`、Windows 浏览器（Edge/Chrome）里的滚动帧率与字体渲染、PowerShell 下的安装命令、以及 A7 那 5 条待补契约的最终行为。
+8. **Windows 覆盖情况**：测到的是**输入侧**——保留名/非法字符做 id 与 label、CRLF 换行、BOM、CRLF 的字节计数、产物与源码里无盘符与 UNC 字面量、构建脚本无 POSIX 硬编码与 mac 专属命令、测试自身用 `node:path`。A7-1~A7-4 裁决落地后，保留名提示、bodyAttr 正则、BOM 剥离、url() 六前缀拦截都已是可执行断言。**留给真机的**：Windows 上真的跑一遍 `node --test` 与 `pnpm build`、Windows 浏览器（Edge/Chrome）里的滚动帧率与字体渲染、PowerShell 下的安装命令、。
 

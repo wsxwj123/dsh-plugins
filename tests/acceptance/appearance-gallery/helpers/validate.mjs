@@ -3,8 +3,11 @@
 import {
   ERR, ID_RE, THEME_LABEL_MAX, TOKEN_PREFIX, BUILTIN_THEME_IDS, BUILTIN_SKIN_IDS,
   MAX_BUNDLE_B64, MAX_A11Y_BYTES, MAX_CUSTOM_COUNT, DANGEROUS_SUBSTRINGS,
-  CTX_WHITELIST, SKIN_REQUIRED_META,
+  CTX_WHITELIST, SKIN_REQUIRED_META, BODY_ATTR_RE,
 } from './contract.mjs';
+
+/** A7-3 裁决：只对要 JSON.parse 的文本剥前导 BOM；client.js / a11y.css 一律不动 */
+const stripBom = (text) => (typeof text === 'string' && text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text);
 
 export function codedError(code, message) {
   const e = new Error(message);
@@ -27,7 +30,7 @@ export const byteLen = (text) => Buffer.byteLength(text, 'utf8');
 export function validateTheme(jsonText) {
   let parsed;
   try {
-    parsed = JSON.parse(jsonText);                                   // 顺序 1
+    parsed = JSON.parse(stripBom(jsonText));                         // 顺序 0（剥 BOM）+ 1
   } catch {
     throw codedError(ERR.IMPORT_INVALID_JSON, '主题 JSON 解析失败');
   }
@@ -77,7 +80,8 @@ const parenBalanced = (text) => {
 };
 const EXPORTS_APPLY = [/\bapply\s*(\{|:)/, /function\s+apply/];
 const CTX_RE = /ctx\.([A-Za-z_$][\w$]*)/g;
-const REMOTE_URL_RE = /url\(\s*['"]?\s*(https?:|\/\/)/i;
+// A7-4 裁决：http / // / \\ / file: / ftp / ws 六种前缀全拦，只放 data: 与同目录相对路径
+const REMOTE_URL_RE = /url\(\s*['"]?\s*(https?|\/\/|\\\\|file:|ftp|ws)/i;
 
 /**
  * @param parts {{skin:string, client:string, a11y?:string}}
@@ -90,7 +94,7 @@ export function validateBundle(parts, existingIds = []) {
   }
   let meta;
   try {
-    meta = JSON.parse(String(skin));                                 // 顺序 2
+    meta = JSON.parse(stripBom(String(skin)));                       // 顺序 2（含剥 BOM）
   } catch {
     throw codedError(ERR.IMPORT_INVALID_JSON, 'skin.json 解析失败');
   }
@@ -104,6 +108,9 @@ export function validateBundle(parts, existingIds = []) {
   }
   if (!ID_RE.test(meta.id)) {                                        // 顺序 4
     throw codedError(ERR.SKIN_BAD_META, `id 非法：${meta.id}`);
+  }
+  if (meta.bodyAttr !== undefined && !BODY_ATTR_RE.test(meta.bodyAttr)) { // 顺序 4b（A7-2）
+    throw codedError(ERR.SKIN_BAD_META, `bodyAttr 非法：${meta.bodyAttr}`);
   }
   if (BUILTIN_SKIN_IDS.includes(meta.id)) {                          // 顺序 5
     throw codedError(ERR.THEME_ID_CONFLICT, `id 与内置皮肤冲突：${meta.id}`);

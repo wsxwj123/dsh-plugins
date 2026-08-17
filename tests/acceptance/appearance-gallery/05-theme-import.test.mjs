@@ -86,9 +86,18 @@ test('导入主题_label是空字符串抛ERR_THEME_MISSING_FIELD', async () => 
   await assert.rejects(h.themeApi.importCustomTheme(themeJson({ label: '' })), code(ERR.THEME_MISSING_FIELD));
 });
 
-test('导入主题_tokens是非空数组的归属待定', async (t) => {
-  // §3.6 字段规则说 tokens 须"非数组"，但校验顺序表把数组既没归到第 3 步也没归到第 7 步。
-  t.skip('INTERFACE 未定义非空数组 tokens 落哪个错误码；见 TEST-PLAN 契约歧义 A3');
+test('导入主题_tokens是非空数组抛ERR_THEME_MISSING_FIELD', async () => {
+  // A3 裁决：数组一律按"缺字段"处理（第 3 步），不落第 7 步的 BAD_TOKEN
+  const h = await started();
+  await assert.rejects(
+    h.themeApi.importCustomTheme(themeJson({ tokens: [{ '--dsw-bg': { light: '#1', dark: '#2' } }] })),
+    code(ERR.THEME_MISSING_FIELD),
+  );
+});
+
+test('导入主题_tokens是空数组抛ERR_THEME_MISSING_FIELD', async () => {
+  const h = await started();
+  await assert.rejects(h.themeApi.importCustomTheme(themeJson({ tokens: [] })), code(ERR.THEME_MISSING_FIELD));
 });
 
 // ---------------- 校验顺序 4：id 正则 ----------------

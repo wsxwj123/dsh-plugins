@@ -43,10 +43,19 @@ test('E1摘要_皮肤生效时前缀是完整皮肤而不是精选主题', async
   assert.equal(h.summaryText().startsWith(TEXT.summaryThemePrefix), false);
 });
 
-test('E1摘要_默认外观文案的触发条件待定', async (t) => {
-  // INTERFACE §3.3 E1 列了三种文案，但"主题永远回落 jade"使「默认外观」不可达，
-  // 触发条件（是否以 touched 键区分"没碰过的原生 jade"）未定义 → 04 定稿后接线。
-  t.skip('INTERFACE 未定义「默认外观」的触发条件；见 TEST-PLAN 契约歧义 A2');
+test('E1摘要_全新安装8键全空时显示精选主题竹青', async () => {
+  // A2 裁决：摘要只有两种文案，「默认外观」已从契约删除；8 键全空归入「精选主题 · jade 的 label」
+  const h = await createSubject();
+  h.start(FULL);
+  assert.deepEqual(h.storage.keys(), [], '前置条件：8 个键必须全空');
+  assert.equal(h.summaryText(), '精选主题 · 竹青');
+});
+
+test('E1摘要_不存在默认外观这种文案', async () => {
+  // A2 裁决的反向断言：契约里已无第三种文案
+  const h = await createSubject();
+  h.start(FULL);
+  assert.equal(textOf(h.entry.render()).includes('默认外观'), false);
 });
 
 test('E2懒挂载_open为false时渲染树节点数不超过10', async () => {

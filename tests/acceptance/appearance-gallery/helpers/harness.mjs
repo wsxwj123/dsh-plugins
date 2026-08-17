@@ -170,7 +170,7 @@ export function createHarness(opts = {}) {
     try {
       if (!moduleTable.has(pkg)) {
         const text = item.source === 'custom' ? item.bundleText : bundles.get(item.id);
-        if (!text) throw new Error(`${runtimeUnknownSkin(item.id)} (no embedded bundle)`);
+        if (!text) throw new Error(runtimeUnknownSkin(item.id)); // A4：message 全文含 (no embedded bundle)
         execScript(text);
         moduleTable.set(pkg, { apply: () => {} });
       }

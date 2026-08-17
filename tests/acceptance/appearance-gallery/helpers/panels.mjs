@@ -54,14 +54,14 @@ export function createSkinPanel(deps) {
   const buildSummary = () => [
     ...[...state.picked].sort().map((i) => SECTIONS[i]),
     'packages/appearance-gallery/skins/<skin-id>/',
+    TEXT.winReservedHint,                        // A7-1 裁决：目录建议段必须带这句
     'pnpm --filter dsh-appearance-gallery test',
   ].join('\n');
   const Panel = () => {
     if (engine === null) {
       // §3.2：引擎为 null 时整段只渲染一行占位，S1–S8 全部入口不渲染
       return React.createElement('section', { className: 'skin-gallery-section' },
-        React.createElement('p', { className: 'skin-gallery-unavailable' },
-          `${TEXT.skinUnavailableHead} ${TEXT.skinUnavailableToken}。`));
+        React.createElement('p', { className: 'skin-gallery-unavailable' }, TEXT.skinUnavailable));
     }
     const q = state.search.slice(0, SEARCH_INPUT_MAX).toLowerCase();
     const all = [...builtinSkins, ...customSkinApi.getSkins()];

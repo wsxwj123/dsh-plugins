@@ -85,17 +85,22 @@ export const DANGEROUS_SUBSTRINGS = [
 /** INTERFACE §3.2 / §3.3 —— 用户可见文案，逐字断言用 */
 export const TEXT = {
   legacyConflict: '检测到旧版 theme-gallery / skin-gallery 仍已安装，请先卸载，否则外观会冲突',
-  // INTERFACE 原文带反引号包裹 __DSH_MODULES__，实际渲染是否含反引号未定义 →
-  // 测试只断言这两个片段都在，不断言整串（见 TEST-PLAN 的"契约歧义"节）。
-  skinUnavailableHead: '皮肤轨道不可用：宿主未提供',
-  skinUnavailableToken: '__DSH_MODULES__',
+  // A5 裁决：无反引号、无额外空格、结尾中文句号，断言全等
+  skinUnavailable: '皮肤轨道不可用：宿主未提供 __DSH_MODULES__。',
+  // A7-1 裁决：designSummary 的目录建议段必须含这句提示（文档提示，不是校验）
+  winReservedHint: 'id 不要用 Windows 保留名（con / prn / aux / nul / com1-9 / lpt1-9），否则在 Windows 上无法创建同名目录。',
   summaryThemePrefix: '精选主题 · ',
   summarySkinPrefix: '完整皮肤 · ',
-  summaryDefault: '默认外观',
+  // A2 裁决：只有上面两种文案，「默认外观」已从契约删除（全新安装显示 jade 的 label）
 };
 
-/** INTERFACE §3.8 —— 两个无 code 的运行时错误（引擎层） */
-export const runtimeUnknownSkin = (id) => `[theme-gallery-skin] unknown-skin: ${id}`;
+/** INTERFACE §3.7 —— A7-2 裁决：bodyAttr 必须匹配此正则，否则 ERR_SKIN_BAD_META */
+export const BODY_ATTR_RE = /^data-[a-z0-9-]{1,64}$/;
+/** INTERFACE §3.7 —— A7-4 裁决：a11y 的 url() 命中这些前缀即拒 */
+export const A11Y_BLOCKED_URL_PREFIXES = ['http', '//', '\\\\', 'file:', 'ftp', 'ws'];
+
+/** INTERFACE §3.8 —— 两个无 code 的运行时错误（引擎层）。A4 裁决：message 全文如下 */
+export const runtimeUnknownSkin = (id) => `[theme-gallery-skin] unknown-skin: ${id} (no embedded bundle)`;
 export const runtimeNoApply = (pkg) => `[theme-gallery-skin] "${pkg}" client bundle exports no apply`;
 
 /** INTERFACE §3.9 —— acceptance-api 必须导出的名字 */
