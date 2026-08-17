@@ -21,6 +21,9 @@ import {
   canCreateProjectRootAgents,
   projectRootAgentsTarget,
   createProjectAgentsTemplate,
+  canCreateGlobalAgents,
+  dshHomeAgentsTarget,
+  createGlobalAgentsTemplate,
   INSTRUCTION_CANDIDATES,
   LOCAL_INSTRUCTION_CANDIDATES,
   PROJECT_ROOT_MARKERS,
@@ -379,8 +382,96 @@ test.describe('instructions.unit', () => {
     })
   })
 
-  test.describe('isDiscoveredPath', () => {
-    test('相对 inputPath 经由 resolve 规约后仍命中绝对集合', () => {
+  test.describe('增量 2：createGlobalAgentsTemplate / canCreateGlobalAgents / dshHomeAgentsTarget', () => {
+    test('createGlobalAgentsTemplate 返回 INTERFACE §1.5 定死的全局 2 行模板全文', () => {
+      assert.equal(
+        createGlobalAgentsTemplate(),
+        '# 全局指令（AGENTS.md）\n\n<!-- 记录所有会话通用的全局约定、编码规范与常用命令。此文件会被 DSH 作为全局指令自动加载。 -->\n',
+      )
+    })
+
+    test('全局模板与项目模板不同源（R-E7：按 scope 各自单一来源）', () => {
+      assert.notEqual(createGlobalAgentsTemplate(), createProjectAgentsTemplate())
+    })
+
+    test('canCreateGlobalAgents：dshHome 无 AGENTS.md → true；已存在 → false', () => {
+      const tree = buildTree()
+      try {
+        assert.equal(canCreateGlobalAgents(tree.home), true)
+        writeFileSync(join(tree.home, 'AGENTS.md'), 'g', 'utf8')
+        assert.equal(canCreateGlobalAgents(tree.home), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('canCreateGlobalAgents：symlink/目录占用视为已存在 → false', () => {
+      const tree = buildTree()
+      try {
+        const outside = join(tree.path('ext'), 'real.md')
+        mkdirSync(tree.path('ext'), { recursive: true })
+        writeFileSync(outside, 'r', 'utf8')
+        symlinkSync(outside, join(tree.home, 'AGENTS.md'), 'file')
+        assert.equal(canCreateGlobalAgents(tree.home), false, 'symlink 占用视为已存在')
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('canCreateGlobalAgents：dshHome 不存在（realpath 失败）→ false；与 .git 无关', () => {
+      const tree = buildTree()
+      try {
+        assert.equal(canCreateGlobalAgents(tree.path('missing', '.dsh')), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('canCreateGlobalAgents：dshHome 经 symlink 抵达时按真实物理目录判定', () => {
+      const tree = buildTree()
+      try {
+        const alias = tree.path('home-alias')
+        symlinkSync(tree.home, alias, 'dir')
+        assert.equal(canCreateGlobalAgents(alias), true)
+        writeFileSync(join(tree.home, 'AGENTS.md'), 'g', 'utf8')
+        assert.equal(canCreateGlobalAgents(alias), false)
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('dshHomeAgentsTarget：目标 = realpath(dshHome)/AGENTS.md', () => {
+      const tree = buildTree()
+      try {
+        const t = dshHomeAgentsTarget(tree.home)
+        assert.equal(t, join(realpathSync(tree.home), 'AGENTS.md'))
+        const alias = tree.path('home-alias2')
+        symlinkSync(tree.home, alias, 'dir')
+        assert.equal(dshHomeAgentsTarget(alias), t, 'symlink 抵达时目标落在真实物理目录内')
+      } finally {
+        tree.cleanup()
+      }
+    })
+
+    test('discoverInstructions 增补 canCreateGlobalAgents 字段（§1.1 additive）', () => {
+      const tree = buildTree()
+      try {
+        const d = discoverInstructions({ cwd: tree.sub, dshHome: tree.home })
+        assert.equal(d.canCreateGlobalAgents, true)
+        writeFileSync(join(tree.home, 'AGENTS.md'), 'g', 'utf8')
+        const d2 = discoverInstructions({ cwd: tree.sub, dshHome: tree.home })
+        assert.equal(d2.canCreateGlobalAgents, false)
+        // 与项目根有无 .git 无关：无项目根 cwd 下仍据 dshHome 计算
+        const d3 = discoverInstructions({ cwd: tree.path('nowhere'), dshHome: tree.home })
+        assert.equal(d3.projectRootFound, false)
+        assert.equal(d3.canCreateGlobalAgents, false, 'AGENTS.md 已写入 → false')
+      } finally {
+        tree.cleanup()
+      }
+    })
+  })
+
+  test.describe('isDiscoveredPath', () => {    test('相对 inputPath 经由 resolve 规约后仍命中绝对集合', () => {
       const tree = buildTree()
       try {
         tree.write('AGENTS.md', 'r')

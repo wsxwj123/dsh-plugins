@@ -149,6 +149,7 @@ export default [
       'history-storage': 'src/client/history-storage.ts',
       append: 'src/client/append.ts',
       'bridge-core': 'src/client/bridgeCore.ts',
+      'instruction-view': 'src/client/instruction-view.ts',
     },
     outDir: 'lib',
     format: 'esm',
