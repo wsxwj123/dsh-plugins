@@ -242,7 +242,7 @@ slots.inject('settings.general.item', () => slots.register(
 |---|---|---|
 | `exports.inject` | `['slots']`（`theme` 经 `ctx.get('theme')` 取，与现状一致） | — |
 | `apply(ctx)` 开头 | `ctx.get('theme')` 与 `ctx.get('slots')` 任一为 `undefined` → **直接 return，不注册槽位、不注入样式、不碰 storage** | 沿用现状 |
-| `__DSH_MODULES__` 缺失 | 皮肤引擎为 `null`；主题区照常工作；**皮肤区只渲染一行占位文案**「皮肤轨道不可用：宿主未提供 `__DSH_MODULES__`。」，S1–S8 全部入口**不渲染、不可调用** | **不抛错、不影响主题区**。断言：占位态下 DOM 里不存在皮肤卡片、搜索框、导入/删除/恢复按钮 |
+| `__DSH_MODULES__` 缺失 | 皮肤引擎为 `null`；主题区照常工作；**皮肤区只渲染一行占位文案**，S1–S8 全部入口**不渲染、不可调用**。文案精确逐字为（**A5 裁决**：无反引号、无额外空格，结尾是中文句号，与 `70c230d` 逐字一致）：<br>`皮肤轨道不可用：宿主未提供 __DSH_MODULES__。` | **不抛错、不影响主题区**。断言：文案**全等**上面这个字符串；占位态下 DOM 里不存在皮肤卡片、搜索框、导入/删除/恢复按钮 |
 | 启动恢复 | ① 若 `theme-gallery-custom-applied-v1` 指向存在的自定义主题 → 应用它；否则应用 `theme-gallery-family-v5`（缺省 `jade`）。② 若 `skin-gallery-skin-v1` 指向内置皮肤 id、或 `skin-gallery-custom-applied-v1` 指向存在的自定义皮肤 → 激活它 | 沿用现状。**在 `apply` 层执行，与面板是否打开无关**（见 3.0） |
 | 旧包在场自检 | `apply` 时探测旧包注入的 style 标记（`style[data-theme-gallery]` / `style[data-skin-gallery]` / `style[data-skin-entry]`）；命中则在 E1 位置多渲染一行醒目提示「检测到旧版 theme-gallery / skin-gallery 仍已安装，请先卸载，否则外观会冲突」 | 探测失败（查不到）时静默，不影响功能。断言：预置一个 `<style data-skin-gallery>` 后渲染入口，提示文案出现 |
 | 插件停止 | `ctx.effect` 的 disposer：撤销试穿 → 移除注入的 `<style>` → 撤销 token override → `teardownSkins()`（卸皮肤 + 清模块表 + 移除皮肤/a11y style）。**不删任何 storage 键** | 沿用现状 + 新增试穿撤销 |
@@ -254,7 +254,7 @@ slots.inject('settings.general.item', () => slots.register(
 
 | 入口 | 触发 | 行为 | 断言 |
 |---|---|---|---|
-| E1 状态摘要 | 渲染即显示 | 显示**实际生效**的外观：`精选主题 · <label>` / `完整皮肤 · <name>` / `默认外观`。**摘要只反映生效结果，不直接读 applied 键渲染文案**——applied 键悬空（指向已不存在的 id，见 3.8 第 6 条）时显示实际回落到的外观（jade），与眼睛看到的一致。旧包在场时额外一行冲突提示（见 3.2） | 预置悬空 `theme-gallery-custom-applied-v1='ghost'` + 空 registry → 摘要文案 = `精选主题 · 竹青`（jade 的 label）；不含任何卡片元素 |
+| E1 状态摘要 | 渲染即显示 | 显示**实际生效**的外观，**只有两种文案**（**A2 裁决**：删掉原先的第三种「默认外观」——插件启动恢复必然会应用某个主题（jade 兜底并写 `theme-gallery-custom-touched-v1='1'`），所以"没有任何生效外观"在插件跑起来之后不可达；保留一个不可达文案 = 死代码 + 一条永远 skip 的测试。**不为它改任何 storage 写时机**）：<br>① 有生效皮肤（`currentSkinState().active` 为真，或 `skin-gallery-custom-applied-v1` / `skin-gallery-skin-v1` 之一非空）→ `完整皮肤 · <name>`；<br>② 否则 → `精选主题 · <label>`（含"全新安装、8 键全空"这一情形，此时显示 jade 的 label）。<br>**摘要只反映生效结果，不直接读 applied 键渲染文案**——applied 键悬空（指向已不存在的 id，见 3.8 第 6 条）时显示实际回落到的外观（jade）。旧包在场时额外一行冲突提示（见 3.2） | ① 预置悬空 `theme-gallery-custom-applied-v1='ghost'` + 空 registry → 摘要 = `精选主题 · 竹青`（jade 的 label）；② 全新安装（8 键全空）→ 摘要 = `精选主题 · 竹青`（原 03-5 用例改断言这条，不再 skip）；③ 不含任何卡片元素 |
 | E2 打开按钮 | 点击 | `open := true`，挂载二级面板（主题区 + 皮肤区同时挂载） | `open=false` 的渲染树节点数 ≤10，且不含 `theme-gallery-card` / `skin-gallery-card` / `textarea` |
 | E3 关闭 | 二级面板内「返回」按钮 | 先 `revertPreview()` 撤销试穿态，再 `open := false` 卸载面板。**不改任何 storage 键** | ① 关闭前后 8 个 storage 键的值完全相同；② **关闭后 `getPreviewState().skinId` 为空，且 body 上生效的外观与 storage 记录一致**（这条在"不撤销试穿"的实现下会红，是本条契约的判据） |
 
@@ -263,7 +263,7 @@ slots.inject('settings.general.item', () => slots.register(
 | 入口 | 调用 | 成功后可观察状态 | 失败契约 |
 |---|---|---|---|
 | T1 搜索框 | 纯前端过滤（`label + ' ' + id` 小写包含）；**输入超过 64 字符即截断** | 计数 `visible/15` 更新 | 无失败路径 |
-| T2 点选内置主题卡（15 张） | `activateFamily(id)` + 注入 tokens | `theme-gallery-family-v5 = id`、`theme-gallery-custom-applied-v1 = ''`、`theme-gallery-custom-touched-v1 = '1'`、`dsh-appearance-track-v1 = 'theme'` | 未知 id → 静默 no-op，不改 storage |
+| T2 点选内置主题卡（15 张） | `activateFamily(id)` + 注入 tokens | `theme-gallery-family-v5 = id`、`theme-gallery-custom-applied-v1 = ''`、`theme-gallery-custom-touched-v1 = '1'`、`dsh-appearance-track-v1 = 'theme'` | 未知 id / 空 id → **静默 no-op，不抛错、8 个键一个都不改**（**A1 裁决**：主题内置激活保持静默，与 `70c230d` 一致；理由见 3.8 错误表 `ERR_UNKNOWN_ID` 行的括注。皮肤内置激活相反——抛 `ERR_UNKNOWN_ID`，两侧差异是刻意的） |
 | T3 导入自定义主题 | `importCustomTheme(jsonText)` | `theme-gallery-custom-v1` 追加/覆盖同 id 项（`{version:1,items:[…]}`）；**不改当前外观、不写 applied 键** | 抛 `{code,message}`，见 3.6；**不写任何 storage** |
 | T4 试穿自定义主题 | `previewCustomTheme(id)` | 只注入 tokens；**不写任何 storage 键**（刷新即丢；关面板即撤销，见 3.0） | 未知 id → `ERR_UNKNOWN_ID`，不注入、不写键 |
 | T5 应用自定义主题 | `applyCustomTheme(id)` | `theme-gallery-custom-applied-v1 = id`、`theme-gallery-family-v5 = ''`、`touched = '1'`、`track = 'theme'` | 未知 id → `ERR_UNKNOWN_ID`，storage 不变 |
@@ -275,11 +275,11 @@ slots.inject('settings.general.item', () => slots.register(
 | 入口 | 调用 | 成功后可观察状态 | 失败契约 |
 |---|---|---|---|
 | S1 搜索框 | 纯前端过滤（`name + nameEn + id`）；**输入超过 64 字符即截断** | 计数 `visible/总数` 更新 | 无失败路径 |
-| S2 卡片「试穿」 | `previewSkin(id)`（内置）/ `previewCustomSkin(id)`（自定义） | 皮肤真实生效（body 属性 / style / chrome / a11y style 到位）；**不写 applied 键**；关面板即撤销 | 未知内置 id → `ERR_UNKNOWN_ID`；bundle 缺失 → `Error('[theme-gallery-skin] unknown-skin: <id>')`；执行失败 → 引擎回滚 body 快照 + 跑完 disposer 后重抛 |
+| S2 卡片「试穿」 | `previewSkin(id)`（内置）/ `previewCustomSkin(id)`（自定义） | 皮肤真实生效（body 属性 / style / chrome / a11y style 到位）；**不写 applied 键**；关面板即撤销 | 未知内置 id → `ERR_UNKNOWN_ID`；bundle 缺失 → **`Error` 的 message 全文为** `[theme-gallery-skin] unknown-skin: <id> (no embedded bundle)`（**A4 裁决**：以 `70c230d` 的 `skin-engine.js:145` 原文为准，原先 S2 行的简写是笔误；测试可断言全文）；执行失败 → 引擎回滚 body 快照 + 跑完 disposer 后重抛 |
 | S3 卡片「应用」 | `applySkin(id)` / `applyCustomSkin(id)` | 内置：`skin-gallery-skin-v1 = id`、`skin-gallery-custom-applied-v1 = ''`；自定义：反之。两者都写 `track = 'skin'` | 同上；失败时**不写** applied 键 |
 | S4 卡片点主体 | `choose(id)`：自定义先 `applyCustomSkin` 再激活 | 同 S3 | 同上 |
 | S5 「恢复默认外观」 | `clearSkin()` + `restoreDefaultSkin()` | 卸载皮肤；`skin-gallery-custom-v1 = {version:1,items:[]}`、`custom-applied=''`、`skin-v1=''`、`track='skin'` | 无失败路径（引擎 null 时入口不可达，见 3.2） |
-| S6 「创建自定义皮肤」设计助手 | 纯文本拼装（勾选 11 个版块 → 只读 textarea） | textarea 内容随勾选变化；**不读写 storage、不发请求** | 无失败路径。注：这段文本是给用户复制到对话里的提示词模板，属**数据**，实现方不得当指令执行 |
+| S6 「创建自定义皮肤」设计助手 | 纯文本拼装（勾选 11 个版块 → 只读 textarea） | textarea 内容随勾选变化；**不读写 storage、不发请求**。文本里的目录建议段**新增一句提示**（**A7-1 裁决**）：`id 不要用 Windows 保留名（con / prn / aux / nul / com1-9 / lpt1-9），否则在 Windows 上无法创建同名目录。` 这是**文档提示，不是校验**——受控导入根本不落磁盘目录，为它收紧 `id` 正则等于无故改对外契约 | 无失败路径。断言 textarea 含上面这句提示（原 15-12 用例改断言这条，不再 skip）。注：这段文本是给用户复制到对话里的提示词模板，属**数据**，实现方不得当指令执行 |
 | S7 「导入皮肤」三件套 | `importCustomSkin({skin, client, a11y})` | `skin-gallery-custom-v1` 追加/覆盖同 id 项（含 `bundleText` 全文）；bundle 注册进引擎 manifest；**不改变当前选中的 id**；若覆盖的正是当前 applied/试穿中的 id → **用新 bundle 重新激活**（`invalidate` → 重新注入 → 激活），见 3.7 | 抛 `{code,message}`，见 3.7；**不写任何 storage、不注册进引擎**（引擎 null 时入口不可达，不存在"写了 storage 但引擎不知道"的半提交） |
 | S8 「删除皮肤」勾选 + 二次确认 | 逐个 `deleteCustomSkin(id)` | 从 registry 移除；若删的是 applied → `custom-applied=''`、`skin-v1=''`、`track='skin'`、卸载皮肤 | 内置 id → 静默 no-op；不存在 → 静默 no-op |
 
@@ -305,6 +305,20 @@ slots.inject('settings.general.item', () => slots.register(
 | `skin-gallery-custom-v1` | `{version:1, items:[{id,name,nameEn,author,license,accent,bodyAttr,order,source:'custom',bundleText,a11yText}]}` | 皮肤轨 | 沿用（**用户导入的皮肤全文在这里，改键即丢数据**） |
 | `skin-gallery-custom-applied-v1` | 自定义皮肤 id 或 `''` | 皮肤轨 | 沿用 |
 | `skin-gallery-skin-v1` | 内置皮肤 id 或 `''` | 皮肤轨 | 沿用 |
+
+**"清空"的存储表示（A6 裁决：一律沿用 `70c230d`，不统一、不改写时机——改写时机就是改老用户数据的落地形态，收益为零）**：
+
+| 键 | 清空时怎么写 | 读侧行为 |
+|---|---|---|
+| `dsh-appearance-track-v1` | `removeItem` | 非 `'theme'`/`'skin'` 一律读作 `''` |
+| `theme-gallery-custom-touched-v1` | `removeItem`（只发生在 `restoreDefaultTheme`） | 不等于 `'1'` 即视为"未触碰" |
+| `theme-gallery-family-v5` | `setItem('')` | `getItem(key) \|\| fallback`，故 `''` 与 `null` 等价 |
+| `theme-gallery-custom-applied-v1` | `setItem('')` | 同上 |
+| `skin-gallery-custom-applied-v1` | `setItem('')` | 同上 |
+| `skin-gallery-skin-v1` | 两条路径都有：`clearSkin()` 走 `removeItem`；`restoreDefaultSkin()` 走 `setItem('')`。S5 会先后调用二者，**最终态是 `''`** | 同上 |
+| 两个 registry（`theme-gallery-custom-v1` / `skin-gallery-custom-v1`） | 清空 = `setItem('{"version":1,"items":[]}')`，**不 removeItem** | 非法 JSON 读作空 registry |
+
+测试口径：**功能语义一律断言"读出来是 `''`（或空 registry）"**；需要精确断言存储表示时按上表（`removeItem` 的两个键可断言 `getItem()===null`）。
 
 兼容性断言（升级测试可直接照写）：
 
@@ -334,15 +348,16 @@ slots.inject('settings.general.item', () => slots.register(
 |---|---|
 | `id` | 必填非空字符串，须匹配 `/^[a-z0-9][a-z0-9-_]{0,63}$/`，且不得与 15 个内置 id 冲突：`jade` `terracotta` `ember` `starlight` `rose-mist` `amethyst` `amber-retro` `ink-river` `mossland` `eclipse` `horizon` `azure` `monochrome` `blush-dawn` `lilac-mist` |
 | `label` | 必填非空字符串，长度 ≤ 80 |
-| `tokens` | 必填非空对象（非数组）。每个键须以 `--dsw-` 开头；每个值须是 `{light, dark}` 且两者都是非空字符串 |
+| `tokens` | 必填非空对象（非数组）。每个键须以 `--dsw-` 开头；每个值须是 `{light, dark}` 且两者都是非空字符串。**A3 裁决：数组一律按"缺字段"处理，空数组与非空数组同码同步骤**（下方第 3 步 → `ERR_THEME_MISSING_FIELD`），与 `70c230d` 的 `Array.isArray(tokens)` 位置一致，不落到第 7 步的 `ERR_THEME_BAD_TOKEN` |
 | token 值内容 | 不得含 `}`；不得含"非末尾"的 `;`（即 `;` 只允许出现在最后一个字符位置）——防止把值拼成新的 CSS 规则 |
 | 其他字段 | 忽略（不校验、不落盘） |
 
 校验顺序（**测试按此顺序断言错误码**，短路在第一处失败）：
 
+0. **剥前导 BOM**（`﻿`）后再 `JSON.parse`（**A7-3 裁决**：Windows 记事本 / PowerShell `>` 重定向默认写 UTF-8 BOM，不剥就让用户拿到一个看不懂的 JSON 错。纯容错，不放松任何安全闸——BOM 不携带语义。**只对要 `JSON.parse` 的文本剥**，`client.js` / `a11y.css` 文本一律不动：JS 首行 BOM 被引擎当空白处理，剥了反而让体积计算与用户粘贴内容不一致）
 1. `JSON.parse` 失败 → `ERR_IMPORT_INVALID_JSON`
 2. 解析结果不是对象 / 是数组 / 是 null → `ERR_IMPORT_INVALID_JSON`
-3. `id`/`label`/`tokens` 缺失或为空（`tokens` 为空对象也算） → `ERR_THEME_MISSING_FIELD`
+3. `id`/`label`/`tokens` 缺失或为空（`tokens` 为空对象**或任意数组**也算） → `ERR_THEME_MISSING_FIELD`
 4. `id` 不匹配正则 → `ERR_THEME_MISSING_FIELD`
 5. `label` 超 80 → `ERR_THEME_MISSING_FIELD`
 6. `id` 与内置冲突 → `ERR_THEME_ID_CONFLICT`
@@ -365,7 +380,7 @@ slots.inject('settings.general.item', () => slots.register(
 |---|---|
 | `id` `name` `author` `license` | **四个必填**非空字符串；`id` 须匹配 `/^[a-z0-9][a-z0-9-_]{0,63}$/`，且不得与 9 个内置 id 冲突：`qq98` `ths` `xp` `blue-fantasy` `dragon-heir` `minecraft` `whale-song` `trading` `miku` |
 | `accent` | 可选字符串，缺省 `''` |
-| `bodyAttr` | 可选字符串，缺省 `data-dsh-<id>` |
+| `bodyAttr` | 可选字符串，缺省 `data-dsh-<id>`。**A7-2 裁决：必须匹配 `/^data-[a-z0-9-]{1,64}$/`，否则 `ERR_SKIN_BAD_META`**。这是新增门禁（在原契约未覆盖处补，非放松也非收紧安全闸）：该值会被直接喂给 `document.body.removeAttribute(bodyAttr)` 与 `querySelectorAll('[' + bodyAttr + ']')`，非法属性名会抛 `InvalidCharacterError` / 选择器 `SyntaxError`，而且是在**激活/卸载路径**上炸——防御性优先。已实测零误伤：9 套内置全是 `data-dsh-<id>` 形态，`navigation-diary` 是 `data-dsh-navigation-diary` |
 | `order` | 可选数字，缺省 `100 + 已有自定义项数` |
 | `nameEn` `tagline` `description` `tags` | 不参与校验（`nameEn`/`tagline` 会被读取显示，`description`/`tags` 完全不读） |
 
@@ -385,7 +400,7 @@ slots.inject('settings.general.item', () => slots.register(
 | 类型 | 字符串或缺省；其他类型按缺省处理（沿用现状的静默降级，不新增错误码） | — |
 | 长度上限 | **65536 B（64 KB）**。原本 a11y 文本**不计入** 256 KB 上限却与 `bundleText` 一起整文存进 localStorage，无上限意味着一份超大 a11y 能顶爆整域 5 MB 配额，连带让用户已有的主题/皮肤写不进去（写失败是静默降级，用户只看到"导入了但没保存"） | `ERR_SKIN_SIZE` |
 | 禁 `@import` | 子串匹配 `@import` 即拒 | `ERR_SKIN_DANGEROUS` |
-| 禁远程 `url()` | 匹配 `url(` 后紧跟（允许引号与空白）`http` 或 `//` 即拒；**`data:` URI 的 `url()` 允许**（皮肤合法用途） | `ERR_SKIN_DANGEROUS` |
+| 禁远程 / 本地文件 `url()` | 匹配 `url(` 后紧跟（允许引号与空白）以下任一前缀即拒：`http`、`//`、`\\`、`file:`、`ftp`、`ws`。**只允许 `data:` URI 与同目录相对路径**（**A7-4 裁决**：原契约只拦 `http` / `//`，把 UNC `\\server\share\x.png` 与 `file:///C:/x.png` 放行了——同样是"从 CSS 取外部资源"，同一个口不能只堵一半。已实测零误伤：9 套内置 a11y 与 `navigation-diary` 的 a11y **全文 0 处 `url(`**） | `ERR_SKIN_DANGEROUS` |
 
 误伤核查（已实测，不需再排 spike）：9 套内置 `a11y.css` 最大 1264 B、0 处 `@import`、0 处远程 `url()`；外部 `navigation-diary/a11y.css` 2363 B、0 处命中。新增三条约束对现有交付物**零影响**。
 
@@ -397,9 +412,10 @@ slots.inject('settings.general.item', () => slots.register(
 校验顺序（**测试按此顺序断言错误码**，短路在第一处失败）：
 
 1. `skin` 假值 / `client` 假值或空串 → `ERR_SKIN_MISSING_FILE`
-2. `skin.json` `JSON.parse` 失败，或解析结果非对象 → `ERR_IMPORT_INVALID_JSON`
+2. **剥 `skin` 文本的前导 BOM**（A7-3，同 §3.6 第 0 步；`client`/`a11y` 不剥），再 `JSON.parse`；失败或解析结果非对象 → `ERR_IMPORT_INVALID_JSON`
 3. 四个必填字段缺失/非字符串/空 → `ERR_SKIN_BAD_META`
 4. `id` 不匹配正则 → `ERR_SKIN_BAD_META`
+4b. `bodyAttr` 存在但不匹配 `/^data-[a-z0-9-]{1,64}$/` → `ERR_SKIN_BAD_META`（A7-2）
 5. `id` 与内置皮肤冲突 → `ERR_THEME_ID_CONFLICT`（**注意：皮肤 id 冲突复用的是 THEME 前缀这个码，不是笔误，不许改**）
 6. `client` 非字符串或空 → `ERR_SKIN_CONTRACT`
 7. 缺 `__ModuleLoader__.load({` / 缺 `factory` / 括号不配平 → `ERR_SKIN_CONTRACT`
@@ -408,14 +424,14 @@ slots.inject('settings.general.item', () => slots.register(
 10. 使用白名单外 `ctx.<名>` → `ERR_SKIN_CONTRACT`（message 含第一个违规名）
 11. `base64(skin+client)` 超 256 KB → `ERR_SKIN_SIZE`
 12. `a11y` 超 64 KB → `ERR_SKIN_SIZE`
-13. `a11y` 含 `@import` 或远程 `url()` → `ERR_SKIN_DANGEROUS`
+13. `a11y` 含 `@import`，或 `url()` 命中 `http`/`//`/`\\`/`file:`/`ftp`/`ws` 前缀 → `ERR_SKIN_DANGEROUS`
 14. 数量超限 → `ERR_SKIN_COUNT`
 
 导入成功后的落盘形态（沿用）：整段 `client.js` 文本作为 `bundleText` 存进 `skin-gallery-custom-v1`；`a11y` 文本存进 `a11yText`。激活时把 `bundleText` 作为 **Blob-URL 经典脚本**注入执行，再 `modules.import(pkg)` 取 `apply`。重新注册同 id 前先 `modules.invalidate(pkg)`。
 
 **覆盖当前生效项的语义**（自定义皮肤开发者的主循环：改代码 → 重新导入 → 看效果）：若被覆盖的 id **正是当前 applied 或试穿中的那个**，导入成功后**立即用新 bundle 重新激活**（走既有 `applyCustomSkin` 路径：`invalidate` → 重新注入 → 激活）。所以"导入不改变当前外观"这句准确表述是**不改变当前选中的 id**。断言：applied 自定义皮肤 X → 导入改动过的同 id X → `bundleText` 是新的，**且 body 上生效的是新 bundle 的标记**（旧标记不残留）。
 
-**这一节的既有常量（12 条黑名单、256 KB、8 个、四个必填字段、`ctx` 白名单 2 项）是对外承诺**（README.md:176-179 与 README.en.md:34 已公开，外部 navigation-diary 包按此交付并实测通过：raw 93580 B → base64 124776 B）。合并**不得放松也不得收紧**；上面新增的 a11y 三条是**在原契约未覆盖处补门禁**，不改动这 5 组常量。静态断言：这 5 组常量的字面值与 `70c230d` 逐字符相同。
+**这一节的既有常量（12 条黑名单、256 KB、8 个、四个必填字段、`ctx` 白名单 2 项）是对外承诺**（README.md:176-179 与 README.en.md:34 已公开，外部 navigation-diary 包按此交付并实测通过：raw 93580 B → base64 124776 B）。合并**不得放松也不得收紧**；本轮新增的四项（a11y 长度 / a11y `@import` / a11y 远程与本地文件 `url()` / `bodyAttr` 正则）都是**在原契约未覆盖处补门禁**，加上一项纯容错（剥 BOM），这 5 组常量本身一字不动。静态断言：这 5 组常量的字面值与 `70c230d` 逐字符相同。
 
 **信任边界声明**（诚实优先于好听）：
 
@@ -436,9 +452,9 @@ slots.inject('settings.general.item', () => slots.register(
 | `ERR_THEME_MISSING_FIELD` | 主题导入 | 缺 `id`/`label`/`tokens`；`id` 非法；`label` 超 80 |
 | `ERR_THEME_BAD_TOKEN` | 主题导入 | token 键不以 `--dsw-` 开头；值不是 `{light,dark}` 非空字符串；值含 `}` 或非末尾 `;` |
 | `ERR_THEME_ID_CONFLICT` | 主题导入 / **皮肤导入** | id 与内置项冲突（主题 15 / 皮肤 9 共用此码） |
-| `ERR_UNKNOWN_ID` | 主题/皮肤的 preview / apply / 内置 activate | 目标 id 不在 registry / 不是内置 id |
+| `ERR_UNKNOWN_ID` | `previewCustomTheme` / `applyCustomTheme` / `previewCustomSkin` / `applyCustomSkin` / **皮肤内置** `activateSkin`、`previewSkin` | 目标 id 不在 registry / 不是内置皮肤 id。**A1 裁决：不含主题内置 `activateFamily`**——它对未知 id 是静默 no-op，理由有三：① 与 `70c230d` 两侧现状一致（皮肤内置抛、主题内置不抛，是刻意差异）；② 主题内置激活的调用链是 `paintBuiltin`（对未知 id 已回退到 jade 并重绘）+ `activateFamily`，中途抛错会留下"已重绘但未写键"的半成品，静默 no-op 反而是**防御性更强**的那个；③ 非法 id 只可能来自被篡改的 storage，而入口的 `initialFamily()` 已做白名单回退。静默 no-op 同时保证 8 键一个不改，这就是它的防御性所在 |
 | `ERR_SKIN_MISSING_FILE` | 皮肤导入 | 缺 `skin.json` 或 `client.js` |
-| `ERR_SKIN_BAD_META` | 皮肤导入 | 四必填字段缺失；`id` 非法 |
+| `ERR_SKIN_BAD_META` | 皮肤导入 | 四必填字段缺失；`id` 非法；**`bodyAttr` 不匹配 `/^data-[a-z0-9-]{1,64}$/`** |
 | `ERR_SKIN_CONTRACT` | 皮肤导入 | 空 client；缺 loader 契约 / 括号不配平；未导出 `apply`；`ctx` 白名单外 |
 | `ERR_SKIN_DANGEROUS` | 皮肤导入 | 命中 12 条高危黑名单之一；**或 a11y 含 `@import` / 远程 `url()`** |
 | `ERR_SKIN_SIZE` | 皮肤导入 | `base64(skin+client)` 超 256 KB；**或 a11y 超 64 KB** |
@@ -446,7 +462,7 @@ slots.inject('settings.general.item', () => slots.register(
 
 两个**无 code 的运行时错误**（引擎层，沿用现状，测试按 message 断言）：
 
-- `[theme-gallery-skin] unknown-skin: <id> (no embedded bundle)` — 条目在 manifest 里但 bundle 文本缺失。
+- `[theme-gallery-skin] unknown-skin: <id> (no embedded bundle)` — 条目在 manifest 里但 bundle 文本缺失。**这是唯一权威全文**（A4：`skin-engine.js:145` 原文），可整串断言。
 - `[theme-gallery-skin] "<pkg>" client bundle exports no apply` — 脚本执行了但没导出 `apply`。
 
 **不改状态保证**（每个入口都适用，测试必须逐条验）：
