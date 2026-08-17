@@ -32,6 +32,8 @@
   margin: 0;
   background: none;
   cursor: pointer;
+  /* Fisheye translateY follows the pointer smoothly. */
+  transition: transform 0.09s ease-out;
 }
 
 /* Compacted (shadowed) turns render as gray placeholders — the bar color is
@@ -58,7 +60,6 @@
 
 .bar {
   display: block;
-  height: 2px;
   border-radius: 1px;
   flex: none;
   /* Short transform transition: the wave follows the pointer with a hint of

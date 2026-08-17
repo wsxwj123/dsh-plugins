@@ -32,10 +32,13 @@ interface RpcError {
 
 interface TurnIndexOk {
   ok: true
-  sessionId: string
-  asOfSeq: number
-  total: number
-  turns: TurnIndexBuildResult['turns']
+  /** 通用 RPC 成功契约：业务数据必须放在 `value`（client schema 会剥掉其他字段）。 */
+  value: {
+    sessionId: string
+    asOfSeq: number
+    total: number
+    turns: TurnIndexBuildResult['turns']
+  }
 }
 
 interface TurnIndexFail {
@@ -73,10 +76,12 @@ const MESSAGE = {
 
 const okResponse = (sessionId: string, built: TurnIndexBuildResult): TurnIndexOk => ({
   ok: true,
-  sessionId,
-  asOfSeq: built.asOfSeq,
-  total: built.total,
-  turns: built.turns,
+  value: {
+    sessionId,
+    asOfSeq: built.asOfSeq,
+    total: built.total,
+    turns: built.turns,
+  },
 })
 
 /**

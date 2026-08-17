@@ -37,14 +37,18 @@ import css from './rail.module.css'
 
 /** Visual line thickness (px). */
 const GAP = 5
-/** Hit-area height per line (px) — thin visuals need a comfortable target. */
-const HIT = 10
-/** Block width growth: ALL idle lines share one uniform length — short, and
- *  the block widens gently as turns grow (idle stays unobtrusive; the wave
- *  variation only appears on hover). */
-const BASE_LEN = 3
-const STEP_LEN = 0.75
-const MAX_LEN = 17
+/** Comfortable per-line pitch when turns are few (px) — mini-map density
+ *  (2px line + ~4px breathing room); compressed toward the message-area
+ *  height as the cluster grows. */
+const COMFORT_PITCH = 6
+/** Fisheye spread: lines within this many slots of the pointer widen. */
+const FISHEYE_RADIUS = 3
+/** Fisheye peak: × this pitch at the pointer center (far lines compress to compensate). */
+const FISHEYE_STRENGTH = 3
+/** Fixed idle line length (px) — uniform, short, does NOT grow with turn
+ *  count (the full-index rail can show hundreds of turns; a length that grew
+ *  with count would max out and look loud). */
+const LINE_LEN = 6
 
 /**
  * Dock-style magnification by CONTINUOUS pointer distance (Gaussian falloff).
@@ -61,9 +65,9 @@ function waveGlow(d: number): number {
   return 0.4 + 0.6 * Math.exp(-(d * d) / FALLOFF)
 }
 
-/** Block width for the current turn count (uniform across all lines). */
-function blockWidth(count: number): number {
-  return Math.min(MAX_LEN, BASE_LEN + Math.max(0, count - 2) * STEP_LEN)
+/** Fixed idle line length (px). */
+function lineLength(): number {
+  return LINE_LEN
 }
 
 /** One rendered rail line. */
@@ -113,9 +117,10 @@ function buildLines(
   loaded: Map<number, { key: string; text: string }>,
 ): RailLine[] {
   if (hostIndex !== null) {
+    const index = hostIndex.value
     const lines: RailLine[] = []
-    for (let i = 0; i < hostIndex.turns.length; i++) {
-      const entry: TurnIndexEntry = hostIndex.turns[i]
+    for (let i = 0; i < index.turns.length; i++) {
+      const entry: TurnIndexEntry = index.turns[i]
       // 重要 5: prefer the entry's own turn number; fall back to i+1 so a key
       // divergence resolves through the explicit mapping instead of assuming
       // index identity.
@@ -275,23 +280,67 @@ export function TurnRail({
   if (!box || lines.length < 2) return null
 
   const count = lines.length
-  const width = blockWidth(count)
+  const width = lineLength()
   // The rail covers the MESSAGE area only (excludes the composer seat).
   const areaH = Math.max(0, box.height - box.seat)
   if (areaH < 40) return null
-  const groupH = count * HIT + (count - 1) * GAP
-  // Compress the gap when the cluster would overflow the message area.
-  const gap = groupH > areaH ? Math.max(2, Math.round((GAP * areaH) / groupH)) : GAP
-  const realGroupH = count * HIT + (count - 1) * gap
-  // Center vertically in the message area (relative to the rail box).
-  const groupTop = Math.max(4, areaH / 2 - realGroupH / 2)
+  // Per-line pitch: comfortable (COMFORT_PITCH) when few turns, otherwise the
+  // exact share of the message area — the full cluster ALWAYS fits and stays
+  // vertically centered (never spills top-to-bottom, never mis-centers).
+  const pitch = Math.min(COMFORT_PITCH, areaH / count)
+  // Visual line height shrinks with pitch (down to ~1px) so ultra-long
+  // sessions stay a tidy strip instead of a solid block.
+  const lineH = Math.min(2, pitch)
+  const groupH = count * pitch
+  const groupTop = Math.max(4, (areaH - groupH) / 2)
 
-  /** Fractional line-unit position from a viewport Y. */
+  /**
+   * Fisheye offsets: with the pointer parked at `hoverPos`, the ±RADIUS lines
+   * around it spread apart (STRENGTH× at the peak, Gaussian falloff) while the
+   * far lines compress to compensate — total height stays exactly `count*pitch`,
+   * so the cluster never overflows and stays centered, yet the lines under the
+   * pointer become readable and clickable even in ultra-dense sessions.
+   * @returns per-line translateY in px, or null when idle (no fisheye).
+   */
+  const fisheye = (hoverPos: number | null): number[] | null => {
+    if (hoverPos === null) return null
+    const w = new Array<number>(count)
+    let total = 0
+    for (let i = 0; i < count; i++) {
+      const d = i - hoverPos
+      const weight = Math.exp(-(d * d) / (FISHEYE_RADIUS * FISHEYE_RADIUS))
+      w[i] = weight
+      total += weight
+    }
+    const avg = total / count
+    const offsets = new Array<number>(count)
+    let acc = 0
+    for (let i = 0; i < count; i++) {
+      offsets[i] = acc * (FISHEYE_STRENGTH - 1) * pitch
+      acc += w[i] - avg
+    }
+    return offsets
+  }
+  // O(n) per render — hundreds of lines is microseconds; no memo needed (and
+  // hooks must not run after the early returns above).
+  const offsets = fisheye(hoverPos)
+
+  /** Line index whose DISPLAYED center is nearest the viewport Y (fisheye-aware). */
   const hoverFromPointer = (clientY: number): number => {
     const top = groupRef.current?.getBoundingClientRect().top
     if (top === undefined) return 0
-    const rel = clientY - top - HIT / 2
-    return rel / (HIT + gap)
+    const rel = clientY - top
+    let best = 0
+    let bestD = Infinity
+    for (let i = 0; i < count; i++) {
+      const center = i * pitch + (offsets?.[i] ?? 0) + pitch / 2
+      const d = Math.abs(rel - center)
+      if (d < bestD) {
+        bestD = d
+        best = i
+      }
+    }
+    return best // integer slot index; wave + fisheye smooth via transitions
   }
 
   const enter = (frac: number): void => {
@@ -356,7 +405,7 @@ export function TurnRail({
       onMouseMove={(e) => enter(hoverFromPointer(e.clientY))}
       onMouseLeave={park}
     >
-      <div ref={groupRef} className={css.group} style={{ top: groupTop, gap }}>
+      <div ref={groupRef} className={css.group} style={{ top: groupTop }}>
         {lines.map((line, i) => {
           const d = hoverPos === null ? Infinity : i - hoverPos
           const className = line.state === 'compacted' ? `${css.line} ${css.compacted}` : css.line
@@ -365,13 +414,14 @@ export function TurnRail({
               key={line.turn}
               type="button"
               className={className}
-              style={{ height: HIT }}
+              style={{ height: pitch, transform: `translateY(${offsets?.[i] ?? 0}px)` }}
               onClick={() => handleLineClick(line)}
               aria-label={`跳到第 ${line.turn} 个回合${line.state === 'compacted' ? '（已压缩）' : ''}`}
             >
               <span
                 className={css.bar}
                 style={{
+                  height: lineH,
                   width: Math.round(width),
                   transform: `scaleX(${waveScale(d)})`,
                   opacity: waveGlow(d),
@@ -395,7 +445,7 @@ export function TurnRail({
       {tip !== null && lines[tip] && (
         <div
           className={css.tip}
-          style={{ top: groupTop + tip * (HIT + gap) + HIT / 2, right: width + 12 }}
+          style={{ top: groupTop + tip * pitch + (offsets?.[tip] ?? 0) + pitch / 2, right: width + 12 }}
           onMouseEnter={keepAlive}
           onMouseLeave={park}
         >

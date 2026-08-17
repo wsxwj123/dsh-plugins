@@ -132,10 +132,12 @@ const MESSAGE = {
 };
 const okResponse = (sessionId, built) => ({
 	ok: true,
-	sessionId,
-	asOfSeq: built.asOfSeq,
-	total: built.total,
-	turns: built.turns
+	value: {
+		sessionId,
+		asOfSeq: built.asOfSeq,
+		total: built.total,
+		turns: built.turns
+	}
 });
 /**
 * Build the index for one session from live store first, persistence cold read

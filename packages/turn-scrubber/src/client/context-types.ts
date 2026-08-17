@@ -78,12 +78,15 @@ export interface TurnIndexEntry {
   compacted: boolean
 }
 
+/** 通用 RPC 成功载荷：业务数据在 `value` 里（client schema 剥掉其他字段）。 */
 export interface TurnIndexResult {
   ok: true
-  sessionId: string
-  asOfSeq: number
-  total: number
-  turns: TurnIndexEntry[]
+  value: {
+    sessionId: string
+    asOfSeq: number
+    total: number
+    turns: TurnIndexEntry[]
+  }
 }
 
 export interface TurnIndexError {

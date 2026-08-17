@@ -1,6 +1,6 @@
 # dsh-turn-scrubber
 
-A Codex-style **turn cluster** for the DeepSeek Harness Web GUI: a block of thin horizontal lines pinned to the right edge of the conversation, vertically centered. Each user turn is one line — idle lines are uniform, short and unobtrusive; hovering ripples them like a waveform; clicking a line smooth-scrolls to that turn.
+A Codex-style **turn cluster** for the DeepSeek Harness Web GUI: a block of thin horizontal lines pinned to the right edge of the conversation, vertically centered. Each user turn is one line — the rail shows **every turn of the session** (including unloaded history and compacted turns); idle lines are uniform, short and unobtrusive; hovering ripples them like a waveform and spreads the lines around the pointer (fisheye) so dense sessions stay readable; clicking a line smooth-scrolls to that turn.
 
 Ported from [claude-gui](https://github.com/wsxwj123/claude-gui)'s TurnScrubber idea, re-styled as a linear waveform per user preference.
 
@@ -10,19 +10,22 @@ Ported from [claude-gui](https://github.com/wsxwj123/claude-gui)'s TurnScrubber 
 
 ## Behavior
 
-- **Idle**: a cluster of equal-length short ticks (3–17px, growing gently with turn count), 6px off the window edge, faint — invisible while chatting.
-- **Hover**: a continuous Gaussian-falloff wave — the line nearest the pointer magnifies to 2.4× and brightens; neighbors taper 1.7× → 1.1× → 1×. The peak glides smoothly (fractional position, not per-line jumps).
-- **Tooltip**: after 220ms a summary card fades in ("回合 N" + the first 200 chars of the turn).
+- **All turns**: the rail renders the session's full turn index (host `turnIndex` endpoint): loaded turns (waveform + snapshot tooltip + smooth scroll), **unloaded history** (click auto-loads older pages until the turn appears, then jumps; tooltip shows the host preview), and **compacted turns** (gray placeholder; click heads to the "load earlier" control).
+- **Idle**: a cluster of equal-length short ticks (fixed 6px), 6px off the window edge, faint — invisible while chatting. The pitch is uniform and always fits the message area, vertically centered (never overflows, no matter how many turns).
+- **Hover (fisheye)**: the ±3 lines around the pointer spread apart (Gaussian falloff, 3× at the peak) while far lines compress to compensate — total height unchanged, so dense sessions stay readable and precisely clickable. Combined with the line magnification, the pointer area reads as a smooth wave.
+- **Tooltip**: after 220ms a summary card fades in ("回合 N" + the first 200 chars of the turn; compacted turns show a hint).
 - **Click**: rAF-eased smooth scroll to the turn's anchor row.
 - The cluster is a fixed control, not a minimap: it does not map message positions and stays vertically centered while you scroll.
 - Hidden on narrow viewports (<768px) and on conversations with fewer than 2 turns.
+- **Graceful degrade**: if the host index is unavailable (missing persistence backend etc.), the rail falls back to showing only loaded turns — existing behavior, no errors.
 
 ## How it works
 
-- **Data**: reads the runtime session store — `ctx.sessions.list` tracks the active session; `ctx.sessions.binding(id).session` subscribes to the live chat snapshot. Turns come from `snapshot.chat.locations.turns` (turn → node keys); the summary is the first user/steering node's text, extracted safely from strings, Anthropic-style content-block arrays, or structured objects (never crashes on images/files).
+- **Full index**: the node half serves one read-only RPC endpoint (`POST /turn-scrubber/turnIndex`, loopback-only) that reads the session's complete event log — live store first, then the JSONL persistence backend — and builds `[{turn, preview, compacted}]` per turn (`turn/start` is the authority; turn numbers are 1-based; compaction via `compaction/summary.shadowedSeqs`). The client caches the index per `(sessionId, fingerprint)` and verifies the response's sessionId (session-switch race guard).
+- **Unloaded navigation**: clicking an unloaded line runs a single-flight `ensureTurnLoaded` loop — pages older history until the turn's key appears in the loaded window (or `hasMore` is false / 40-page cap / session switch), then smooth-scrolls.
 - **DOM**: the rail is a sibling of the `[data-conversation-scroll]` scrollport inside its relative parent, sized from layout offsets (`offsetTop`/`offsetHeight`, immune to CSS zoom). Click-jump anchors to DSH's native `[data-chat-anchor-key]` rows.
 - **Scroll**: programmatic `scrollIntoView({ behavior: 'smooth' })` is unreliable in some webviews, so jumping uses a hand-rolled rAF cubic ease.
-- **Client-only**: the node half is a deliberate no-op stub; everything happens in the browser bundle.
+- **Text**: summaries are extracted safely from strings, Anthropic-style content-block arrays, or structured objects (never crashes on images/files); previews are truncated to 120 chars.
 
 ## Install
 

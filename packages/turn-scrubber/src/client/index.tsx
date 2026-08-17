@@ -105,6 +105,7 @@ export function apply(ctx: Context): void {
     // Only apply if the session did not switch while we were fetching.
     if (boundSessionId !== sessionId) return
     hostIndex = result
+    console.log(`[dsh-turn-scrubber] hostIndex applied: ${hostIndex === null ? 'null (degrade)' : `total=${hostIndex.value.total}`}`)
     renderRail()
   }
 

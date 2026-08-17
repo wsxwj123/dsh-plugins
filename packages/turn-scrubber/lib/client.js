@@ -98,7 +98,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:src/client/rail.module.css.mjs
-		const css = "._7YEcIa_rail{z-index:45;pointer-events:auto;width:18px;position:absolute;right:6px}._7YEcIa_group{pointer-events:auto;flex-direction:column;align-items:flex-end;padding:0 0 0 14px;display:flex;position:absolute;right:0}._7YEcIa_line{cursor:pointer;background:0 0;border:none;justify-content:flex-end;align-items:center;margin:0;padding:0;display:flex}._7YEcIa_compacted{cursor:pointer}._7YEcIa_compacted ._7YEcIa_bar{opacity:.28}._7YEcIa_loading{color:var(--dsw-alias-label-tertiary,#c8c8d299);pointer-events:none;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;animation:.14s ease-out _7YEcIa_tip-in;position:absolute}._7YEcIa_bar{transform-origin:100%;will-change:transform;border-radius:1px;flex:none;height:2px;transition:transform 90ms ease-out,background-color .16s,opacity .16s;display:block}._7YEcIa_tip{border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf0);width:max-content;max-width:280px;box-shadow:var(--dsw-shadow-lv2,0 4px 16px #00000059);pointer-events:auto;color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);border-radius:8px;padding:6px 10px;font-size:12px;line-height:1.45;animation:.14s ease-out _7YEcIa_tip-in;position:absolute;transform:translateY(-50%)}@keyframes _7YEcIa_tip-in{0%{opacity:0;transform:translateY(-50%)translate(5px)}to{opacity:1;transform:translateY(-50%)translate(0)}}._7YEcIa_tipTitle{color:var(--dsw-alias-label-tertiary,#c8c8d299);margin-bottom:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}._7YEcIa_tipText{-webkit-line-clamp:2;word-break:break-word;-webkit-box-orient:vertical;display:-webkit-box;overflow:hidden}@media (width<=767px){._7YEcIa_rail{display:none}}";
+		const css = "._7YEcIa_rail{z-index:45;pointer-events:auto;width:18px;position:absolute;right:6px}._7YEcIa_group{pointer-events:auto;flex-direction:column;align-items:flex-end;padding:0 0 0 14px;display:flex;position:absolute;right:0}._7YEcIa_line{cursor:pointer;background:0 0;border:none;justify-content:flex-end;align-items:center;margin:0;padding:0;transition:transform 90ms ease-out;display:flex}._7YEcIa_compacted{cursor:pointer}._7YEcIa_compacted ._7YEcIa_bar{opacity:.28}._7YEcIa_loading{color:var(--dsw-alias-label-tertiary,#c8c8d299);pointer-events:none;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;animation:.14s ease-out _7YEcIa_tip-in;position:absolute}._7YEcIa_bar{transform-origin:100%;will-change:transform;border-radius:1px;flex:none;transition:transform 90ms ease-out,background-color .16s,opacity .16s;display:block}._7YEcIa_tip{border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf0);width:max-content;max-width:280px;box-shadow:var(--dsw-shadow-lv2,0 4px 16px #00000059);pointer-events:auto;color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);border-radius:8px;padding:6px 10px;font-size:12px;line-height:1.45;animation:.14s ease-out _7YEcIa_tip-in;position:absolute;transform:translateY(-50%)}@keyframes _7YEcIa_tip-in{0%{opacity:0;transform:translateY(-50%)translate(5px)}to{opacity:1;transform:translateY(-50%)translate(0)}}._7YEcIa_tipTitle{color:var(--dsw-alias-label-tertiary,#c8c8d299);margin-bottom:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}._7YEcIa_tipText{-webkit-line-clamp:2;word-break:break-word;-webkit-box-orient:vertical;display:-webkit-box;overflow:hidden}@media (width<=767px){._7YEcIa_rail{display:none}}";
 		const tagId = "dsh-turn-scrubber/rail.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -108,16 +108,16 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"compacted": "_7YEcIa_compacted",
-			"bar": "_7YEcIa_bar",
-			"tipTitle": "_7YEcIa_tipTitle",
 			"line": "_7YEcIa_line",
-			"loading": "_7YEcIa_loading",
-			"tip": "_7YEcIa_tip",
-			"tipText": "_7YEcIa_tipText",
+			"bar": "_7YEcIa_bar",
 			"tip-in": "_7YEcIa_tip-in",
 			"group": "_7YEcIa_group",
-			"rail": "_7YEcIa_rail"
+			"compacted": "_7YEcIa_compacted",
+			"tip": "_7YEcIa_tip",
+			"rail": "_7YEcIa_rail",
+			"tipTitle": "_7YEcIa_tipTitle",
+			"loading": "_7YEcIa_loading",
+			"tipText": "_7YEcIa_tipText"
 		};
 		//#endregion
 		//#region src/client/TurnRail.tsx
@@ -153,16 +153,14 @@ window.__ModuleLoader__.load({
 		* through `hostIndex.turns[i].turn` when present so a key divergence would
 		* still resolve correctly (重要 5).
 		*/
-		/** Visual line thickness (px). */
-		const GAP = 5;
-		/** Hit-area height per line (px) — thin visuals need a comfortable target. */
-		const HIT = 10;
-		/** Block width growth: ALL idle lines share one uniform length — short, and
-		*  the block widens gently as turns grow (idle stays unobtrusive; the wave
-		*  variation only appears on hover). */
-		const BASE_LEN = 3;
-		const STEP_LEN = .75;
-		const MAX_LEN = 17;
+		/** Comfortable per-line pitch when turns are few (px) — mini-map density
+		*  (2px line + ~4px breathing room); compressed toward the message-area
+		*  height as the cluster grows. */
+		const COMFORT_PITCH = 6;
+		/** Fixed idle line length (px) — uniform, short, does NOT grow with turn
+		*  count (the full-index rail can show hundreds of turns; a length that grew
+		*  with count would max out and look loud). */
+		const LINE_LEN = 6;
 		const FALLOFF = 1.4;
 		function waveScale(d) {
 			return 1 + 1.4 * Math.exp(-(d * d) / FALLOFF);
@@ -170,9 +168,9 @@ window.__ModuleLoader__.load({
 		function waveGlow(d) {
 			return .4 + .6 * Math.exp(-(d * d) / FALLOFF);
 		}
-		/** Block width for the current turn count (uniform across all lines). */
-		function blockWidth(count) {
-			return Math.min(MAX_LEN, BASE_LEN + Math.max(0, count - 2) * STEP_LEN);
+		/** Fixed idle line length (px). */
+		function lineLength() {
+			return LINE_LEN;
 		}
 		/**
 		* Collect loaded turns from the chat snapshot: turn id → first-user-node key
@@ -208,9 +206,10 @@ window.__ModuleLoader__.load({
 		*/
 		function buildLines(hostIndex, chat, loaded) {
 			if (hostIndex !== null) {
+				const index = hostIndex.value;
 				const lines = [];
-				for (let i = 0; i < hostIndex.turns.length; i++) {
-					const entry = hostIndex.turns[i];
+				for (let i = 0; i < index.turns.length; i++) {
+					const entry = index.turns[i];
 					const turn = typeof entry?.turn === "number" ? entry.turn : i + 1;
 					const ld = loaded.get(turn);
 					if (ld !== void 0) lines.push({
@@ -349,18 +348,57 @@ window.__ModuleLoader__.load({
 			}, []);
 			if (!box || lines.length < 2) return null;
 			const count = lines.length;
-			const width = blockWidth(count);
+			const width = lineLength();
 			const areaH = Math.max(0, box.height - box.seat);
 			if (areaH < 40) return null;
-			const groupH = count * HIT + (count - 1) * GAP;
-			const gap = groupH > areaH ? Math.max(2, Math.round(GAP * areaH / groupH)) : GAP;
-			const realGroupH = count * HIT + (count - 1) * gap;
-			const groupTop = Math.max(4, areaH / 2 - realGroupH / 2);
-			/** Fractional line-unit position from a viewport Y. */
+			const pitch = Math.min(COMFORT_PITCH, areaH / count);
+			const lineH = Math.min(2, pitch);
+			const groupH = count * pitch;
+			const groupTop = Math.max(4, (areaH - groupH) / 2);
+			/**
+			* Fisheye offsets: with the pointer parked at `hoverPos`, the ±RADIUS lines
+			* around it spread apart (STRENGTH× at the peak, Gaussian falloff) while the
+			* far lines compress to compensate — total height stays exactly `count*pitch`,
+			* so the cluster never overflows and stays centered, yet the lines under the
+			* pointer become readable and clickable even in ultra-dense sessions.
+			* @returns per-line translateY in px, or null when idle (no fisheye).
+			*/
+			const fisheye = (hoverPos) => {
+				if (hoverPos === null) return null;
+				const w = new Array(count);
+				let total = 0;
+				for (let i = 0; i < count; i++) {
+					const d = i - hoverPos;
+					const weight = Math.exp(-(d * d) / 9);
+					w[i] = weight;
+					total += weight;
+				}
+				const avg = total / count;
+				const offsets = new Array(count);
+				let acc = 0;
+				for (let i = 0; i < count; i++) {
+					offsets[i] = acc * 2 * pitch;
+					acc += w[i] - avg;
+				}
+				return offsets;
+			};
+			const offsets = fisheye(hoverPos);
+			/** Line index whose DISPLAYED center is nearest the viewport Y (fisheye-aware). */
 			const hoverFromPointer = (clientY) => {
 				const top = groupRef.current?.getBoundingClientRect().top;
 				if (top === void 0) return 0;
-				return (clientY - top - HIT / 2) / (HIT + gap);
+				const rel = clientY - top;
+				let best = 0;
+				let bestD = Infinity;
+				for (let i = 0; i < count; i++) {
+					const center = i * pitch + (offsets?.[i] ?? 0) + pitch / 2;
+					const d = Math.abs(rel - center);
+					if (d < bestD) {
+						bestD = d;
+						best = i;
+					}
+				}
+				return best;
 			};
 			const enter = (frac) => {
 				clearTimeout(hoverTimer.current);
@@ -425,22 +463,23 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						ref: groupRef,
 						className: rail_module_css_default.group,
-						style: {
-							top: groupTop,
-							gap
-						},
+						style: { top: groupTop },
 						children: lines.map((line, i) => {
 							const d = hoverPos === null ? Infinity : i - hoverPos;
 							const className = line.state === "compacted" ? `${rail_module_css_default.line} ${rail_module_css_default.compacted}` : rail_module_css_default.line;
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className,
-								style: { height: HIT },
+								style: {
+									height: pitch,
+									transform: `translateY(${offsets?.[i] ?? 0}px)`
+								},
 								onClick: () => handleLineClick(line),
 								"aria-label": `跳到第 ${line.turn} 个回合${line.state === "compacted" ? "（已压缩）" : ""}`,
 								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: rail_module_css_default.bar,
 									style: {
+										height: lineH,
 										width: Math.round(width),
 										transform: `scaleX(${waveScale(d)})`,
 										opacity: waveGlow(d),
@@ -461,7 +500,7 @@ window.__ModuleLoader__.load({
 					tip !== null && lines[tip] && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: rail_module_css_default.tip,
 						style: {
-							top: groupTop + tip * (HIT + gap) + HIT / 2,
+							top: groupTop + tip * pitch + (offsets?.[tip] ?? 0) + pitch / 2,
 							right: width + 12
 						},
 						onMouseEnter: keepAlive,
@@ -506,8 +545,12 @@ window.__ModuleLoader__.load({
 			let result = null;
 			try {
 				const response = await connection.rpc.call(TURN_INDEX_CHANNEL, TURN_INDEX_ENDPOINT, { sessionId });
-				if (response.ok === true && response.sessionId === sessionId) result = response;
-				else if (response.ok === false) console.warn(`[dsh-turn-scrubber] turnIndex failed for session: ${response.error.code}`);
+				if (response.ok === true) {
+					if (response.value.sessionId === sessionId) {
+						result = response;
+						console.log(`[dsh-turn-scrubber] turnIndex loaded: session=${sessionId} total=${response.value.total}`);
+					} else console.warn("[dsh-turn-scrubber] turnIndex sessionId mismatch:", JSON.stringify(response).slice(0, 300));
+				} else console.warn(`[dsh-turn-scrubber] turnIndex failed for session: ${response.error.code}`);
 			} catch (error) {
 				console.warn("[dsh-turn-scrubber] turnIndex unavailable:", error instanceof Error ? error.message : String(error));
 			}
@@ -622,6 +665,7 @@ window.__ModuleLoader__.load({
 				const result = await loadTurnIndex(connection, sessionId, boundSession.snapshotCache.chat);
 				if (boundSessionId !== sessionId) return;
 				hostIndex = result;
+				console.log(`[dsh-turn-scrubber] hostIndex applied: ${hostIndex === null ? "null (degrade)" : `total=${hostIndex.value.total}`}`);
 				renderRail();
 			};
 			/** Subscribe to snapshot changes: new turns grow the fingerprint → refresh. */

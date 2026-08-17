@@ -55,9 +55,15 @@ export async function loadTurnIndex(
     // 重要 3: the response names the session it was built from — discard any
     // index that does not match the session we asked about (stale cross-session
     // data must never paint the current rail).
-    if (response.ok === true && response.sessionId === sessionId) {
-      result = response
-    } else if (response.ok === false) {
+    if (response.ok === true) {
+      if (response.value.sessionId === sessionId) {
+        result = response
+        console.log(`[dsh-turn-scrubber] turnIndex loaded: session=${sessionId} total=${response.value.total}`)
+      } else {
+        // Silent path: ok but sessionId mismatch — must never happen; log it.
+        console.warn('[dsh-turn-scrubber] turnIndex sessionId mismatch:', JSON.stringify(response).slice(0, 300))
+      }
+    } else {
       // Business failure (session-not-found / unavailable) — degrade silently.
       console.warn(`[dsh-turn-scrubber] turnIndex failed for session: ${response.error.code}`)
     }
