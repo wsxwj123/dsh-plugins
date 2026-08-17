@@ -165,26 +165,39 @@ export function createSmHandler(deps: SmHandlerDeps): {
   const log = deps.log ?? { warn: () => {} }
 
   /**
-   * The archive read-modify-write chain (H2). `readWorkspaceGlobal` reads the
-   * domain's IN-MEMORY value, which the domain replaces only after its durable
-   * write lands — so two overlapping requests would both read the pre-write
-   * snapshot and the first one's change would be silently reverted (lost
-   * update). Non-null while a write is in flight: the next read-modify-write
-   * then waits for it instead of reading a stale snapshot.
+   * TAIL of the archive read-modify-write queue; null while the queue is idle.
+   * `readWorkspaceGlobal` reads the domain's IN-MEMORY value, which the domain
+   * replaces only after its durable write lands — so overlapping requests would
+   * all read the pre-write snapshot and each `{...global}` write would revert the
+   * previous one (lost update).
    *
-   * ponytail: one chain for the single workspace global is enough — per-key
-   * locks only matter if this ever writes more than one domain object.
+   * H2b: it must be the queue TAIL, not "the write currently in flight". Chaining
+   * everyone onto the in-flight write put the 2nd and 3rd arrivals on the SAME
+   * link: once it settled they ran in one microtask batch, and the third read the
+   * second's pre-write snapshot. It is also why the tail is never reset to null
+   * on completion — clearing it re-opened exactly that hole for the next arrival.
+   *
+   * ponytail: one queue for the single workspace global; per-key queues only
+   * matter if this ever writes more than one domain object.
    */
-  let archiveWriteInFlight: Promise<SmResponse> | null = null
+  let archiveQueueTail: Promise<SmResponse> | null = null
 
-  /** Run a read-modify-write of the archive set, serialized behind any in-flight write. */
+  /** Run one read-modify-write of the archive set, serialized at the queue tail. */
   function withArchiveChain(run: () => SmResponse | Promise<SmResponse>): SmResponse | Promise<SmResponse> {
-    const inFlight = archiveWriteInFlight
-    if (inFlight === null) return run()
-    // inFlight never rejects (both handlers are attached in commitArchive), but
-    // pass `run` as the rejection handler too so a future change cannot stall
-    // the queue.
-    return inFlight.then(run, run)
+    const tail = archiveQueueTail
+    if (tail === null) {
+      const result = run()
+      // Synchronous backend (in-memory stubs): the write already landed, so there
+      // is nothing to queue behind and the response stays synchronous.
+      if (!isThenable(result)) return result
+      archiveQueueTail = result
+      return result
+    }
+    // `run` is also the rejection handler so a rejected link can never stall the
+    // queue (the links themselves resolve — commitArchive maps failures).
+    const node = tail.then(run, run)
+    archiveQueueTail = node
+    return node
   }
 
   /**
@@ -205,14 +218,10 @@ export function createSmHandler(deps: SmHandlerDeps): {
       return onFail(err)
     }
     if (!isThenable(result)) return ok()
-    const responded = result.then(() => ok(), onFail)
-    archiveWriteInFlight = responded
-    // Release the queue once this write settles, so a later request can again
-    // take the synchronous fast path.
-    void responded.then(() => {
-      if (archiveWriteInFlight === responded) archiveWriteInFlight = null
-    })
-    return responded
+    // Attaching these handlers is also what keeps a failed write from reaching
+    // DSH's process-level unhandledRejection handler (F1). The queue tail is
+    // owned by withArchiveChain, which sees this whole read-modify-write.
+    return result.then(() => ok(), onFail)
   }
 
   // ---- /sm/delete ----
