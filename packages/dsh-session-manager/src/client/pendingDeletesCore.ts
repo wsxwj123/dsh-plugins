@@ -441,6 +441,9 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
     // Adopt them wholesale — the peer tab's view is as authoritative as ours, and
     // a union would resurrect ids the peer just restored.
     syncFromStorage() {
+      // No persistent store → nothing authoritative to adopt. Without this guard
+      // a stray call would clear the hidden-rows set and un-hide deleted rows.
+      if (storage === undefined) return
       const nextDeleted = new Set(storage?.load() ?? [])
       const nextGhosts = new Set(storage?.loadGhosts?.() ?? [])
       if (sameIds(deletedIds, nextDeleted) && sameIds(ghostIds, nextGhosts)) return
