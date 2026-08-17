@@ -1,3 +1,6 @@
+window.__ModuleLoader__.load({ id: "dsh-skin-gallery", factory: (require) => {
+  var module = { exports: {} }; var exports = module.exports;
+  const React = require('react');
 const CSS = `
   .skin-entry-root { display: grid; gap: 10px; padding: 4px 0; }
   .skin-entry-title { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; }
@@ -66,3 +69,5 @@ function apply(ctx) {
 
 exports.apply = apply
 exports.inject = ['slots']
+  return module.exports;
+} });

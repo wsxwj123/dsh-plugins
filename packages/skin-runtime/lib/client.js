@@ -1181,7 +1181,8 @@ function apply(ctx) {
   })
 
   slots.inject('settings.general.item', () => slots.register(
-    { name: 'settings.general.item', id: 'skin-gallery', order: 12 },
+    // priority -1：与懒加载入口同 id 不同优先级，加载后遮盖入口按钮（数值最低者渲染）
+    { name: 'settings.general.item', id: 'skin-gallery', order: 12, priority: -1 },
     SkinGallery,
   ))
 }
