@@ -312,11 +312,18 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
    * initialized with `{ ...{}, archivedSessionIds }`.
    */
   const readGlobal = (): Record<string, unknown> | undefined => {
-    if (!storageDomain) return {}
+    // M4: "the workspace domain is not open" is UNKNOWN, not "nothing is
+    // archived". Returning `{}` here made delete-step-2 conclude the session was
+    // not archived and answer a plain ok — during the startup race that
+    // permanently left the id in the archive set with no retry signal, while
+    // /sm/unarchive reported workspace-domain-unavailable for the very same
+    // state. Both paths now agree: unknown → retryable.
+    if (!storageDomain) return undefined
     const domain = storageDomain.get(WORKSPACE_DOMAIN)
-    if (!domain || typeof domain.global?.get !== 'function') return {}
+    if (!domain || typeof domain.global?.get !== 'function') return undefined
     try {
       const v = domain.global.get()
+      // The domain IS open: a non-object value genuinely means "nothing stored".
       return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
     } catch {
       return undefined
