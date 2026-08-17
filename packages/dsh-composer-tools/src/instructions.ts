@@ -33,6 +33,7 @@ export interface DiscoveryResult {
   projectRootFound: boolean   // true ⇔ cwd 到文件系统根链上存在 '.git' 标记（真项目根）；
                               // false ⇔ findProjectRootSync 回退到 resolve(cwd) 本身。
   canCreateRootAgents: boolean // host 计算的 "新建项目级 AGENTS.md" 显示信号（见 §2.4）。
+  canCreateGlobalAgents: boolean // host 计算的 "新建全局 AGENTS.md" 显示信号（§2.4，增量 2）。
   files: DiscoveredInstruction[]
 }
 
@@ -97,6 +98,7 @@ export function discoverInstructions(opts: { cwd: string; dshHome?: string }): D
   const projectRoot = findProjectRootSync(cwd)
   const projectRootFound = hasGitMarkerOnChain(cwd)
   const canCreateRootAgents = projectRootFound && canCreateProjectRootAgents(projectRoot)
+  const canCreateGlobal = canCreateGlobalAgents(dshHome)
 
   const seen = new Set<string>()
   const files: DiscoveredInstruction[] = []
@@ -121,7 +123,7 @@ export function discoverInstructions(opts: { cwd: string; dshHome?: string }): D
     }
   }
 
-  return { dshHome, projectRoot, projectRootFound, canCreateRootAgents, files }
+  return { dshHome, projectRoot, projectRootFound, canCreateRootAgents, canCreateGlobalAgents: canCreateGlobal, files }
 }
 
 /**
@@ -192,6 +194,56 @@ export function canCreateProjectRootAgents(projectRoot: string): boolean {
  */
 export function projectRootAgentsTarget(projectRoot: string): string {
   return path.join(realpathSync(projectRoot), 'AGENTS.md')
+}
+
+/**
+ * createGlobalAgentsTemplate: the 2-line UTF-8 template written by
+ * /ct/instructions.create with scope='global' (INTERFACE §1.5 模板段，增量 2) —
+ * a level-1 heading plus a Chinese comment. Distinct single source from the
+ * project template (R-E7): each scope's create response `content` is exactly
+ * the template written for that scope.
+ */
+export function createGlobalAgentsTemplate(): string {
+  return (
+    '# 全局指令（AGENTS.md）\n' +
+    '\n' +
+    '<!-- 记录所有会话通用的全局约定、编码规范与常用命令。此文件会被 DSH 作为全局指令自动加载。 -->\n'
+  )
+}
+
+/**
+ * canCreateGlobalAgents: authoritative "show the global create entry" signal
+ * (INTERFACE §2.4，增量 2). true ⇔ `realpath(dshHome)/AGENTS.md` does not
+ * currently exist (lstat probe; a symlink/dir occupying the name counts as
+ * "exists"). A realpath failure (dshHome missing/unreadable) → false.
+ * Independent of whether the cwd has a project root (.git marker).
+ */
+export function canCreateGlobalAgents(dshHome: string): boolean {
+  let realHome: string
+  try {
+    realHome = realpathSync(dshHome)
+  } catch {
+    return false // dshHome 不可解析（不存在/不可读）→ 按不可新建处理
+  }
+  const target = path.join(realHome, 'AGENTS.md')
+  try {
+    lstatSync(target)
+    return false // occupier exists (file/dir/symlink) → treat as already present
+  } catch {
+    return true // name is free → entry may be shown
+  }
+}
+
+/**
+ * dshHomeAgentsTarget: scope='global' create's write destination —
+ * `path.join(fs.realpathSync(dshHome), 'AGENTS.md')` (INTERFACE §2.4，增量 2).
+ * realpathSync unwinds any symlink components on the ~/dshHome directory chain
+ * so the file lands inside the real physical directory DSH actually loads
+ * (§1.5 判定 5 global 分支). A realpath failure throws; the caller maps it to
+ * system-error.
+ */
+export function dshHomeAgentsTarget(dshHome: string): string {
+  return path.join(realpathSync(dshHome), 'AGENTS.md')
 }
 
 function addCandidate(
