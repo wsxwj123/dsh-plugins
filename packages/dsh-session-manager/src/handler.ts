@@ -370,6 +370,25 @@ export function createSmHandler(deps: SmHandlerDeps): {
     // present but original dir occupied → restore-target-exists (refuse, never
     // overwrite); otherwise move it back.
     if (rec === null) return fail('not-in-trash', 'no such trash entry')
+
+    // M1: the record is a plain JSON file any local process can rewrite, and
+    // restoreItem does mkdir -p + rename to whatever `originalDir` says. Restore
+    // therefore re-applies the SAME gates delete uses instead of trusting it:
+    //  - structure: a `{}` / partial record used to reach `hasItem(rec.id)` and
+    //    throw a TypeError that the route mapped to a bare 400;
+    //  - identity: a record whose id differs from the requested one would move
+    //    ANOTHER entry (and leave this record behind);
+    //  - bounds: the target must still land inside the sessions root.
+    if (typeof rec !== 'object' || typeof rec.id !== 'string' || rec.id !== id) {
+      return fail('invalid-record', 'trash record does not match the requested id')
+    }
+    if (typeof rec.originalDir !== 'string' || rec.originalDir.length === 0) {
+      return fail('invalid-record', 'trash record has no usable originalDir')
+    }
+    if (!isInsideOrEqual(deps.sessionsRoot, rec.originalDir)) {
+      return fail('path-out-of-bounds', 'recorded original dir is outside the sessions root')
+    }
+
     if (fs.existsSync(rec.originalDir)) {
       return fail('restore-target-exists', 'original dir occupied; refusing to overwrite')
     }
