@@ -17,9 +17,22 @@
  * Positioning: the rail is a sibling of the `[data-conversation-scroll]`
  * scrollport inside its relative parent, sized from the scrollport's layout
  * offsets (offsetTop/offsetHeight are layout px, immune to CSS zoom).
+ *
+ * Full-index rendering (this feature): when the host `turnIndex` is available
+ * the rail draws ALL turns — loaded (waveform + snapshot tooltip + smooth
+ * scroll, unchanged), compacted (gray placeholder line,「已压缩」tooltip, click
+ * scrolls near the load-older control), and unloaded (preview tooltip, click
+ * runs the single-flight `ensureTurnLoaded` loop, then scrolls). When the
+ * index is unavailable the rail degrades to the loaded-only behavior.
+ *
+ * Key mapping: line index i (0-based, oldest at top) ↔ turn number i+1
+ * (spike-verified identity with `locations.turns` keys); the mapping goes
+ * through `hostIndex.turns[i].turn` when present so a key divergence would
+ * still resolve correctly (重要 5).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { ChatSnapshot, SessionFace } from './context-types.ts'
+import type { ChatSnapshot, EnsureLoadedResult, SessionFace, TurnIndexEntry, TurnIndexResult } from './context-types.ts'
+import { ensureTurnLoaded } from './ensureTurnLoaded.ts'
 import css from './rail.module.css'
 
 /** Visual line thickness (px). */
@@ -53,14 +66,27 @@ function blockWidth(count: number): number {
   return Math.min(MAX_LEN, BASE_LEN + Math.max(0, count - 2) * STEP_LEN)
 }
 
-/** Collect user turns from the chat snapshot: turn id, first-user-node key, text. */
-function collectTurns(chat: ChatSnapshot | undefined): { key: string; text: string }[] {
-  if (!chat) return []
-  // The empty conversation snapshot has no `turns` Map (only getTurn/getStep).
+/** One rendered rail line. */
+interface RailLine {
+  /** 1-based turn number the line represents. */
+  turn: number
+  state: 'loaded' | 'compacted' | 'unloaded'
+  /** Loaded: first user/steering node key (scroll target). */
+  anchorKey?: string
+  /** Tooltip text: snapshot text (loaded) / preview (unloaded); '' for compacted. */
+  text: string
+}
+
+/**
+ * Collect loaded turns from the chat snapshot: turn id → first-user-node key
+ * + text. Mirrors the pre-feature `collectTurns` semantics.
+ */
+function collectLoadedTurns(chat: ChatSnapshot | undefined): Map<number, { key: string; text: string }> {
+  const out = new Map<number, { key: string; text: string }>()
+  if (!chat) return out
   const turnKeys = chat.locations?.turns
-  if (!turnKeys) return []
-  const turns: { key: string; text: string }[] = []
-  for (const keys of turnKeys.values()) {
+  if (!turnKeys) return out
+  for (const [turn, keys] of turnKeys.entries()) {
     if (keys.length === 0) continue
     let nodeKey: string | undefined
     for (const key of keys) {
@@ -72,9 +98,43 @@ function collectTurns(chat: ChatSnapshot | undefined): { key: string; text: stri
     }
     if (nodeKey === undefined) nodeKey = keys[0]
     const node = chat.nodes.get(nodeKey)
-    turns.push({ key: nodeKey, text: textOfContent(node?.data?.content) })
+    out.set(turn, { key: nodeKey, text: textOfContent(node?.data?.content) })
   }
-  return turns
+  return out
+}
+
+/**
+ * Build the rail line list. With a host index the skeleton is the FULL turn
+ * list (three states); without it, only the loaded turns (degrade path).
+ */
+function buildLines(
+  hostIndex: TurnIndexResult | null,
+  chat: ChatSnapshot | undefined,
+  loaded: Map<number, { key: string; text: string }>,
+): RailLine[] {
+  if (hostIndex !== null) {
+    const lines: RailLine[] = []
+    for (let i = 0; i < hostIndex.turns.length; i++) {
+      const entry: TurnIndexEntry = hostIndex.turns[i]
+      // 重要 5: prefer the entry's own turn number; fall back to i+1 so a key
+      // divergence resolves through the explicit mapping instead of assuming
+      // index identity.
+      const turn = typeof entry?.turn === 'number' ? entry.turn : i + 1
+      const ld = loaded.get(turn)
+      if (ld !== undefined) {
+        lines.push({ turn, state: 'loaded', anchorKey: ld.key, text: ld.text })
+      } else if (entry?.compacted === true) {
+        lines.push({ turn, state: 'compacted', text: '' })
+      } else {
+        lines.push({ turn, state: 'unloaded', anchorKey: undefined, text: entry?.preview ?? '' })
+      }
+    }
+    return lines
+  }
+  // Degrade: loaded turns only, ascending turn order.
+  return [...loaded.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([turn, ld]) => ({ turn, state: 'loaded' as const, anchorKey: ld.key, text: ld.text }))
 }
 
 /**
@@ -123,12 +183,49 @@ function scrollToRow(scrollport: HTMLElement, row: HTMLElement): void {
   requestAnimationFrame(step)
 }
 
-export function TurnRail({ session, scrollport }: { session: SessionFace; scrollport: HTMLElement }) {
+/** Find the native「加载更早」button inside the scrollport (text-localized). */
+function findLoadOlderControl(scrollport: HTMLElement): HTMLElement | null {
+  const buttons = scrollport.querySelectorAll<HTMLButtonElement>('button')
+  for (const button of buttons) {
+    const text = button.textContent?.trim()
+    if (text === '加载更早' || text === 'Load earlier') return button
+  }
+  return null
+}
+
+/** Scroll to the very first row of the loaded window (fallback target). */
+function scrollToWindowFront(scrollport: HTMLElement): void {
+  const first = scrollport.querySelector<HTMLElement>('[data-chat-anchor-key]')
+  if (first) scrollToRow(scrollport, first)
+}
+
+/** Scroll to one loaded turn's anchor row by key; fallback to window front. */
+function scrollToTurn(scrollport: HTMLElement, key: string): void {
+  const row = scrollport.querySelector<HTMLElement>(`[data-chat-anchor-key="${CSS.escape(key)}"]`)
+  if (row) scrollToRow(scrollport, row)
+  else scrollToWindowFront(scrollport)
+}
+
+export function TurnRail({
+  session,
+  scrollport,
+  hostIndex,
+  token,
+}: {
+  session: SessionFace
+  scrollport: HTMLElement
+  hostIndex: TurnIndexResult | null
+  /** Opaque per-session token handed to ensureTurnLoaded (session switch guard). */
+  token: unknown
+}) {
   const snap = useSyncExternalStore(
     useCallback((cb: () => void) => session.subscribe(cb), [session]),
     useCallback(() => session.snapshotCache, [session]),
   )
-  const turns = useMemo(() => collectTurns(snap?.chat), [snap])
+  const loaded = useMemo(() => collectLoadedTurns(snap?.chat), [snap])
+  const lines = useMemo(() => buildLines(hostIndex, snap?.chat, loaded), [hostIndex, snap, loaded])
+  // Which turn is mid-load (light「加载中…」hint, never blocks other lines).
+  const [loadingTurn, setLoadingTurn] = useState<number | null>(null)
   // Continuous fractional hover position in line units (e.g. 3.4 = between
   // line 3 and 4) — drives the gliding waveform; null = idle.
   const [hoverPos, setHoverPos] = useState<number | null>(null)
@@ -175,9 +272,9 @@ export function TurnRail({ session, scrollport }: { session: SessionFace; scroll
     clearTimeout(hoverTimer.current)
   }, [])
 
-  if (!box || turns.length < 2) return null
+  if (!box || lines.length < 2) return null
 
-  const count = turns.length
+  const count = lines.length
   const width = blockWidth(count)
   // The rail covers the MESSAGE area only (excludes the composer seat).
   const areaH = Math.max(0, box.height - box.seat)
@@ -222,6 +319,36 @@ export function TurnRail({ session, scrollport }: { session: SessionFace; scroll
     clearTimeout(hideTimer.current)
   }
 
+  /** Click on an unloaded line: page older until the turn appears, then scroll. */
+  const handleUnloadedClick = (turn: number): void => {
+    if (loadingTurn !== null) return // single-flight: one loop at a time
+    setLoadingTurn(turn)
+    ensureTurnLoaded({ session, turnId: turn, token }).then((result: EnsureLoadedResult) => {
+      setLoadingTurn(null)
+      if (result === '达成' || result === '已加载') {
+        const key = collectLoadedTurns(session.snapshotCache.chat).get(turn)?.key
+        if (key !== undefined) scrollToTurn(scrollport, key)
+        else scrollToWindowFront(scrollport)
+      } else {
+        // 到最老 / 超限 / 会话切换 — settle at the loaded window top.
+        scrollToWindowFront(scrollport)
+      }
+    })
+  }
+
+  /** Click on a compacted line: head toward the「加载更早」control. */
+  const handleCompactedClick = (): void => {
+    const control = findLoadOlderControl(scrollport)
+    if (control) scrollToRow(scrollport, control)
+    else scrollToWindowFront(scrollport)
+  }
+
+  const handleLineClick = (line: RailLine): void => {
+    if (line.state === 'loaded' && line.anchorKey !== undefined) scrollToTurn(scrollport, line.anchorKey)
+    else if (line.state === 'compacted') handleCompactedClick()
+    else handleUnloadedClick(line.turn)
+  }
+
   return (
     <div
       className={css.rail}
@@ -230,19 +357,17 @@ export function TurnRail({ session, scrollport }: { session: SessionFace; scroll
       onMouseLeave={park}
     >
       <div ref={groupRef} className={css.group} style={{ top: groupTop, gap }}>
-        {turns.map((t, i) => {
+        {lines.map((line, i) => {
           const d = hoverPos === null ? Infinity : i - hoverPos
+          const className = line.state === 'compacted' ? `${css.line} ${css.compacted}` : css.line
           return (
             <button
-              key={t.key}
+              key={line.turn}
               type="button"
-              className={css.line}
+              className={className}
               style={{ height: HIT }}
-              onClick={() => {
-                const row = scrollport.querySelector<HTMLElement>(`[data-chat-anchor-key="${CSS.escape(t.key)}"]`)
-                if (row) scrollToRow(scrollport, row)
-              }}
-              aria-label={`跳到第 ${i + 1} 个回合`}
+              onClick={() => handleLineClick(line)}
+              aria-label={`跳到第 ${line.turn} 个回合${line.state === 'compacted' ? '（已压缩）' : ''}`}
             >
               <span
                 className={css.bar}
@@ -250,22 +375,39 @@ export function TurnRail({ session, scrollport }: { session: SessionFace; scroll
                   width: Math.round(width),
                   transform: `scaleX(${waveScale(d)})`,
                   opacity: waveGlow(d),
-                  background: d < 0.5 && d > -0.5 ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-secondary)',
+                  background:
+                    line.state === 'compacted'
+                      ? 'var(--dsw-alias-label-tertiary)'
+                      : d < 0.5 && d > -0.5
+                        ? 'var(--dsw-alias-label-primary)'
+                        : 'var(--dsw-alias-label-secondary)',
                 }}
               />
             </button>
           )
         })}
       </div>
-      {tip !== null && turns[tip] && (
+      {loadingTurn !== null && (
+        <div className={css.loading} style={{ top: Math.max(4, groupTop - 14), right: 2 }}>
+          加载中…
+        </div>
+      )}
+      {tip !== null && lines[tip] && (
         <div
           className={css.tip}
           style={{ top: groupTop + tip * (HIT + gap) + HIT / 2, right: width + 12 }}
           onMouseEnter={keepAlive}
           onMouseLeave={park}
         >
-          <div className={css.tipTitle}>回合 {tip + 1}</div>
-          <div className={css.tipText}>{(turns[tip].text || '(空消息)').slice(0, 200)}</div>
+          <div className={css.tipTitle}>
+            回合 {lines[tip].turn}
+            {lines[tip].state === 'compacted' ? ' · 已压缩' : lines[tip].state === 'unloaded' ? ' · 未加载' : ''}
+          </div>
+          <div className={css.tipText}>
+            {lines[tip].state === 'compacted'
+              ? '该回合已被压缩，点击可跳转到「加载更早」'
+              : (lines[tip].text || '(空消息)').slice(0, 200)}
+          </div>
         </div>
       )}
     </div>
