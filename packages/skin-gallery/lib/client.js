@@ -1183,7 +1183,7 @@ function apply(ctx) {
   ))
 }
 
-  exports.apply = plugin;
+  exports.apply = apply;
   exports.inject = ['slots'];
   return module.exports;
 } });

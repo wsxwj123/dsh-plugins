@@ -62,7 +62,7 @@ const source = await readFile(new URL('./src/client.js', root), 'utf8')
 
 const maybeStrictWrapper = 'globalThis'
 
-const output = `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {\n  var module = { exports: {} }; var exports = module.exports;\n  const React = require('react');\n// ---- injected skin manifest / assets (build-time embedded, runtime lazy) ----\nconst __SKIN_MANIFEST__ = ${JSON.stringify(manifest)};\nconst __SKIN_BUNDLES__ = ${JSON.stringify(bundles)};\nconst __SKIN_A11Y__ = ${JSON.stringify(a11y)};\n// ---- skin engine (browser skin loading / mutex / teardown) ----\n${stripExports(engine)}\n// ---- custom skin: controlled import / registry / preview / apply / delete / restore ----\n${customSkin}\n// ---- a11y injector ----\n${stripExports(a11yModule)}\n// ---- plugin client ----\n${stripExports(source)}\n  exports.apply = plugin;\n  exports.inject = ['slots'];\n  return module.exports;\n} });\n`
+const output = `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {\n  var module = { exports: {} }; var exports = module.exports;\n  const React = require('react');\n// ---- injected skin manifest / assets (build-time embedded, runtime lazy) ----\nconst __SKIN_MANIFEST__ = ${JSON.stringify(manifest)};\nconst __SKIN_BUNDLES__ = ${JSON.stringify(bundles)};\nconst __SKIN_A11Y__ = ${JSON.stringify(a11y)};\n// ---- skin engine (browser skin loading / mutex / teardown) ----\n${stripExports(engine)}\n// ---- custom skin: controlled import / registry / preview / apply / delete / restore ----\n${customSkin}\n// ---- a11y injector ----\n${stripExports(a11yModule)}\n// ---- plugin client ----\n${stripExports(source)}\n  exports.apply = apply;\n  exports.inject = ['slots'];\n  return module.exports;\n} });\n`
 
 await mkdir(new URL('./lib/', root), { recursive: true })
 await writeFile(new URL('./lib/client.js', root), output)
@@ -70,7 +70,7 @@ await writeFile(new URL('./lib/client.js', root), output)
 if (process.argv.includes('--check')) {
   const generated = await readFile(new URL('./lib/client.js', root), 'utf8')
   if (!generated.includes('window.__ModuleLoader__.load')) throw new Error('client wrapper missing')
-  if (!generated.includes('exports.apply = plugin') || !generated.includes('exports.inject = [')) throw new Error('client plugin exports missing')
+  if (!generated.includes('exports.apply = apply') || !generated.includes('exports.inject = [')) throw new Error('client plugin exports missing')
   for (const skinId of skinOrder) {
     if (!generated.includes(`"${skinId}"`)) throw new Error(`skin bundle metadata missing: ${skinId}`)
   }
