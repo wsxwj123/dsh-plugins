@@ -50,7 +50,7 @@
 | 1.6 | 失败：method 与 endpoint 不符 | 信封内 `method:"otherMethod"`，endpoint 仍 `turnIndex` | 按契约 = 非业务错。若实现映射为 HTTP 200+`{ok:false,code:"bad-request"}` 或 404，按 spike 回填后的真实语义断言；至少断言「不是 session-not-found/unavailable」（属于调用方 bug 通道） | A |
 | 1.7 | 失败：content-type 非 JSON | 同合法 body，但 `content-type: text/plain` | HTTP **415** | A |
 | 1.8 | 失败：GET 请求 | 用 GET 打同一 URL/endpoint | HTTP **404**（未知 endpoint 通道，契约 §1.4） | A |
-| 1.9 | 失败：sessionId 缺失或空串 | payload `{}` 或 `{sessionId:""}` | HTTP **400**（契约修订 2a：属调用方 bug，不返回业务 ok:false） | A |
+| 1.9 | sessionId 缺失/空串（调用方 bug） | 发 POST，body 不含 sessionId / sessionId="" | HTTP 200 + `{"ok":false,"error":{"code":"bad-request",...}}`（契约修订：connection.rpc 通道固定 HTTP 200，400 不可达） | A |
 | 1.10 | 失败：错误信封（非 2xx）不 throw 差异 | 分别走 1.4（ok:false）与 1.5/1.7/1.8（非 2xx） | ok:false 分支**不 throw**、返回错误对象；非 2xx 分支 **throw**（`transport failure … HTTP <status>`）。用 `connection.rpc.call` 断言两种途径（INTERFACE 末尾「注意」） | A |
 
 ---

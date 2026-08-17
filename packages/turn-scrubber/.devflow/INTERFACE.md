@@ -87,7 +87,10 @@ curl -X POST http://127.0.0.1:{port}/turn-scrubber/turnIndex \
 - **业务错误恒 HTTP 200**，以 `result.ok===false` 区分（与 DSH 既有 `session.history` 一致）。
 - **非法信封 / method 不匹配 / 非 JSON 体才出现非 200**：`404`（未知 endpoint）、`415`（content-type
   非 JSON）、`400`（体非 JSON）、`500`（handler 抛错）。这些属于调用方 bug，不在业务契约内。
-- **修订：（建议 2a）`sessionId` 缺失或为空串** 属于调用方 bug，HTTP `400`（不返回业务 `ok:false`）。
+- **修订：（建议 2a，spike 实证后修正）`sessionId` 缺失或为空串** 属于调用方 bug。因
+  `connection.rpc` 通道（`rpcFetchHandler`）会把 handler 任何返回值固定包成 **HTTP 200 + result**
+  （仅 handler 抛错才 500），无法从 handler 直接返回 HTTP 400 —— 契约定为业务错误：
+  `{"ok":false,"error":{"code":"bad-request","message":"<稳定文案>","details":{}}}`（HTTP 200）。
 - **修订：（建议 2b）`error.details` 形状** 定义为 `{}` 或仅含 `sessionId` 一个键（以便定位是哪个会话
   失败）；**绝不**含会话文本/摘要等内容字段。测试不断言 details 内部，只断言其为 object。
 - `error.message` 绝不携带会话内容（文本/摘要）。测试只断言 `code` 与 `ok`，不断言 message 文案。

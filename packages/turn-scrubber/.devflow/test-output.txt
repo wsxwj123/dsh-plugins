@@ -1,0 +1,22 @@
+=== 单测（node --test "tests/unit/*.test.ts"）===
+✔ summary may be a plain string (defensive) rather than content blocks (0.042625ms)
+✔ turn/start without user/message → empty preview, not compacted (0.0475ms)
+✔ events without seq do not break asOfSeq (last numeric seq wins) (0.033709ms)
+✔ asOfSeq is the last event seq in append order (0.029834ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 178.440875
+
+=== typecheck ===
+通过
+
+=== 构建 ===
+✔ Build complete in 10ms
+ℹ [CJS] lib/client.js  29.09 kB │ gzip: 9.60 kB
+ℹ [CJS] 1 files, total: 29.09 kB
+✔ Build complete in 11ms
