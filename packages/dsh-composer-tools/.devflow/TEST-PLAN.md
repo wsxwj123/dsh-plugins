@@ -219,3 +219,61 @@ cordis 访问纪律（6）+ 指令发现纯函数（12 并入 host 侧辅助）�
 | G2 | 创建后被外部改再 save ⭐ | create 后外部改文件再 save | mtime 乐观锁照常拦截，返回 `mtime-conflict` |
 
 > 本增量共 **22 条**验收用例（新增 `tests/acceptance/test-12-host-create.test.mjs`）。当前 feature 未实现，测试对现有 router **全红（端点返回 404）**，属预期——开发实现后应转绿。未覆盖：write 的 `EROFS` 只读文件系统分支（难稳定构造，`EACCES` 只读目录已覆盖 system-error 类）；`file-not-found` 竞态分支（create 原子 `wx` 天然规避，无需）。
+
+## 增量 2：全局新建 + 删除 + 返回流程
+
+新增端点：`/ct/instructions.create` 支持 `scope:'project'|'global'`（缺省 `'project'`，目标分别 `realpath(projectRoot)/AGENTS.md`、`realpath(dshHome)/AGENTS.md`）；新增端点 `/ct/instructions.delete`（收 path，白名单 + 发现集合 + 父目录 realpath 包含性三重闸门）；list 新增 `canCreateGlobalAgents`（client 显示「新建全局 AGENTS.md」入口的唯一信号）；client 增 `instructionViewReducer` 视图状态机（§2.6）。带 ⭐ 的是我替你想到、需求没明说的验收点。
+
+### 正常路径
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| A1 | 全局新建正常 | dshHome 无 `AGENTS.md`，POST `/ct/instructions.create` + `scope:'global'` | 200 `{ok:true, path, content, mtimeMs}`；content 是定死的全局 2 行模板全文；`~/.dsh/AGENTS.md`（测试用假 home）真落盘 |
+| A2 | 全局新建→再建幂等 | 同目标再 create | 200 `path-exists`，文案「global AGENTS.md already exists; create refused to overwrite」，内容不被改写 |
+| B1 | 删项目级文件 | 删一个已发现的项目级 AGENTS.md | 200 `ok:true`，文件从磁盘消失 |
+| B2 | 删全局文件 ⭐ | 删 dshHome/AGENTS.md | 200 `ok:true`，全局文件消失 |
+| B10 | 无 .git 的 cwd 删全局 | cwd 祖先链无 `.git` 删全局文件 | 全局不依赖项目根，仍 `ok:true` |
+
+### 边界
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| A4 | scope 缺省兼容 ⭐ | 不传 scope 调 create | 行为等同 `'project'`，落到项目根 `AGENTS.md`，不落 dshHome（向后兼容新增前行为） |
+| A7 | 无 .git 建全局 | cwd 祖先链无 `.git`，`scope:'global'` | 全局新建不要求项目根标记，成功建到 dshHome |
+| A5 | 全局已存在 | dshHome 已有 AGENTS.md 再建全局 | 200 `path-exists`（global 文案），原文件不被覆盖 |
+| A6 | 全局被 symlink 占用 ⭐ | dshHome/AGENTS.md 是 symlink | 200 `path-exists`，绝不跟随链接写，链接目标保持原样 |
+
+### 错误路径
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| A3 | scope 非法 | scope 传 `xxx`/空串/非字符串 | 400 `invalid-scope`，文案逐字 |
+| B3 | path basename 非法 | 删 `FOO.md`/`README.md` 等白名单外 | 400 `invalid-path`，文案逐字 |
+| B4 | path 不在发现集合 | 删项目根内但不在发现链上的 AGENTS.md | 200 `path-out-of-scope`，磁盘文件不动 |
+| B5 | path 是 symlink | 删一个指向项目外的 AGENTS.md symlink | 200 `path-out-of-scope`，symlink 与其目标都不被删 |
+| B6 | 父目录链 symlink 越界 ⭐ | `tmp/A`(有 .git) 下建 symlink `lnk`→指向 `tmp/B`(无 .git); 用词法 `tmp/A/lnk/deep/AGENTS.md` 当 path | 父目录 realpath=`tmp/B/deep` 不在 `realpath(projectRoot)=tmp/A` 下 → 200 `path-out-of-scope`；真实物理文件 `tmp/B/deep/AGENTS.md` 完好 |
+| B7 | 文件不存在 → file-not-found | 删除时刻文件已不存在（并发窗口卸载映射） | 200 `file-not-found`，文案逐字 |
+
+### 反向用例
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| A8 | create 不收 path | create 带越界 `path` + 多余字段 | 按 scope 推导目标落盘，客户端传的 path 不产生文件 |
+
+### 幂等 / 并发
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| B8 | 并发双删同一 path ⭐ | `Promise.all` 对同一 path 发两个 delete | 恰好一个 `ok:true`、一个 `file-not-found`；永不双 ok、永不双删 |
+| B9 | 并发删不同 path | 同 cwd 并发删 AGENTS.md 与 CLAUDE.md | 各自独立 `ok:true`，互不影响 |
+
+### client 视图状态机（§2.6）
+
+| # | 场景 | 怎么操作 | 预期看到什么 |
+|---|---|---|---|
+| D1 | 主流程 | list → 全局新建 → pending → create 成功 → 编辑改脏 → 保存 | 返回 list；`create` 成功后 `dirty` 不置位，编辑后才 `dirty:true` |
+| D2 | 编辑→放弃 | open-edit → mark-dirty → cancel-edit | 回 list（草稿丢弃确认属调用层） |
+| D3 | 防重复点击 | 重复 `start-create` 同 scope | 原样返回；换 scope 才新建 create 态 |
+| D4 | create 失败 | create-failed 事件 | 回 list（错误调用层提示） |
+
+> 本增量新增 `tests/acceptance/test-13-host-create-global-delete.test.mjs`（共 31 条：create global 8 / delete 10 / list 增补 5 / reducer 8）。当前增量 2 未实现，create-global/delete/canCreateGlobalAgents 走真实 ROUTER **全红**（现存 create 端点忽略 scope、delete 端点 404、list 无新字段）；`scope` 缺省 A4 因增量 1 已实现而**绿**；reducer §2.6 尚未实现、contractClient 未导出，D 组驱动本文件内置参考 reducer（绿），实现落地后换接 seam。未覆盖：write 全局 `EROFS`/`EACCES` 只读分支（难稳定构造）；`file-not-found` 单靠顺序调用无法稳定复现——按契约并发双删锚定（B7/B8 都证明该映射）；全局新建/删除的 `window.confirm` 二次确认文案属 client DOM/UI 层，node 验收不覆盖（留给 e2e）。
