@@ -69,10 +69,10 @@ function teardown() {
   if (skinEngine) skinEngine.teardownSkins()
 }
 
-function plugin(ctx) {
-  return apply(ctx)
+const plugin = {
+  inject: ['slots'],
+  apply,
 }
-plugin.inject = ['slots']
 
 if (typeof globalThis.__TG_SURFACE__ === 'function') {
   globalThis.__TG_SURFACE__({
