@@ -22,10 +22,28 @@ import {
 } from './context-types.ts'
 import { pendingDeletes, type PendingEntry } from './pendingDeletes.ts'
 import { setArchiveOpen, getArchiveOpen, subscribeArchive } from './archiveState.ts'
-import { smTrash, smUnarchive, smEmptyTrash } from './bridge.ts'
+import { smTrash, smUnarchive, smEmptyTrash, smRestore, type SmResult } from './bridge.ts'
 import css from './rail.module.css'
 
 type ArchivedRow = SessionSummary & { id: string }
+
+/** One `/sm/trash` entry (id + optional title; the host never returns paths). */
+interface TrashRow {
+  id: string
+  title?: string
+}
+
+/** Keep only well-formed `/sm/trash` items (the host response is untyped JSON). */
+function trashRows(items: unknown): TrashRow[] {
+  if (!Array.isArray(items)) return []
+  const out: TrashRow[] = []
+  for (const item of items as Array<{ id?: unknown; title?: unknown }>) {
+    if (item && typeof item.id === 'string' && item.id.length > 0) {
+      out.push({ id: item.id, title: typeof item.title === 'string' ? item.title : undefined })
+    }
+  }
+  return out
+}
 
 const selectPending = (): PendingEntry[] => pendingDeletes.snapshot()
 const subscribePending = (l: () => void): (() => void) => pendingDeletes.subscribe(l)
@@ -61,7 +79,19 @@ export function ArchiveView({
   // host failure visibly — read, empty, unarchive — never silently (review
   // I-5), and any read SUCCESS clears a previous banner (S-11).
   const [trashCount, setTrashCount] = useState<number | null>(null)
+  const [trash, setTrash] = useState<TrashRow[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  /** Apply one successful `/sm/trash` read: count, the restorable rows (F3), and
+   *  the hidden-rows reconciliation (S-10 — a restored or cleared session must
+   *  not stay hidden forever). Shared by the open effect, empty and restore. */
+  const applyTrashRead = (res: SmResult): void => {
+    setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+    const rows = trashRows(res.items)
+    setTrash(rows)
+    pendingDeletes.reconcileWithTrash(rows.map((r) => r.id))
+  }
+
   useEffect(() => {
     if (!open) return
     let cancelled = false
@@ -69,20 +99,10 @@ export function ArchiveView({
       .then((res) => {
         if (cancelled) return
         if (res.ok) {
-          setTrashCount(Array.isArray(res.items) ? res.items.length : 0)
+          applyTrashRead(res)
           // S-11: a previous read failure must not stick — the first success
           // after any failure clears the banner.
           setError(null)
-          // S-10: re-align the hidden-rows set with the host trash every time
-          // we re-read it (open / re-open). A restored or cleared session must
-          // not stay hidden forever (ghost row).
-          if (Array.isArray(res.items)) {
-            pendingDeletes.reconcileWithTrash(
-              (res.items as Array<{ id?: unknown }>)
-                .map((i) => i.id)
-                .filter((id): id is string => typeof id === 'string'),
-            )
-          }
         } else setError(`读取回收站失败：${res.code ?? res.message ?? 'unknown'}`)
       })
       .catch((err) => {
@@ -113,24 +133,38 @@ export function ArchiveView({
         return
       }
       setError(null)
+      // S-10: after emptying, the host trash holds nothing — any id still
+      // flagged deleted has no backing record and must stop hiding its row
+      // (the next list re-pull drops the now-gone session entirely).
       const t = await smTrash()
-      if (t.ok) {
-        setTrashCount(Array.isArray(t.items) ? t.items.length : 0)
-        // S-10: after emptying, the host trash holds nothing — any id still
-        // flagged deleted has no backing record and must stop hiding its row
-        // (the next list re-pull drops the now-gone session entirely).
-        if (Array.isArray(t.items)) {
-          pendingDeletes.reconcileWithTrash(
-            (t.items as Array<{ id?: unknown }>)
-              .map((i) => i.id)
-              .filter((id): id is string => typeof id === 'string'),
-          )
-        }
-      } else {
-        setError(`读取回收站失败：${t.code ?? t.message ?? 'unknown'}`)
-      }
+      if (t.ok) applyTrashRead(t)
+      else setError(`读取回收站失败：${t.code ?? t.message ?? 'unknown'}`)
     } catch (err) {
       setError(`清空回收站失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /**
+   * F3: restore one recycle-bin entry back to its original location. This is the
+   * ONLY recovery entry point once the 5s undo window has closed — without it a
+   * mis-deleted session could only be rescued by moving directories by hand.
+   * On success we re-read /sm/trash, which drops the id from the hidden-rows set
+   * so the session's row comes back.
+   */
+  const onRestore = async (id: string): Promise<void> => {
+    try {
+      const res = await smRestore(id)
+      if (!res.ok) {
+        setError(`恢复失败：${res.code ?? res.message ?? 'unknown'}`)
+        return
+      }
+      setError(null)
+      const t = await smTrash()
+      if (t.ok) applyTrashRead(t)
+      // 恢复后会话文件已回到原位，但 host 的会话列表要等下一次刷新/重扫才带上它。
+      void ctx.workspaces.refresh()
+    } catch (err) {
+      setError(`恢复失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -163,6 +197,17 @@ export function ArchiveView({
     rows.push({ ...s, id })
   }
 
+  // H1: honest note about the unarchive limitation. DSH exposes no unarchive
+  // API, so we write the workspace domain directly — but dsh-workspace caches
+  // the archive set in memory (read once at start, no domain listener), so a
+  // page refresh (or the next official archive write) can roll the change back.
+  // The domain file on disk IS correct; restarting `dsh web` re-reads it.
+  const unarchiveNote = createElement(
+    'div',
+    { className: css.trashCount },
+    '注意：取消归档当场生效，但刷新页面后可能回滚（DSH 内存缓存未同步）；重启 dsh web 后以磁盘为准。',
+  )
+
   let body: ReactNode
   if (rows.length === 0) {
     body = createElement('div', { className: css.empty }, '暂无归档会话')
@@ -194,6 +239,37 @@ export function ArchiveView({
       ),
     )
   }
+
+  // F3: the recycle-bin section — every entry gets a 「恢复」 that calls
+  // smRestore(id). The archive list above shows sessions that still exist; this
+  // one shows the deleted ones, which previously had no UI recovery path at all
+  // once the 5s undo window closed (INTERFACE §2.4 forbids a middle state with
+  // no recovery entry).
+  const trashList =
+    trash.length === 0
+      ? null
+      : createElement(
+          'div',
+          { className: css.list },
+          createElement('div', { className: css.divider }, '回收站'),
+          trash.map((row) =>
+            createElement(
+              'div',
+              { key: `trash-${row.id}`, className: css.row },
+              createElement('div', { className: css.rowTitle }, row.title ?? row.id),
+              createElement(
+                'button',
+                {
+                  type: 'button',
+                  className: css.action,
+                  title: '把该会话从回收站移回原位置',
+                  onClick: () => void onRestore(row.id),
+                },
+                '恢复',
+              ),
+            ),
+          ),
+        )
 
   // The empty-trash control is enabled only when the recycle bin actually holds
   // entries (count known non-zero); a disabled button avoids misleading a user
@@ -249,6 +325,8 @@ export function ArchiveView({
       ),
       error && createElement('div', { className: css.errorBanner, role: 'alert' }, error),
       body,
+      rows.length > 0 && unarchiveNote,
+      trashList,
       trashBar,
     ),
   )

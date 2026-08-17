@@ -16,17 +16,17 @@
  *   - row        : `[role="treeitem"]` (a child of the container)
  *   - title      : the per-row ⋮ menu button's `aria-label`, which the official
  *     renderer puts at `t("actions.session.aria", { name: title })` — i.e. the
- *     localized string contains the session's title verbatim (Chinese
- *     「会话"X"的操作」/ English "Session actions for X"). We find which byId
- *     session's title is contained in that label (longest match wins) to
- *     recover the (otherwise absent) session id.
+ *     localized TEMPLATE with the session title interpolated (Chinese
+ *     「会话“X”的操作」/ English "Session actions for X"). sessionRowMatch
+ *     rebuilds that label from each candidate title and requires an exact match.
  *
- * Row→id binding is resolved per CONTAINER, not per row (review I-6): the
- * official list renders rows in `sessions.list.ids` order, so when several rows
- * share a title (DSH does not guarantee unique titles) the k-th such row binds
- * the k-th same-title id. This keeps every row on its OWN session — a tie must
- * never leave both rows' delete buttons bound to the first matching id
- * (删错目录 prevention, F3).
+ * Row→id binding is resolved per CONTAINER, not per row (F2): the candidate set
+ * is filtered by the official visibility rule (no archived / subagent / blank
+ * sessions) and a row is bound ONLY when exactly one visible session renders its
+ * label. DSH does not guarantee unique titles and the DOM row order is not the
+ * `ids` order (recency sort + the user's draggable persisted order), so an
+ * ambiguous label gets NO button rather than a guessed id — 删错会话 is a far
+ * worse outcome than a missing button.
  *
  * Rows with no such actions button — blank (New Session) rows and project rows —
  * simply fail title resolution and are skipped, so we never inject there.
@@ -97,8 +97,23 @@ export function createDeleteController(
   }
 
   const injectIntoRow = (row: HTMLElement, action: MatchedSession): void => {
-    // Skip rows already carrying our button (React may reuse a row DOM node).
-    if (row.querySelector(DELETE_BTN_SEL) !== null) return
+    // L3: a row already carrying our button may have been REUSED by React for a
+    // different session, while our button still closes over the old id (the
+    // binding is captured at injection time on purpose — see the click handler).
+    // So compare the recorded binding instead of returning unconditionally: same
+    // id → nothing to do; different id → drop the stale button and re-inject.
+    const existing = row.querySelector(DELETE_BTN_SEL)
+    if (existing !== null) {
+      if (row.dataset.dshSmBoundId === action.id) {
+        rowById.set(action.id, row) // keep the map pointing at the live node
+        return
+      }
+      existing.remove()
+    }
+    // Forget the mapping of whatever session this row used to represent.
+    const previous = row.dataset.dshSmBoundId
+    if (previous !== undefined && rowById.get(previous) === row) rowById.delete(previous)
+    row.dataset.dshSmBoundId = action.id
     rowById.set(action.id, row)
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -133,15 +148,17 @@ export function createDeleteController(
     for (const [id, el] of Array.from(rowById.entries())) {
       if (!el.isConnected) rowById.delete(id)
     }
-    const snapshot = getContext().sessions.list.getSnapshot()
+    const ctx = getContext()
+    const snapshot = ctx.sessions.list.getSnapshot()
     const byId = snapshot.byId
-    // Row order = `ids` order in the official renderer, which is exactly the
-    // tie-alignment the matcher needs (review I-6).
     const ids = snapshot.ids
+    // F2a: archived sessions are NOT rendered in this list, so they must not
+    // compete for a row when they share a title with a visible session.
+    const archived = ctx.workspaces.list.getSnapshot().archivedSessionIds ?? []
     for (const container of document.querySelectorAll<HTMLElement>(SESSIONS_LIST_SEL)) {
       const rows = Array.from(container.querySelectorAll<HTMLElement>(':scope [role="treeitem"]'))
       const labels = rows.map(rowLabel)
-      const actions = resolveRows(labels, byId, ids)
+      const actions = resolveRows(labels, byId, ids, archived)
       rows.forEach((row, i) => {
         const action = actions[i]
         if (!action) {
@@ -171,6 +188,10 @@ export function createDeleteController(
   const dispose = (): void => {
     document.querySelectorAll(DELETE_BTN_SEL).forEach((el) => el.remove())
     document.querySelectorAll('#dsh-session-manager-delete-hover').forEach((el) => el.remove())
+    // Drop our binding marker too, so a later re-apply starts from a clean row.
+    document
+      .querySelectorAll<HTMLElement>('[data-dsh-sm-bound-id]')
+      .forEach((el) => delete el.dataset.dshSmBoundId)
     rowById.clear()
   }
 
