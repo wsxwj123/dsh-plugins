@@ -1,6 +1,6 @@
 {
   "name": "dsh-turn-scrubber",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH web client plugin: waveform turn rail on the right edge of the conversation — hover ripples like a wave, click jumps to that turn (ported from claude-gui's TurnScrubber, re-styled as linear waveform bars)",
   "license": "MIT",
   "type": "module",

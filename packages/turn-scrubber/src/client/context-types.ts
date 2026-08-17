@@ -32,12 +32,20 @@ export interface ChatSnapshot {
 export interface SessionFace {
   subscribe(listener: () => void): () => void
   snapshotCache: SessionSnapshot
+  /** Pull one older page (~50 messages) and prepend it into the window. */
+  loadOlder(): Promise<void>
 }
 
 /** The full session snapshot (subset). */
 export interface SessionSnapshot {
   sessionId: string
   chat?: ChatSnapshot
+  /** Host-authoritative: whether older history remains outside the window. */
+  hasMore: boolean
+  /** Whether an older-page load is currently in flight. */
+  loadingOlder: boolean
+  /** 'open' | 'cold' | 'loading' | 'error' — only 'open' may load older. */
+  openState?: string
 }
 
 /** The sessions service list feed (current session tracking). */
@@ -52,9 +60,52 @@ export interface SessionsFace {
   binding(id: string): { session: SessionFace } | undefined
 }
 
+/** Generic connection.rpc client face (dsh-client-connection handle.rpc). */
+export interface ConnectionRpc {
+  call<T = unknown>(channel: string, endpoint: string, payload?: unknown, signal?: AbortSignal): Promise<T>
+}
+
+/** The client runtime `connection` service face (read-only handle). */
+export interface ConnectionFace {
+  rpc: ConnectionRpc
+}
+
+// --- Turn index payload types (INTERFACE §1.3/§1.4) -----------------------
+
+export interface TurnIndexEntry {
+  turn: number
+  preview: string
+  compacted: boolean
+}
+
+/** 通用 RPC 成功载荷：业务数据在 `value` 里（client schema 剥掉其他字段）。 */
+export interface TurnIndexResult {
+  ok: true
+  value: {
+    sessionId: string
+    asOfSeq: number
+    total: number
+    turns: TurnIndexEntry[]
+  }
+}
+
+export interface TurnIndexError {
+  ok: false
+  error: {
+    code: 'session-not-found' | 'unavailable'
+    message: string
+    details: Record<string, unknown>
+  }
+}
+
+export type TurnIndexResponse = TurnIndexResult | TurnIndexError
+
+/** ensureTurnLoaded outcome (INTERFACE §3 suggestion 1). */
+export type EnsureLoadedResult = '达成' | '到最老' | '超限' | '会话切换' | '已加载'
+
 /** Context augmentation for the services this plugin injects. */
 export interface Context extends CordisContext {
   sessions: SessionsFace
   slots: unknown
-  connection: unknown
+  connection: ConnectionFace
 }
