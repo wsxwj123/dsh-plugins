@@ -66,20 +66,32 @@ interface InjectedServices {
 type InjectedCtx = Context & InjectedServices
 
 export interface SessionManagerConfig {
-  /** Sessions root; defaults to `~/.dsh/sessions`. */
+  /** Sessions root; defaults to `<DSH home>/sessions`. */
   sessionsRoot?: string
   /** Recycle-bin root; must be OUTSIDE sessionsRoot. Env SM_TRASH_ROOT wins. */
   trashRoot?: string
 }
 
-/** Resolve effective roots: CLI/config -> env override -> DSH defaults. */
+/**
+ * The DSH home directory, with DSH's own precedence (dsh-home-paths):
+ * `$DSH_HOME` > `~/.dsh`. A custom-home deployment previously had every delete
+ * refused as `session-dir-not-found` because the sessions root was hardcoded to
+ * `~/.dsh/sessions` (M2). Explicit plugin config still wins over both.
+ */
+export function resolveDshHome(): string {
+  const fromEnv = process.env.DSH_HOME?.trim()
+  if (fromEnv) return fromEnv
+  return path.join(os.homedir(), '.dsh')
+}
+
+/** Resolve effective roots: CLI/config -> env override -> DSH home defaults. */
 export function resolveRoots(config: SessionManagerConfig) {
-  const home = os.homedir()
-  const sessionsRoot = config.sessionsRoot ?? path.join(home, '.dsh', 'sessions')
+  const dshHome = resolveDshHome()
+  const sessionsRoot = config.sessionsRoot ?? path.join(dshHome, 'sessions')
   const trashRoot =
     process.env.SM_TRASH_ROOT?.trim() ||
     config.trashRoot ||
-    path.join(home, '.dsh', 'session-manager-trash')
+    path.join(dshHome, 'session-manager-trash')
   return { sessionsRoot, trashRoot }
 }
 
@@ -256,6 +268,17 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
       `[session-manager] trash root ${trashRoot} is ${unsafe}; refusing to enable recycle bin`,
     )
     return
+  }
+
+  // M2: a sessions root that does not exist means every delete will answer
+  // session-dir-not-found (fail-safe, but the feature is silently dead) — most
+  // likely a custom DSH home the plugin was not told about. Warn once at
+  // startup; do NOT refuse to mount (the root appears as soon as the host writes
+  // its first session).
+  if (!fs.existsSync(sessionsRoot)) {
+    ctx.logger.warn(
+      `[session-manager] sessions root ${sessionsRoot} does not exist (DSH home = ${resolveDshHome()}); deletes will report session-dir-not-found until it appears — set config.sessionsRoot or $DSH_HOME if this is wrong`,
+    )
   }
 
   // Injected services are guaranteed present on the web profile; bare access is
