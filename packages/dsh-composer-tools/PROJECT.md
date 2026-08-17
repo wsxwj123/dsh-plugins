@@ -58,3 +58,6 @@
 ## 增量 2：全局新建 + 删除 + 返回 + 拖拽修复（轻量档）
 
 - 卡点①②（合并确认）：PLAN §8 / INTERFACE §1.5 扩展+§1.6 delete+§2.4+§2.6 reducer+§3 拖拽修复；审查修订后定稿（5 重要项全处理）；test-13 31 条锁定（LOCK=f2c5c4b）@用户确认 08-17 09:xx
+- 04 开发完成（4 commit：host create scope/delete/list 字段 + client reducer/双入口/删除/返回 + 拖拽修复）→ 05 裁判盲判：合格（184 验收+145 单测全绿，25ms 会合窗口专项判定接受）@待用户实测确认
+- 真实环境实测（playwright 3080）：面板打开✓ 提示词 tab 不塌陷✓ 拖拽后点 tab 不塌陷✓ 项目级显示+删除按钮✓ ——但发现运行中 web（12:25 启动）host 是旧版（增量1），delete 404 + 无 canCreateGlobalAgents → 需重启 web 生效
+- 卡点⑤待用户：重启 dsh web 后实测（删除可用/新建全局按钮/提示词不塌陷）
