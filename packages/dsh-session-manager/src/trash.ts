@@ -163,6 +163,16 @@ export class TrashStore {
   moveToTrash(fromDir: string, rec: Omit<TrashRecord, 'deletedAt'>): void {
     const dest = this.itemPath(rec.id)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
+    // L1 + W4: refuse BEFORE touching the record when the destination is already
+    // taken. The rename would fail anyway (it never overwrites a non-empty dir),
+    // but the rollback then deleted the record of whatever already sat there,
+    // turning that older entry into an unrecoverable orphan. On a
+    // case-INSENSITIVE volume (APFS/NTFS default) the collision does not even
+    // need the same id: deleting `foo` while `Foo` is in the trash hits the same
+    // paths for both the item dir and `_metadata/<id>.json`.
+    if (fs.existsSync(dest)) {
+      throw new Error(`trash dest already exists for id ${rec.id}; refusing to overwrite or clobber its record`)
+    }
     this.writeRecord({ ...rec, deletedAt: Date.now() })
     try {
       // renameSync is atomic on the same volume; it never overwrites a
