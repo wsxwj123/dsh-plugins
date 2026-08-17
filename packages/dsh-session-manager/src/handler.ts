@@ -29,6 +29,14 @@ import {
 } from './paths.js'
 
 export interface ArchiveDomain {
+  /**
+   * `set` returns `Promise<void>` in the real runtime (dsh-storage-domain
+   * `types/domain.d.ts`): the durable write is queued and the domain's in-memory
+   * value is replaced only AFTER it lands. It MUST be awaited (F1) — an
+   * un-awaited rejection reaches DSH's process-level `unhandledRejection`
+   * handler, which exits the whole `dsh web` host. A backend whose `set` is
+   * synchronous (in-memory stubs) is still supported: nothing is awaited then.
+   */
   global: { get(): unknown; set(value: unknown): unknown }
 }
 
@@ -111,6 +119,11 @@ function bodyIsObject(body: unknown): body is Record<string, unknown> {
   return typeof body === 'object' && body !== null && !Array.isArray(body)
 }
 
+/** A value that must be awaited (the real `domain.global.set` return). */
+function isThenable(v: unknown): v is Promise<unknown> {
+  return typeof (v as { then?: unknown } | null | undefined)?.then === 'function'
+}
+
 /**
  * Resolve the project dir for a delete, honoring an optional test override.
  * The override + the shared lookup cover the harness's projectCwdMap semantics.
@@ -129,14 +142,71 @@ function resolveLookup(deps: SmHandlerDeps, cwd: unknown): ProjectLookup {
  * Create the /sm handler. `handle(method, req, body)` returns the HTTP status
  * + JSON to send for one request. The loopback trust fence is applied by the
  * route owner (src/index.ts); this function operates on already-trusted input.
+ *
+ * Await-able result (F1): the archive-set write goes through the storage domain,
+ * whose real `set()` is asynchronous, so the endpoints that write it resolve
+ * only after the write LANDS. `handle` therefore returns
+ * `SmResponse | Promise<SmResponse>` and every caller must `await` it (awaiting
+ * a plain object is a no-op, so a synchronous backend stays synchronous).
  */
 export function createSmHandler(deps: SmHandlerDeps): {
-  handle(method: string | null | undefined, req: unknown, body: unknown): SmResponse
+  handle(method: string | null | undefined, req: unknown, body: unknown): SmResponse | Promise<SmResponse>
 } {
   const log = deps.log ?? { warn: () => {} }
 
+  /**
+   * The archive read-modify-write chain (H2). `readWorkspaceGlobal` reads the
+   * domain's IN-MEMORY value, which the domain replaces only after its durable
+   * write lands — so two overlapping requests would both read the pre-write
+   * snapshot and the first one's change would be silently reverted (lost
+   * update). Non-null while a write is in flight: the next read-modify-write
+   * then waits for it instead of reading a stale snapshot.
+   *
+   * ponytail: one chain for the single workspace global is enough — per-key
+   * locks only matter if this ever writes more than one domain object.
+   */
+  let archiveWriteInFlight: Promise<SmResponse> | null = null
+
+  /** Run a read-modify-write of the archive set, serialized behind any in-flight write. */
+  function withArchiveChain(run: () => SmResponse | Promise<SmResponse>): SmResponse | Promise<SmResponse> {
+    const inFlight = archiveWriteInFlight
+    if (inFlight === null) return run()
+    // inFlight never rejects (both handlers are attached in commitArchive), but
+    // pass `run` as the rejection handler too so a future change cannot stall
+    // the queue.
+    return inFlight.then(run, run)
+  }
+
+  /**
+   * Write the archive payload and map the outcome to a response. Awaits the
+   * write when the backend returned a thenable (real runtime) — which is also
+   * what attaches the rejection handler that keeps a failed write from killing
+   * the host process (F1).
+   */
+  function commitArchive(
+    domain: ArchiveDomain,
+    payload: Record<string, unknown>,
+    onFail: (err: unknown) => SmResponse,
+  ): SmResponse | Promise<SmResponse> {
+    let result: unknown
+    try {
+      result = domain.global.set(payload)
+    } catch (err) {
+      return onFail(err)
+    }
+    if (!isThenable(result)) return ok()
+    const responded = result.then(() => ok(), onFail)
+    archiveWriteInFlight = responded
+    // Release the queue once this write settles, so a later request can again
+    // take the synchronous fast path.
+    void responded.then(() => {
+      if (archiveWriteInFlight === responded) archiveWriteInFlight = null
+    })
+    return responded
+  }
+
   // ---- /sm/delete ----
-  function doDelete(_req: unknown, body: unknown): SmResponse {
+  function doDelete(_req: unknown, body: unknown): SmResponse | Promise<SmResponse> {
     if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
 
     const { id, cwd, title, force } = body as { id?: unknown; cwd?: unknown; title?: unknown; force?: unknown }
@@ -262,31 +332,30 @@ export function createSmHandler(deps: SmHandlerDeps): {
   // nothing happened). The client branches on `moved` to keep the row hidden
   // and offer a "cleanup pending, retry" recovery instead of restoring a
   // session whose dir is already gone (INTERFACE §2.4).
-  function doArchivedCleanup(id: string): SmResponse {
-    const global = deps.readWorkspaceGlobal()
-    // A failed read is NOT the same as "not archived" — surface it as a
-    // retryable partial failure instead of silently skipping the cleanup (the
-    // old `catch { return {} }` turned read failure into a permanent ghost
-    // row with no recovery signal).
-    if (global === undefined) {
-      log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
-      return fail('system-error', 'archive state unreadable; file already moved, retry to complete', { moved: true })
-    }
-    const archived = archiveFromGlobal(global)
-    if (!archived.includes(id)) return ok()
+  function doArchivedCleanup(id: string): SmResponse | Promise<SmResponse> {
+    return withArchiveChain(() => {
+      const global = deps.readWorkspaceGlobal()
+      // A failed read is NOT the same as "not archived" — surface it as a
+      // retryable partial failure instead of silently skipping the cleanup (the
+      // old `catch { return {} }` turned read failure into a permanent ghost
+      // row with no recovery signal).
+      if (global === undefined) {
+        log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
+        return fail('system-error', 'archive state unreadable; file already moved, retry to complete', { moved: true })
+      }
+      const archived = archiveFromGlobal(global)
+      if (!archived.includes(id)) return ok()
 
-    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
-    if (domain === null || domain === undefined) {
-      log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
-      return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
-    }
-    try {
-      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
-      return ok()
-    } catch (err) {
-      log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
-      return fail('system-error', String(err), { moved: true })
-    }
+      const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
+      if (domain === null || domain === undefined) {
+        log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
+        return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
+      }
+      return commitArchive(domain, { ...global, archivedSessionIds: archived.filter((x) => x !== id) }, (err) => {
+        log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
+        return fail('system-error', String(err), { moved: true })
+      })
+    })
   }
 
   // ---- /sm/restore ----
@@ -332,35 +401,35 @@ export function createSmHandler(deps: SmHandlerDeps): {
   }
 
   // ---- /sm/unarchive ----
-  function doUnarchive(_req: unknown, body: unknown): SmResponse {
+  function doUnarchive(_req: unknown, body: unknown): SmResponse | Promise<SmResponse> {
     if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
     const { id } = body as { id?: unknown }
     if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
 
-    // Domain availability is checked FIRST, before reading the set. An absent
-    // storageDomain read via ?. yields undefined, so the degradation is the
-    // same "workspace-domain-unavailable" as when get(WORKSPACE_DOMAIN) returns null.
-    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
-    if (domain === null || domain === undefined) {
-      return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
-    }
-    // Single read (I-1): derive "is archived" and the write payload from the
-    // same snapshot. A read failure (undefined) is a retryable system-error —
-    // never treated as an empty global (which would clobber the other fields
-    // on write).
-    const global = deps.readWorkspaceGlobal()
-    if (global === undefined) {
-      return fail('system-error', 'workspace global unreadable; retry')
-    }
-    const archived = archiveFromGlobal(global)
-    if (!archived.includes(id as string)) return ok() // idempotent no-op
+    return withArchiveChain(() => {
+      // Domain availability is checked FIRST, before reading the set. An absent
+      // storageDomain read via ?. yields undefined, so the degradation is the
+      // same "workspace-domain-unavailable" as when get(WORKSPACE_DOMAIN) returns null.
+      const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
+      if (domain === null || domain === undefined) {
+        return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
+      }
+      // Single read (I-1): derive "is archived" and the write payload from the
+      // same snapshot. A read failure (undefined) is a retryable system-error —
+      // never treated as an empty global (which would clobber the other fields
+      // on write). H2: the read happens INSIDE the chain, so a queued unarchive
+      // sees the previous write's result instead of the pre-write snapshot.
+      const global = deps.readWorkspaceGlobal()
+      if (global === undefined) {
+        return fail('system-error', 'workspace global unreadable; retry')
+      }
+      const archived = archiveFromGlobal(global)
+      if (!archived.includes(id as string)) return ok() // idempotent no-op
 
-    try {
-      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
-      return ok()
-    } catch (err) {
-      return fail('system-error', String(err))
-    }
+      return commitArchive(domain, { ...global, archivedSessionIds: archived.filter((x) => x !== id) }, (err) =>
+        fail('system-error', String(err)),
+      )
+    })
   }
 
   // ---- /sm/trash ----
@@ -379,7 +448,7 @@ export function createSmHandler(deps: SmHandlerDeps): {
   }
 
   return {
-    handle(method, _req, body): SmResponse {
+    handle(method, _req, body): SmResponse | Promise<SmResponse> {
       switch (method) {
         case 'delete':
           return doDelete(_req, body)

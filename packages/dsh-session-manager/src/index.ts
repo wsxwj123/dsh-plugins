@@ -303,7 +303,10 @@ export function apply(ctx: InjectedCtx, config: SessionManagerConfig = {}): void
           }
         }
 
-        const result = handler.handle(method, req, body)
+        // await: the archive-write endpoints resolve only after the storage
+        // domain's durable write LANDS (F1). Awaiting a synchronous response is
+        // a no-op.
+        const result = await handler.handle(method, req, body)
         res.writeHead(result.status, { 'content-type': 'application/json' })
         res.end(JSON.stringify(result.json))
       } catch (err) {
