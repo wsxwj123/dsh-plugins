@@ -24,29 +24,32 @@ interface Props {
 
 type Tab = 'instructions' | 'prompts'
 
-/** 拖拽状态：null = 未拖拽；{ dx, dy } = 相对初始位置的偏移（px）。 */
-type Drag = { dx: number; dy: number } | null
+/**
+ * 拖拽落点：null = 未拖拽过（走 CSS 默认右下定位）；{ left, top } = 已固化的
+ * 面板定位点（px）。落点提升为 React state（§8.6 修复②）：mouseup 清 dragCtx
+ * 不影响已固化的 left/top，避免"从 CSS 右下定位切到 left/top 后 left/top 短暂
+ * 为 undefined → 面板塌陷消失"。
+ */
+type DragPos = { left: number; top: number } | null
 
 export function Panel({ cwd, currentDraft, setDraft, onClose }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('instructions')
-  const [drag, setDrag] = useState<Drag>(null)
+  const [dragPos, setDragPos] = useState<DragPos>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  // 拖拽起点（鼠标按下时）与面板当时的定位点
+  // 拖拽起点（鼠标按下时）与面板当时的定位点；仅拖拽进行期间非 null
   const dragCtx = useRef<{ startX: number; startY: number; baseLeft: number; baseTop: number } | null>(null)
 
   // 拖拽期间 document 级监听：mousemove 跟随、mouseup 结束。
-  // 常驻监听 + dragCtx 判空（拖拽中每帧 setDrag 重渲染，若按依赖挂摘会丢 mouseup）。
+  // 常驻监听 + dragCtx 判空（拖拽中每帧 setDragPos 重渲染，若按依赖挂摘会丢 mouseup）。
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
       const c = dragCtx.current
       if (c === null) return
-      const dx = e.clientX - c.startX
-      const dy = e.clientY - c.startY
-      setDrag({ dx, dy })
+      // 每次移动直接把落点 commit 进 state：拖拽结束时无需再从 dragCtx 回填
+      setDragPos({ left: c.baseLeft + (e.clientX - c.startX), top: c.baseTop + (e.clientY - c.startY) })
     }
     const onUp = (): void => {
-      dragCtx.current = null
-      setDrag((d) => d) // 保留最终偏移（拖拽结束即定位点）
+      dragCtx.current = null // dragPos 已固化在 state，清空 dragCtx 不影响定位
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -57,6 +60,10 @@ export function Panel({ cwd, currentDraft, setDraft, onClose }: Props): JSX.Elem
   }, []) // 挂载时挂一次，卸载 cleanup
 
   const startDrag = (e: React.MouseEvent): void => {
+    // §8.6 修复①：交互目标（tab/关闭按钮、链接、输入框等）上的 mousedown 不启动
+    // 拖拽——否则点击 tab 会冒泡进 startDrag 把面板切到 left/top 定位（吞点击 bug）。
+    const t = e.target as HTMLElement
+    if (t.closest('button, a, input, textarea, [data-stop-drag]')) return
     const el = panelRef.current
     if (el === null) return
     // 拖拽手柄只响应鼠标左键
@@ -68,16 +75,17 @@ export function Panel({ cwd, currentDraft, setDraft, onClose }: Props): JSX.Elem
       baseLeft: r.left,
       baseTop: r.top,
     }
-    setDrag({ dx: 0, dy: 0 })
+    setDragPos({ left: r.left, top: r.top })
     e.preventDefault() // 防文本选择
   }
 
-  // 面板样式：未拖拽时用 CSS 默认（贴右下）；拖拽后转 left/top 定位 + 偏移。
-  const style: React.CSSProperties = drag === null
+  // 面板样式：未拖拽过时用 CSS 默认（贴右下）；拖拽后 left/top 由 state 派生，
+  // insetInlineEnd/bottom 显式置 auto（不依赖会被清空的 dragCtx）。
+  const style: React.CSSProperties = dragPos === null
     ? {}
     : {
-        left: dragCtx.current ? dragCtx.current.baseLeft + drag.dx : undefined,
-        top: dragCtx.current ? dragCtx.current.baseTop + drag.dy : undefined,
+        left: dragPos.left,
+        top: dragPos.top,
         insetInlineEnd: 'auto',
         bottom: 'auto',
       }
