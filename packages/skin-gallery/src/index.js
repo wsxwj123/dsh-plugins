@@ -1,2 +1,2 @@
-export const name = 'dsh-theme-gallery'
+export const name = 'dsh-skin-gallery'
 export function apply() {}
