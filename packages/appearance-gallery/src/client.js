@@ -346,6 +346,9 @@ export function createAppearanceRuntime(deps) {
   let setOpenRef = null
   function closePanel() {
     revertPreview() // §3.0 硬约定 2：先撤销试穿，再关面板
+    // §3.0：搜索词 / 导入 textarea / 错误文案 / 勾选删除 / 二次确认等面板 UI 态卸载即丢
+    themePanel.reset()
+    skinPanel.reset()
     if (setOpenRef) setOpenRef(false)
   }
 

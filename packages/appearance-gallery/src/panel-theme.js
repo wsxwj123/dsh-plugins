@@ -23,7 +23,12 @@ export function createThemePanel(deps) {
     }
   }
   const { React, families, customThemeApi, activateFamily, subscribe, onBack } = deps
-  const state = { search: '', json: '', error: '' }
+  // blank() 在工厂内声明：build.mjs 把所有 src 拼进同一作用域，顶层同名标识符会 SyntaxError。
+  const blank = () => ({ search: '', json: '', error: '' })
+  const state = blank()
+
+  /** §3.0：面板 UI 态卸载即丢。就地改字段而非换对象——外部（含测试）持有 state 引用。 */
+  const reset = () => { Object.assign(state, blank()) }
 
   const setSearch = (value) => { state.search = String(value === undefined ? '' : value).slice(0, THEME_SEARCH_MAX) }
 
@@ -131,5 +136,5 @@ export function createThemePanel(deps) {
       React.createElement('button', { className: 'theme-gallery-action', type: 'button', onClick: onBack }, '返回'))
   }
 
-  return { Panel, state, setSearch, submitImport }
+  return { Panel, state, setSearch, submitImport, reset }
 }

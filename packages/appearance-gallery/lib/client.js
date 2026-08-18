@@ -1131,7 +1131,12 @@ function createThemePanel(deps) {
     }
   }
   const { React, families, customThemeApi, activateFamily, subscribe, onBack } = deps
-  const state = { search: '', json: '', error: '' }
+  // blank() 在工厂内声明：build.mjs 把所有 src 拼进同一作用域，顶层同名标识符会 SyntaxError。
+  const blank = () => ({ search: '', json: '', error: '' })
+  const state = blank()
+
+  /** §3.0：面板 UI 态卸载即丢。就地改字段而非换对象——外部（含测试）持有 state 引用。 */
+  const reset = () => { Object.assign(state, blank()) }
 
   const setSearch = (value) => { state.search = String(value === undefined ? '' : value).slice(0, THEME_SEARCH_MAX) }
 
@@ -1239,7 +1244,7 @@ function createThemePanel(deps) {
       React.createElement('button', { className: 'theme-gallery-action', type: 'button', onClick: onBack }, '返回'))
   }
 
-  return { Panel, state, setSearch, submitImport }
+  return { Panel, state, setSearch, submitImport, reset }
 }
 
 // ---- panel-skin.js ----
@@ -1269,10 +1274,15 @@ function createSkinPanel(deps) {
     }
   }
   const { React, engine, customSkinApi, skinRuntime, subscribe, onBack } = deps
-  const state = {
+  // blank() 在工厂内声明：build.mjs 把所有 src 拼进同一作用域，顶层同名标识符会 SyntaxError。
+  const blank = () => ({
     search: '', skinText: '', clientText: '', a11yText: '', error: '',
     picked: [0, 1, 2], selectedForDelete: [], confirming: false, busy: false,
-  }
+  })
+  const state = blank()
+
+  /** §3.0：面板 UI 态卸载即丢。就地改字段而非换对象——外部（含测试）持有 state 引用。 */
+  const reset = () => { Object.assign(state, blank()) }
 
   const setSearch = (value) => { state.search = String(value === undefined ? '' : value).slice(0, SKIN_SEARCH_MAX) }
   const toggleSection = (index) => {
@@ -1521,6 +1531,7 @@ function createSkinPanel(deps) {
     state,
     setSearch,
     submitImport,
+    reset,
     designSummary,
     toggleSection,
     sectionCount: DESIGN_SECTIONS.length,
@@ -1876,6 +1887,9 @@ function createAppearanceRuntime(deps) {
   let setOpenRef = null
   function closePanel() {
     revertPreview() // §3.0 硬约定 2：先撤销试穿，再关面板
+    // §3.0：搜索词 / 导入 textarea / 错误文案 / 勾选删除 / 二次确认等面板 UI 态卸载即丢
+    themePanel.reset()
+    skinPanel.reset()
     if (setOpenRef) setOpenRef(false)
   }
 
