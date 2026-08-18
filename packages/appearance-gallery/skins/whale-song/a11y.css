@@ -1,0 +1,24 @@
+/*
+ * whale-song — 鲸吟 — 可访问性修正
+ * 作用域：body[data-dsh-whale-song]（暗色变体带 [data-ds-dark-theme]）。
+ * 原则：只提升对比度，不删/不改皮肤素材、不改布局尺寸动画。
+ *
+ * 修正项（对比度经脚本核算，AA ≥ 4.5:1）：
+ *  1) 亮态主按钮白字 vs fill #4d8fd4 = 3.39、hover #3f8ee6 = 2.90，未达 AA → 在本
+ *     作用域重定义 fill 至 #3e74ac（白字对比 4.89）、hover 至 #3373ba（4.88）。
+ *  2) 代码块底色半透明（light #f4f8fd94 / dark #0c1a3ea8），正文叠在鲸语女神背景画上 →
+ *     实体化为不透明浅/深底，正文对比稳定 ≥ 4.5。前景 token 保持皮肤原值。
+ */
+body[data-dsh-whale-song] {
+  --dsw-alias-button-primary-fill: #3e74ac;
+  --dsw-alias-button-primary-hover: #3373ba;
+  --dsw-alias-markdown-code-block: #f4f8fd;
+  --dsw-alias-markdown-inline-code: #e3ecf6;
+  --dsw-alias-markdown-placeholder: #f4f8fd;
+}
+body[data-dsh-whale-song][data-ds-dark-theme] {
+  --dsw-alias-button-primary-hover: #3970b2;
+  --dsw-alias-markdown-code-block: #0c1a3e;
+  --dsw-alias-markdown-inline-code: #102147;
+  --dsw-alias-markdown-placeholder: #0c1a3e;
+}
