@@ -1,4 +1,4 @@
-// 被测对象接线点。默认跑真实实现（packages/appearance-gallery），
+// 被测对象接线点。默认跑真实实现（packages/dsh-appearance-gallery），
 // APPEARANCE_SUBJECT=harness 可切回参考桩对照。断言一行都不用改。
 //
 // 真实实现是浏览器插件：apply 层要 document / storage / __DSH_MODULES__ / React。
@@ -11,7 +11,7 @@ import { undefinedBehavior } from './validate.mjs';
 
 export const SUBJECT = process.env.APPEARANCE_SUBJECT || 'real';
 
-const PKG = '../../../../packages/appearance-gallery/src/client.js';
+const PKG = '../../../../packages/dsh-appearance-gallery/src/client.js';
 
 /** JSON.parse 计数（§3.11 P6 记忆化断言）：只有被测代码真的解析了才计数。 */
 const nativeParse = JSON.parse;
@@ -121,7 +121,7 @@ function markOf(el) {
 // ---------------- 真实实现的接线 ----------------
 async function createReal(opts = {}) {
   const { applyWith } = await import(PKG);
-  const { BUILTIN_SKINS } = await import('../../../../packages/appearance-gallery/src/acceptance-api.mjs');
+  const { BUILTIN_SKINS } = await import('../../../../packages/dsh-appearance-gallery/src/acceptance-api.mjs');
 
   const storage = opts.storage || createMemoryStorage(opts.seed || {});
   parseSink = storage;
@@ -309,7 +309,7 @@ export async function createSubject(opts = {}) {
   if (SUBJECT === 'real') return createReal(opts);
   throw new Error(
     `未接线的 subject「${SUBJECT}」。请在 tests/acceptance/appearance-gallery/helpers/subject.mjs 里，`
-    + '把 packages/appearance-gallery 的真实入口映射为 createHarness 返回的同一组字段'
+    + '把 packages/dsh-appearance-gallery 的真实入口映射为 createHarness 返回的同一组字段'
     + '（storage / dom / slotCalls / themeApi / customSkinApi / skinRuntime / surface / start / entry）。',
   );
 }

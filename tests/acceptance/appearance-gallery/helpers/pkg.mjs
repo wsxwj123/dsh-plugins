@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '../../../..');
-export const PKG_DIR = path.join(REPO_ROOT, 'packages/appearance-gallery');
+export const PKG_DIR = path.join(REPO_ROOT, 'packages/dsh-appearance-gallery');
 
 export const pkgExists = () => fs.existsSync(PKG_DIR);
 
 /** 在测试开头调用：包不存在就 skip（返回 true 表示调用方应直接 return） */
 export function skipUnlessPkg(t) {
   if (pkgExists()) return false;
-  t.skip('packages/appearance-gallery 尚未创建（04 实现落地后此断言自动生效，无需改测试）');
+  t.skip('packages/dsh-appearance-gallery 尚未创建（04 实现落地后此断言自动生效，无需改测试）');
   return true;
 }
 
