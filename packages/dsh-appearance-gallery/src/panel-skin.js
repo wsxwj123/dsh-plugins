@@ -9,6 +9,8 @@
  * engine 为 null（宿主没给 __DSH_MODULES__）时整段只渲染一行占位文案，S1–S8 全部入口不渲染。
  */
 
+import { MAX_BUNDLE_B64, MAX_A11Y_BYTES, SKIN_ERR } from './custom-skin.js'
+
 const SKIN_SEARCH_MAX = 64
 const SKIN_UNAVAILABLE_TEXT = '皮肤轨道不可用：宿主未提供 __DSH_MODULES__。'
 /** 设计助手的 11 个版块（顺序即勾选索引） */
@@ -16,6 +18,59 @@ const DESIGN_SECTIONS = [
   '颜色', '气泡', '代码块', '按钮', '侧栏', '输入框',
   '背景图', '标题栏', '状态栏', '动效', 'JavaScript 控件',
 ]
+
+/** 皮肤文件夹三件套 → state 字段名（比对时统一转小写，大小写不敏感） */
+const SKIN_FOLDER_FILES = { 'skin.json': 'skin', 'client.js': 'client', 'a11y.css': 'a11y' }
+
+/**
+ * 从 <input type="file" webkitdirectory> 的 FileList 里挑出「所选文件夹根层」的三件套。
+ *
+ * 纯函数：只读 name / size / webkitRelativePath，不碰 DOM、不读文件内容，可直接单测。
+ * 层级判断只用 webkitRelativePath（浏览器一律给正斜杠），不做平台分支；子目录里的同名文件忽略。
+ * 体积只做「别把几十 MB 读进内存」的前置拦截，真正的 256KB / 65536 门禁仍在导入管道里。
+ *
+ * @param {ArrayLike<File>|null|undefined} files
+ * @returns {{ skin: File, client: File, a11y: File|null }} a11y 缺失合法（导入侧已支持降级）
+ * @throws {Error} 带 code（ERR_SKIN_MISSING_FILE / ERR_SKIN_SIZE），与导入管道同一套错误契约
+ */
+export function pickSkinFolderFiles(files) {
+  const picked = { skin: null, client: null, a11y: null }
+  for (const file of Array.from(files || [])) {
+    const rel = String((file && file.webkitRelativePath) || '')
+    // 根层形如 "<所选文件夹>/<文件名>"，段数恰好 2；子目录 ≥3 段一律跳过。
+    // 少数环境不填 webkitRelativePath（空串），此时只能按根层文件处理。
+    if (rel !== '' && rel.split('/').length !== 2) continue
+    const slot = SKIN_FOLDER_FILES[String((file && file.name) || '').toLowerCase()]
+    if (slot === undefined || picked[slot] !== null) continue
+    picked[slot] = file
+  }
+
+  const missing = []
+  if (picked.skin === null) missing.push('skin.json')
+  if (picked.client === null) missing.push('client.js')
+  if (missing.length > 0) {
+    throw pickFail(SKIN_ERR.MISSING_FILE, `所选文件夹缺 ${missing.join(' 和 ')}（a11y.css 可缺省）`)
+  }
+  // 契约管的是 base64(skin + client) ≤ 256KB，这里用原始字节和做宽松前置拦截
+  if (size(picked.skin) + size(picked.client) > MAX_BUNDLE_B64) {
+    throw pickFail(SKIN_ERR.SIZE, '自定义皮肤包超 256KB')
+  }
+  if (picked.a11y !== null && size(picked.a11y) > MAX_A11Y_BYTES) {
+    throw pickFail(SKIN_ERR.SIZE, `a11y.css 超 ${MAX_A11Y_BYTES} 字节`)
+  }
+  return picked
+}
+
+/** size 缺失（部分测试替身 / 老浏览器）按 0 计，交给下游真门禁兜底。 */
+function size(file) {
+  return typeof file.size === 'number' && file.size > 0 ? file.size : 0
+}
+
+function pickFail(code, message) {
+  const err = new Error(message)
+  err.code = code
+  return err
+}
 
 export function createSkinPanel(deps) {
   for (const field of ['React', 'customSkinApi', 'skinRuntime', 'subscribe', 'onBack']) {
