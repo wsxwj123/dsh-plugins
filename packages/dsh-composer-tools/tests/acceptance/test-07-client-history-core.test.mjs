@@ -1,7 +1,11 @@
 // client 历史状态机（history-core.ts / INTERFACE §2.2）契约测试
 // 覆盖：空历史 recallOlder null；cursor 从 -1 上移存 stash；翻到底恢复草稿；
-// 去重后 unshift 置顶；上限 100 裁剪丢最旧；capturePending trim 空不录；
-// commitPending 去重+置顶+裁剪；dropPending；resetCursor；纯函数（不改入参）。
+// recordSend 单段式（trim 空白不录、去重置顶、unshift、上限 100 裁剪、
+// 翻历史中发送 → cursor=-1、stash 清空）；resetCursor；纯函数（不改入参）。
+//
+// 增量 3 修订（PLAN §9.9）：capturePending/commitPending/dropPending/pending 已随
+// 采集机制移除，相应用例替换为 recordSend 契约用例；未失效的 recallOlder/recallNewer/
+// resetCursor 用例保持原样。
 //
 // 接入：函数从 helpers/contractClient 导入；换真实实现仅改 import 源。
 
@@ -9,9 +13,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createHistory,
-  capturePending,
-  commitPending,
-  dropPending,
+  recordSend,
   recallOlder,
   recallNewer,
   resetCursor,
@@ -93,80 +95,63 @@ test.describe('history-core 历史状态机', () => {
     assert.equal(recallNewer(createHistory(['A'])), null)
   })
 
-  // —— capturePending ——
-  test('capturePending：trim 后为空 → 原样返回（不录空白），pending 仍 null', () => {
-    const s = createHistory()
-    assert.equal(capturePending(s, '   '), s)
-    assert.equal(capturePending(s, ''), s)
-    assert.equal(capturePending(s, '\n\t'), s)
-    assert.equal(capturePending(s, null), s)
-    assert.equal(s.pending, null)
-  })
-  test('capturePending：trim 非空 → pending = trim 后原文', () => {
-    const s = capturePending(createHistory(), '  hello  ')
-    assert.equal(s.pending, 'hello')
-    assert.deepEqual(s.entries, [], '未 commit 前不进 entries')
-  })
-
-  // —— commitPending ——
-  test('commitPending：pending 为 null → 原样返回', () => {
+  // —— recordSend（增量 3：会话快照单段式采集写入，取代 capturePending/commitPending/dropPending）——
+  test('recordSend：trim 后为空 → 原样返回（不录空白），entries 不变', () => {
     const s = createHistory(['A'])
-    assert.equal(commitPending(s), s)
+    assert.equal(recordSend(s, ''), s)
+    assert.equal(recordSend(s, '   '), s)
+    assert.equal(recordSend(s, '\n\t '), s)
+    assert.deepEqual(s.entries, ['A'], '空白不写入 entries')
   })
-  test('commitPending：去重 + 置顶 + pending 清空', () => {
-    const s = capturePending(createHistory(['B', 'A']), 'B')
-    const c = commitPending(s)
-    assert.deepEqual(c.entries, ['B', 'A'], 'B 已存在去重后仍置顶')
-    assert.equal(c.pending, null)
+  test('recordSend：同文本已是最新 → 去重后仍置顶，不产生重复', () => {
+    const s = createHistory(['B', 'A'])
+    const r = recordSend(s, 'B')
+    assert.deepEqual(r.entries, ['B', 'A'], 'B 已存在且最前，去重后保持置顶、不重复')
   })
-  test('commitPending：新条目 unshift 最前', () => {
-    const s = capturePending(createHistory(['A']), 'N')
-    const c = commitPending(s)
-    assert.deepEqual(c.entries, ['N', 'A'])
+  test('recordSend：同文本在中间 → 去掉旧位置并置顶（去重 + unshift）', () => {
+    const s = createHistory(['A', 'B', 'C', 'B'])
+    const r = recordSend(s, 'B')
+    assert.deepEqual(r.entries, ['B', 'A', 'C'])
   })
-  test('commitPending：去重去掉中间重复项', () => {
-    const s = capturePending(createHistory(['A', 'B', 'C', 'B']), 'B')
-    const c = commitPending(s)
-    assert.deepEqual(c.entries, ['B', 'A', 'C'])
+  test('recordSend：新条目 unshift 到最前（最新在前）；未翻历史时 cursor/stash 保持', () => {
+    const s = createHistory(['A'])
+    const r = recordSend(s, 'N')
+    assert.deepEqual(r.entries, ['N', 'A'])
+    assert.equal(r.cursor, -1)
+    assert.equal(r.stash, null)
   })
-  test('commitPending：裁剪到 100 条，丢最旧', () => {
+  test('recordSend：去重键是 trim 后的全文（"  B  " 与既有 "B" 视为同一条）', () => {
+    const s = createHistory(['B'])
+    const r = recordSend(s, '  B  ')
+    assert.deepEqual(r.entries, ['B'], 'trim 后命中既有条目，不产生重复')
+  })
+  test('recordSend：裁剪到 HISTORY_LIMIT 条，丢最旧', () => {
     const many = Array.from({ length: HISTORY_LIMIT + 20 }, (_, i) => `item-${i}`)
     // 最新在前：item-0 最前（最新）
     const h = createHistory(many)
-    const s = capturePending(h, 'newest')
-    const c = commitPending(s)
-    assert.equal(c.entries.length, HISTORY_LIMIT)
-    assert.equal(c.entries[0], 'newest')
+    const r = recordSend(h, 'newest')
+    assert.equal(r.entries.length, HISTORY_LIMIT)
+    assert.equal(r.entries[0], 'newest')
     // 原始去重后为 120 条，置顶 newest → 共 121，裁到 100 → 丢最旧 21 条
     // 保留：newest + item-0..item-98（共 100）；item-99 及更旧全部丢弃
-    assert.ok(!c.entries.includes('item-119'), '最旧应被裁剪')
-    assert.equal(c.entries.includes('item-99'), false, 'item-99 是最旧被裁边界之后')
-    assert.equal(c.entries.includes('item-98'), true, 'item-98 是最新侧边界，保留')
+    assert.ok(!r.entries.includes('item-119'), '最旧应被裁剪')
+    assert.equal(r.entries.includes('item-99'), false, 'item-99 是最旧被裁边界之后')
+    assert.equal(r.entries.includes('item-98'), true, 'item-98 是最新侧边界，保留')
   })
-  test('commitPending：cursor/stash 不动', () => {
-    const s = createHistory(['A'])
-    const up = recallOlder(s, 'draft') // cursor0 stash=draft
-    const captured = capturePending(up.state, 'x')
-    const c = commitPending(captured)
-    assert.equal(c.cursor, 0)
-    assert.equal(c.stash, 'draft')
-  })
-
-  // —— dropPending ——
-  test('dropPending：pending → null，不入 entries', () => {
-    const s = createHistory(['A'])
-    const captured = capturePending(s, 'failed send')
-    const d = dropPending(captured)
-    assert.equal(d.pending, null)
-    assert.deepEqual(d.entries, ['A'], '误录条目不进 entries')
-  })
-  test('dropPending：pending 已为 null → 原样返回', () => {
-    const s = createHistory(['A'])
-    assert.equal(dropPending(s), s)
+  test('recordSend：翻历史中发送 → cursor 置 -1、stash 清空（退出翻历史态）', () => {
+    let s = createHistory(['A', 'B'])
+    s = recallOlder(s, 'draft').state // cursor 0, stash=draft
+    s = recallOlder(s, 'draft').state // cursor 1
+    assert.equal(s.cursor, 1)
+    assert.equal(s.stash, 'draft')
+    const r = recordSend(s, 'X')
+    assert.equal(r.cursor, -1, '发送接受理后退出翻历史态')
+    assert.equal(r.stash, null, 'stash 清空，避免指向被本次写入挪位的 entries')
+    assert.deepEqual(r.entries, ['X', 'A', 'B'], '新消息仍正常写入最前')
   })
 
   // —— resetCursor ——
-  test('resetCursor：cursor=-1、stash=null，entries/pending 不动', () => {
+  test('resetCursor：cursor=-1、stash=null，entries 不动', () => {
     const s = createHistory(['A'])
     const up = recallOlder(s, 'draft')
     const r = resetCursor(up.state)
@@ -183,11 +168,10 @@ test.describe('history-core 历史状态机', () => {
   test('纯函数：所有函数都不原地修改入参 state', () => {
     const s = createHistory(['A'])
     const sBefore = JSON.stringify(s)
-    capturePending(s, 'x')
-    commitPending(s)
+    recordSend(s, 'x')
+    recordSend(s, '   ') // 空白分支同样不改入参
     recallOlder(s, 'draft')
     resetCursor(s)
-    dropPending(s)
     assert.equal(JSON.stringify(s), sBefore)
   })
 })

@@ -22,6 +22,7 @@ import {
   dropPending,
   recallOlder,
   recallNewer,
+  recordSend,
   resetCursor,
   type HistoryState,
 } from './history-core.ts'
@@ -32,7 +33,12 @@ export interface HistoryNavController {
   onKeydown(e: KeyboardEvent, isComposerTarget: boolean, menuOpen: boolean): boolean
   /** 手动编辑检测入口：textarea 的 input 事件值 !== lastProgrammaticText 时 resetCursor。 */
   onInput(value: string): void
-  /** 发送采集：进入 submitting/adjudicating 时调用（draft 未清）。 */
+  /**
+   * 快照采集写入：会话快照新落地一条 user 消息时调用（主路径，普通消息与
+   * 发送按钮点击都只在这里被采到）。空白文本自动忽略。
+   */
+  record(text: string): void
+  /** 发送采集：进入 submitting/adjudicating 时调用（draft 未清；斜杠命令路径）。 */
   capture(text: string): void
   /** 发送被受理：draft 变 '' 时调用。 */
   commit(): void
@@ -131,6 +137,12 @@ export function createHistoryNav(deps: NavDeps): HistoryNavController {
       if (lastProgrammaticText !== null && value === lastProgrammaticText) return
       lastProgrammaticText = null
       state = resetCursor(state)
+    },
+    record(text: string): void {
+      const before = state.entries
+      state = recordSend(state, text)
+      // entries 未变（空白/未写入）就不落盘，防无用写。
+      if (state.entries !== before) persist(state)
     },
     capture(text: string): void {
       state = capturePending(state, text)
