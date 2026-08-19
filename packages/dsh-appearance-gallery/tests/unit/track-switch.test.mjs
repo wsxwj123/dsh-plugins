@@ -116,3 +116,51 @@ test('切轨_应用皮肤后主题override保留为底层且主题键不动', as
   assert.equal(h.storage.read(KEYS.THEME_FAMILY), 'azure')
   assert.equal(h.storage.read(KEYS.THEME_TOUCHED), '1')
 })
+
+// ---------------- 卸载皮肤不许误删别人的 style ----------------
+// P0 第二成因（真机取证）：宿主会给 head 里未打标的 <style> 盖上 data-plugin=<当时正在加载的包>，
+// 于是本插件自己的面板样式 <style data-appearance-gallery> 在皮肤加载后被盖成
+// data-plugin=@linxin666/dsh-client-ui-skin-miku —— 卸载皮肤时被当成皮肤的样式一起删掉，
+// 面板按钮退回浏览器默认样式。引擎只该回收「本次激活期间新出现的」style。
+test('卸载皮肤_不得删掉激活前就存在的同名data-plugin样式', async () => {
+  const { createDoc } = await import('./harness.mjs')
+  const { createSkinEngine } = await import('../../src/skin-engine.js')
+  const PKG = '@vendor/skin-demo'
+  const { document: doc } = createDoc()
+
+  // 本插件自己的面板样式：先于皮肤存在，随后被宿主盖上皮肤包名。
+  const mine = doc.createElement('style')
+  mine.setAttribute('data-appearance-gallery', '')
+  mine.setAttribute('data-plugin', PKG)
+  doc.head.appendChild(mine)
+
+  const entry = { id: 'demo', name: 'demo', bodyAttr: 'data-dsh-demo', order: 1, package: PKG }
+  let own = null
+  const engine = createSkinEngine({
+    doc,
+    manifest: [entry],
+    bundles: { demo: '/* bundle */' },
+    executeScript: () => {},
+    modules: {
+      invalidate() {},
+      async import() {
+        return {
+          apply(ctx) {
+            ctx.effect(() => {
+              own = doc.createElement('style')
+              own.setAttribute('data-plugin', PKG)
+              doc.head.appendChild(own)
+              doc.body.setAttribute('data-dsh-demo', '1')
+              return () => { doc.body.removeAttribute('data-dsh-demo') }
+            })
+          },
+        }
+      },
+    },
+  })
+
+  await engine.activateSkin(entry)
+  engine.deactivateSkin()
+  assert.equal(doc.querySelectorAll('style[data-appearance-gallery]').length, 1, '本插件自己的样式被误删')
+  assert.equal(doc.querySelectorAll('style[data-plugin]').includes(own), false, '皮肤自己注入的样式应被回收')
+})

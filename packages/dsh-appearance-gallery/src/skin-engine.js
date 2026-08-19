@@ -206,6 +206,11 @@ export function createSkinEngine({
       }
       this.deactivateSkin()
       snapshot = captureSnapshot(entry, doc)
+      // 激活前的 style 快照：卸载时只回收「本次激活期间新出现的」style。
+      // 宿主会给 head 里未打标的 <style> 统统盖上 data-plugin=<当时正在加载的包>，
+      // 光按 data-plugin 选，会把本插件自己的面板样式当成皮肤的一起删掉（P0 第二成因：
+      // 皮肤→主题切轨后面板按钮变浏览器默认样式）。
+      const stylesBefore = new Set(Array.from(doc.querySelectorAll('style')))
 
       const ctx = miniCtx()
       try {
@@ -222,10 +227,10 @@ export function createSkinEngine({
       const packageId = entry.package
       // a11y style 由 afterApply 注入后，一并纳入本皮肤句柄以便卸载时移除。
       const a11yStyles = Array.from(doc.querySelectorAll(`style[data-theme-gallery-a11y="${entry.id}"]`))
-      // 皮肤内置 style（插件 css）：未打 a11y 标记、属于本 package 的注入。
+      // 皮肤内置 style（插件 css）：属于本 package、未打 a11y 标记，且**本次激活期间才出现**。
       const skinStyles = []
       for (const el of Array.from(doc.querySelectorAll(`style[data-plugin="${packageId}"]`))) {
-        if (!el.hasAttribute('data-theme-gallery-a11y')) skinStyles.push(el)
+        if (!el.hasAttribute('data-theme-gallery-a11y') && !stylesBefore.has(el)) skinStyles.push(el)
       }
       const bodyAttrs = []
       if (entry.bodyAttr && doc.body.hasAttribute(entry.bodyAttr)) bodyAttrs.push(entry.bodyAttr)
