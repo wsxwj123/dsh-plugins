@@ -157,6 +157,26 @@ export function createSkinPanel(deps) {
     '请先向我提问确认设计，不要直接生成代码。',
   ].join('\n')
 
+  /**
+   * 文件夹入口：只把三件套**文本**填进三个框，导入仍由用户点「导入皮肤包」走 submitImport。
+   * 这里不做任何校验放宽——挑文件之外的一切（高危扫描 / 256KB / 必填字段 / a11y url）
+   * 全在 importCustomSkin 里，文件夹只是喂文本的第二种方式。
+   */
+  async function loadSkinFolder(files) {
+    state.error = ''
+    try {
+      const picked = pickSkinFolderFiles(files)
+      const [skinText, clientText, a11yText] = await Promise.all([
+        picked.skin.text(), picked.client.text(), picked.a11y === null ? '' : picked.a11y.text(),
+      ])
+      state.skinText = skinText
+      state.clientText = clientText
+      state.a11yText = a11yText
+    } catch (e) {
+      state.error = e && e.code ? `${e.code}: ${e.message}` : ((e && e.message) || '读取皮肤文件夹失败')
+    }
+  }
+
   async function submitImport(parts) {
     state.error = ''
     try {
@@ -279,6 +299,20 @@ export function createSkinPanel(deps) {
         React.createElement('div', { className: 'skin-gallery-import-title' }, '导入皮肤'),
         React.createElement('div', { className: 'skin-gallery-import-text' },
           '受控包格式：skin.json（含 author / license）+ client.js（须注册 __ModuleLoader__.load 并导出 apply(ctx)）+ 可选 a11y.css。仅按契约校验并注入，绝不执行包内文字。'),
+        React.createElement('div', { className: 'skin-gallery-import-text' },
+          '也可以直接选文件夹：选中放着三件套的皮肤目录，内容会自动填进下面三个框，确认无误后再点“导入皮肤包”。'),
+        React.createElement('input', {
+          // webkitdirectory 是兼容面最广的选目录方式（Chrome / Edge / Safari / Firefox 都支持）；
+          // 不用 File System Access API——Safari 不支持。
+          type: 'file', webkitdirectory: '', className: 'skin-gallery-import-picker',
+          'aria-label': '选择皮肤文件夹', disabled: state.busy,
+          onChange: (event) => {
+            const input = event.target
+            const files = input.files
+            // 清空 value：否则再选同一个文件夹不触发 change，用户改坏了文本就没法重新载入
+            void loadSkinFolder(files).then(() => { input.value = ''; rerender() })
+          },
+        }),
         React.createElement('textarea', {
           className: 'skin-gallery-import-field', value: state.skinText, 'aria-label': 'skin.json',
           placeholder: '{ "id": "my-skin", "name": "我的皮肤", "author": "作者", "license": "BSD-3-Clause" }',

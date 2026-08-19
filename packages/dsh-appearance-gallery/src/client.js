@@ -98,6 +98,7 @@ const CSS = `
   .skin-gallery-import-title { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
   .skin-gallery-import-text { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
   .skin-gallery-import-field { width: 100%; box-sizing: border-box; min-height: 72px; padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 9px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); font: 12px/18px var(--ds-font-family-code, ui-monospace, monospace); }
+  .skin-gallery-import-picker { width: 100%; box-sizing: border-box; color: var(--dsw-alias-label-secondary); font-size: 12px; }
   .skin-gallery-import-err { color: var(--dsw-alias-state-error-primary); font-size: 11px; }
   .skin-gallery-empty { padding: 14px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-secondary); text-align: center; font-size: 12px; }
   @media (max-width: 900px) { .theme-gallery-grid, .skin-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
