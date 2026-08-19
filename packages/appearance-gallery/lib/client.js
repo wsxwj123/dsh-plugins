@@ -1560,6 +1560,8 @@ function createSkinPanel(deps) {
 
 
 const STYLE_MARK = 'data-appearance-gallery'
+/** 槽位 id（INTERFACE §3.1）。同时作为入口 DOM 的 data-slot-id，供 e2e 定位；与包目录名解耦。 */
+const SLOT_ID = 'appearance-gallery'
 /** 旧包注入的 style 标记；命中说明用户没卸旧插件，两套引擎会互相打架 */
 const LEGACY_STYLE_SELECTOR = 'style[data-theme-gallery], style[data-skin-gallery], style[data-skin-entry]'
 const LEGACY_CONFLICT_TEXT = '检测到旧版 theme-gallery / skin-gallery 仍已安装，请先卸载，否则外观会冲突'
@@ -1926,7 +1928,9 @@ function createAppearanceRuntime(deps) {
           key: 'back', type: 'button', className: 'appearance-back', onClick: closePanel,
         }, '返回')))
     }
-    return React.createElement('div', { className: 'appearance-entry' }, ...children)
+    // data-slot-id 取槽位 id 原值（INTERFACE §3.1）：e2e/自动化按它定位入口，
+    // 值与目录名无关，改目录也不动它。
+    return React.createElement('div', { className: 'appearance-entry', 'data-slot-id': SLOT_ID }, ...children)
   }
 
   // ---- 样式注入（一个 style，7.5 KB 纯类选择器，不随面板懒注入）----
@@ -2010,7 +2014,7 @@ function applyWith(ctx, deps) {
   ctx.effect(() => () => runtime.dispose())
 
   slots.inject('settings.general.item', () => slots.register(
-    { name: 'settings.general.item', id: 'appearance-gallery', order: 11 },
+    { name: 'settings.general.item', id: SLOT_ID, order: 11 },
     runtime.AppearanceEntry,
   ))
 

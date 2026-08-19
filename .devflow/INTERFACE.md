@@ -41,6 +41,7 @@ slots.inject('settings.general.item', () => slots.register(
 | `order` | `11` | 决定视觉位置（宿主渲染时按 order 重排）。宿主自带条目 `composer-enter` 是 20，不得占用 |
 | `priority` | **不传**（⇒ 0） | `lib/client.js` 中不出现 `priority`。合并后不再需要遮盖机制 |
 | 注册时机 | 包在 `slots.inject('settings.general.item', …)` 里 | 断言 `register` 调用出现在 `inject` 回调内 |
+| 入口 DOM 标记 | `AppearanceEntry` 的根节点带 `data-slot-id="appearance-gallery"`（值 = 槽位 `id` 原值，**与包目录名解耦**：目录改名不改此值，否则已存储状态与 e2e 断言一起断） | `document.querySelectorAll('[data-slot-id="appearance-gallery"]').length === 1`；e2e 用它定位入口（E-1） |
 
 槽位语义（宿主侧，不可违背）：同 `id` + 同 `priority` = 启动抛错；同 `id` + 不同 `priority` = 合法遮盖，**priority 数值最低者渲染**；视觉顺序只由 `order` 决定。
 
