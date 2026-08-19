@@ -18,8 +18,14 @@
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, relative, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { builtinModules } from 'node:module'
+import { builtinModules, createRequire } from 'node:module'
 import { transform } from 'lightningcss'
+
+// `require` does not exist in an ESM config (L5): the bare-specifier CSS branch
+// below used `require.resolve` and would have thrown ReferenceError the first
+// time anyone imported a package's stylesheet. createRequire gives us node's
+// real resolution algorithm, anchored at this config file.
+const requireFromHere = createRequire(import.meta.url)
 
 /** Package root — the anchor for repo-relative virtual ids (no machine paths in the bundle). */
 const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
@@ -99,7 +105,8 @@ function makeCssPlugin(pluginId) {
       if (source.startsWith('.') || source.startsWith('/') || /^[A-Za-z]:[\\/]/.test(source)) {
         abs = importer === undefined ? source : resolvePath(dirname(importer), source)
       } else {
-        abs = require.resolve(source)
+        // Bare specifier (e.g. `some-pkg/dist/x.css`) — resolve it like node would.
+        abs = requireFromHere.resolve(source)
       }
       const rel = relative(REPOSITORY_ROOT, abs)
       return CSS_VIRTUAL_PREFIX + rel + CSS_VIRTUAL_SUFFIX

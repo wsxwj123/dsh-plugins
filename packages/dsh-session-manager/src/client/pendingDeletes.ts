@@ -19,24 +19,37 @@ export type {
 /** localStorage key holding the confirmed-deleted session ids. */
 const DELETED_STORAGE_KEY = 'dsh-sm.deleted'
 
+/**
+ * localStorage key holding the subset whose delete left NO recycle-bin entry
+ * (M5). Separate key so the original one keeps its exact meaning/format — an
+ * older build reading it sees the same list it always did.
+ */
+const GHOST_STORAGE_KEY = 'dsh-sm.deleted.noArtifact'
+
+function loadIds(key: string): string[] {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
+    const arr = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function saveIds(key: string, ids: string[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(ids))
+  } catch {
+    /* non-fatal */
+  }
+}
+
 /** Browser storage adapter over localStorage. */
 const localStorageAdapter: NonNullable<PendingDeleteDeps['storage']> = {
-  load: () => {
-    try {
-      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(DELETED_STORAGE_KEY) : null
-      const arr = raw ? (JSON.parse(raw) as unknown) : []
-      return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []
-    } catch {
-      return []
-    }
-  },
-  save: (ids) => {
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify(ids))
-    } catch {
-      /* non-fatal */
-    }
-  },
+  load: () => loadIds(DELETED_STORAGE_KEY),
+  save: (ids) => saveIds(DELETED_STORAGE_KEY, ids),
+  loadGhosts: () => loadIds(GHOST_STORAGE_KEY),
+  saveGhosts: (ids) => saveIds(GHOST_STORAGE_KEY, ids),
 }
 
 /**
@@ -53,3 +66,15 @@ export const pendingDeletes: PendingDeletes = createPendingDeletes({
   onChange: () => {},
   storage: localStorageAdapter,
 })
+
+// M5: cross-tab sync. `deletedIds` lives in localStorage but nothing listened for
+// changes, so tab A's delete left the row on screen in tab B — and tab B's next
+// write clobbered A's set. The `storage` event fires only in OTHER tabs, so this
+// never re-enters our own writes. `key === null` is a whole-store clear.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event: StorageEvent) => {
+    if (event.key === null || event.key === DELETED_STORAGE_KEY || event.key === GHOST_STORAGE_KEY) {
+      pendingDeletes.syncFromStorage()
+    }
+  })
+}

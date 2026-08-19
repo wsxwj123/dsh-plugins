@@ -69,56 +69,15 @@ test('candidate longer than 256 chars is rejected (boundary guard)', () => {
   assert.strictEqual(got, null)
 })
 
-// ---- I-6: same-title rows must bind DISTINCT ids (never both to the first id) ----
-
-const tieById = {
-  a: { title: '同题', displayTitle: '同题', cwd: '/ctx-a', running: false, blank: false },
-  b: { title: '同题', displayTitle: '同题', cwd: '/ctx-b', running: true, blank: false },
-}
-const tieLabel = '会话“同题”的操作'
-
-test('I-6: two same-title rows bind DISTINCT ids in DOM/ids order', () => {
-  const got = resolveRows([tieLabel, tieLabel], tieById, ['a', 'b'])
-  assert.notStrictEqual(got[0], null)
-  assert.notStrictEqual(got[1], null)
-  assert.strictEqual(got[0].id, 'a')
-  assert.strictEqual(got[1].id, 'b')
-  assert.notStrictEqual(got[0].id, got[1].id, 'the two rows must never share one id')
-  // Each row carries its OWN session metadata (cwd/running), not the first id's.
-  assert.strictEqual(got[1].cwd, '/ctx-b')
-  assert.strictEqual(got[1].running, true)
-  assert.strictEqual(got[0].running, false)
-})
-
-test('I-6: tie alignment follows the ordered id list (reversed ids order)', () => {
-  const got = resolveRows([tieLabel, tieLabel], tieById, ['b', 'a'])
-  assert.strictEqual(got[0].id, 'b')
-  assert.strictEqual(got[1].id, 'a')
-})
-
-test('I-6: a unique-title row among a tie pair keeps its own id', () => {
-  const byId = {
-    a: { title: '独题', displayTitle: '独题', cwd: '/a', blank: false },
-    b: { title: '同题', displayTitle: '同题', cwd: '/b', blank: false },
-    c: { title: '同题', displayTitle: '同题', cwd: '/c', blank: false },
-  }
-  const labels = ['会话“独题”的操作', '会话“同题”的操作', '会话“同题”的操作']
-  const got = resolveRows(labels, byId, ['a', 'b', 'c'])
-  assert.strictEqual(got[0].id, 'a')
-  assert.strictEqual(got[1].id, 'b')
-  assert.strictEqual(got[2].id, 'c')
-})
-
-test('I-6: more same-title rows than ids → the overflow row binds nothing (skip, never a wrong id)', () => {
-  const byId = {
-    a: { title: '同题', displayTitle: '同题', cwd: '/a', blank: false },
-    b: { title: '同题', displayTitle: '同题', cwd: '/b', blank: false },
-  }
-  const got = resolveRows([tieLabel, tieLabel, tieLabel], byId, ['a', 'b'])
-  assert.strictEqual(got[0].id, 'a')
-  assert.strictEqual(got[1].id, 'b')
-  assert.strictEqual(got[2], null, 'an unbindable overflow row is skipped, never rebound to a')
-})
+// ---- I-6 tie-alignment cases RETIRED (2026-08-17, blind review F2) ----
+// The four cases that used to live here (former lines 80-121: "two same-title
+// rows bind DISTINCT ids in DOM/ids order", "tie alignment follows the ordered
+// id list", "a unique-title row among a tie pair keeps its own id", "more
+// same-title rows than ids") are deleted, not rewritten.
+// 退役原因：断言把 F2 错误行为钉成预期 —— 它们假设 "DOM 行序 = sessions.list.ids
+// 序"，而官方 flat 视图 rows.sort(byRecency) + 两种视图的可拖拽持久顺序
+// (reconciledSessionOrder) 都会重排行，按序号对齐同名会话就是在赌，赌错=删错会话。
+// 现在同名歧义行一律不注入按钮（tests/regression/f2-l4-row-binding.test.mjs）。
 
 test('I-6: longest-match still wins inside resolveRows', () => {
   const byId = {

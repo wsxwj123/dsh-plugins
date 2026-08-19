@@ -27,11 +27,34 @@ const INVALID_ID_CHARSET = /[\\/\n\r\t\0\u0000-\u001f]/
 export const NO_CWD_DIR = '_no-cwd'
 
 /**
+ * Windows reserved DEVICE names (W4). On win32 these never name a file: `NUL`
+ * swallows writes and `CON`/`AUX`/`COM1`… are devices; the reservation ignores
+ * case AND any extension (`con.txt` is still the console). A session directory
+ * can never legitimately be called this, so an id that would resolve to a device
+ * is refused at the 400 gate instead of being handed to rename/rm. Checked on
+ * every platform: an id minted on Linux must not become dangerous the moment the
+ * same sessions tree is opened on Windows.
+ */
+const WINDOWS_RESERVED_NAMES = new Set([
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+])
+
+/** True when `id` would resolve to a Windows device (any case, any extension). */
+function isWindowsReservedName(id: string): boolean {
+  const dot = id.indexOf('.')
+  const stem = dot === -1 ? id : id.slice(0, dot)
+  return WINDOWS_RESERVED_NAMES.has(stem.toLowerCase())
+}
+
+/**
  * 400-level id validity gate (INTERFACE §3.1 invalid-id). Rejects only the
  * inputs the harness asserts must be a 400:
  *  - non-string / empty
  *  - exact `.` / `..`
  *  - path separator, newline, tab, NUL or other control char
+ *  - a Windows reserved device name (`CON`, `nul`, `COM1`, `con.log`, …)
  * NOTE: it does NOT reject `%` — `%` ids pass this gate and are instead
  * rejected one level down as `path-out-of-bounds` (200) by isStableSegment,
  * exactly as the harness separates the two stages.
@@ -43,6 +66,8 @@ export function assertValidId(id: unknown): id is string {
   // session id equal to it would collide with the metadata namespace inside
   // the trash (delete would rename onto a non-empty dir, empty would skip it).
   if (id === '_metadata') return false
+  // W4: `CON` / `NUL` / `COM1` … are Windows devices, never directories.
+  if (isWindowsReservedName(id)) return false
   if (INVALID_ID_CHARSET.test(id)) return false
   // A single path segment must survive a basename round-trip unchanged.
   if (path.basename(id) !== id) return false
@@ -130,11 +155,23 @@ export function lookupProjectDir(root: string, cwd: unknown): ProjectLookup {
  * True when `child` resolves strictly inside `parent` (or equals `parent`).
  * Backs the path-out-of-bounds gate (target must stay under the configured
  * sessions root) and confirms the trash root lives outside the sessions scan.
+ *
+ * @param impl - path flavor to judge with; defaults to the running platform.
+ *   Pass `path.win32` to apply Windows semantics (backslash separator, `C:`/UNC
+ *   roots, CASE-INSENSITIVE comparison — NTFS is case-insensitive, so
+ *   `c:\windows` and `C:\Windows` are the same directory) from any host, which
+ *   is what makes the Windows entries in the trash-root denylist real
+ *   protection instead of dead strings (W1).
  */
-export function isInsideOrEqual(parent: string, child: string): boolean {
-  const p = path.resolve(parent)
-  const c = path.resolve(child)
-  return c === p || c.startsWith(p + path.sep)
+export function isInsideOrEqual(parent: string, child: string, impl: typeof path = path): boolean {
+  const caseInsensitive = impl.sep === '\\'
+  const norm = (v: string): string => {
+    const r = impl.resolve(v)
+    return caseInsensitive ? r.toLowerCase() : r
+  }
+  const p = norm(parent)
+  const c = norm(child)
+  return c === p || c.startsWith(p + impl.sep)
 }
 
 /**

@@ -27,6 +27,19 @@ import { assertValidId, isStableSegment } from './paths.js'
  */
 export const SESSION_MARKER = 'session.jsonl.zstd'
 
+/**
+ * Every filename that marks a directory as a DSH session directory. A
+ * `compression:'none'` deployment writes the PLAINTEXT `session.jsonl` instead
+ * of the zstd one, and only accepting the compressed name made every delete on
+ * such a deployment fail with `not-a-session` (M3). Order = most common first.
+ */
+export const SESSION_MARKERS: readonly string[] = [SESSION_MARKER, 'session.jsonl']
+
+/** True when `dir` carries a session log under any supported marker name. */
+export function hasSessionMarker(dir: string): boolean {
+  return SESSION_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))
+}
+
 /** The metadata sub-directory inside the trash root. */
 export const METADATA_DIR = '_metadata'
 
@@ -150,6 +163,16 @@ export class TrashStore {
   moveToTrash(fromDir: string, rec: Omit<TrashRecord, 'deletedAt'>): void {
     const dest = this.itemPath(rec.id)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
+    // L1 + W4: refuse BEFORE touching the record when the destination is already
+    // taken. The rename would fail anyway (it never overwrites a non-empty dir),
+    // but the rollback then deleted the record of whatever already sat there,
+    // turning that older entry into an unrecoverable orphan. On a
+    // case-INSENSITIVE volume (APFS/NTFS default) the collision does not even
+    // need the same id: deleting `foo` while `Foo` is in the trash hits the same
+    // paths for both the item dir and `_metadata/<id>.json`.
+    if (fs.existsSync(dest)) {
+      throw new Error(`trash dest already exists for id ${rec.id}; refusing to overwrite or clobber its record`)
+    }
     this.writeRecord({ ...rec, deletedAt: Date.now() })
     try {
       // renameSync is atomic on the same volume; it never overwrites a
@@ -214,18 +237,20 @@ export class TrashStore {
    * still-present items restorable. Any rm failure leaves that item's record
    * intact.
    *
-   * SECURITY-REPORT S1: only entries that are recognizable trash items may be
-   * removed — those with a durable record, or (orphans whose record was lost)
-   * names that pass the same id gates /sm/delete applies. Everything else
-   * under the root is left untouched, so a misconfigured trash root can never
-   * turn "empty trash" into a blind rm -rf of unrelated content.
+   * SECURITY-REPORT S1 + H3: only entries that are recognizable trash items may
+   * be removed. "Recognizable" is a SUBSTANTIVE judgment, not just a name shape:
+   * either the entry has a durable record, or (orphan whose record was lost) it
+   * is a directory that actually carries a session marker. The name gates alone
+   * let every ordinary filename through (`.DS_Store`, `notes.txt`, any user
+   * directory), so a misconfigured trash root turned "empty trash" into a blind
+   * rm -rf of unrelated content.
    */
   empty(): string[] {
     if (!fs.existsSync(this.root)) return []
     const failed: string[] = []
     for (const entry of fs.readdirSync(this.root)) {
       if (entry === METADATA_DIR) continue
-      if (!this.hasRecord(entry) && !isValidTrashItemShape(entry)) continue
+      if (!this.isTrashItem(entry)) continue
       try {
         const removed = this.rmItem(entry, this.root)
         if (removed === false) {
@@ -245,15 +270,29 @@ export class TrashStore {
     }
     return failed
   }
-}
 
-/**
- * True when a trash-root entry name could be a trash item id — mirrors the
- * delete-side id gates (assertValidId + isStableSegment) so empty() stays
- * aligned with what records()/moveToTrash actually produce (S1).
- */
-function isValidTrashItemShape(name: string): boolean {
-  return assertValidId(name) && isStableSegment(name)
+  /**
+   * Whether a trash-root entry is really one of OUR items, i.e. safe for
+   * empty() to remove recursively (H3). Two ways to qualify:
+   *  1. a durable record exists for the name → we put it there;
+   *  2. no record (lost in a crash between the record write and the rename), but
+   *     the name passes the delete-side id gates AND the entry is a directory
+   *     that carries a session marker → a moved session dir, i.e. our orphan.
+   * Everything else — dotfiles, user documents, unrelated directories — is left
+   * alone. `empty()` is the only recursive removal in this plugin, so this is
+   * the gate that keeps a misconfigured root from becoming data loss.
+   */
+  private isTrashItem(name: string): boolean {
+    if (this.hasRecord(name)) return true
+    if (!assertValidId(name) || !isStableSegment(name)) return false
+    const p = this.itemPath(name)
+    try {
+      if (!fs.statSync(p).isDirectory()) return false
+    } catch {
+      return false // vanished / unreadable: not ours to delete
+    }
+    return hasSessionMarker(p)
+  }
 }
 
 /** Default removal: recursive, force, absent-safe. */
