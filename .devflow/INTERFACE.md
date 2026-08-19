@@ -144,7 +144,11 @@ slots.inject('settings.general.item', () => slots.register(
 - 值域 `'theme' | 'skin' | ''`；非法值读作 `''`；写 `''` 走 `removeItem`。
 - 写 `'theme'` 的时机：`applyCustomTheme` / `deleteCustomTheme`（删掉正应用项后回 jade）/ `restoreDefaultTheme` / `activateFamily`。
 - 写 `'skin'` 的时机：`applyCustomSkin` / `deleteCustomSkin`（同上）/ `restoreDefaultSkin` / `activateSkin`（内置）。
-- **软**互斥：任一侧只在"用户明确应用本轨"时写键，**不主动抢占对侧、不因读到对侧值而卸载对侧**。
+- **软**互斥的边界（**P0 修正**：原文"不因读到对侧值而卸载对侧"被实现成"切轨什么都不做"，结果应用皮肤后点"恢复默认主题"两套外观同时生效、整页塌陷）：
+  - **软**只对**启动恢复/读取**成立：读到 track 与实际外观不一致时不纠正、不写键、不卸载任何一侧。
+  - **用户明确切轨时是硬的**：切到主题轨必须卸掉皮肤运行时（body 属性 / chrome / 注入 style）并清掉皮肤的 applied 键（`skin-gallery-skin-v1` / `skin-gallery-custom-applied-v1`），**但不碰皮肤 registry**；试穿只卸运行时、不写 storage，撤销试穿按 storage 复原。
+  - 反向（切皮肤轨）**刻意不对称**：主题 token override 是皮肤底下的兜底层（启动恢复本就是"先画主题再叠皮肤"），切皮肤时不删 override、不动主题键。
+  - 闸在 apply 层（`client.js` 的 `enterThemeTrack`），不在两个 custom-* 模块里各写一份。
 - **`preview` / 试穿刻意不写键**（主题、皮肤两侧都是）。
 - 合并成单包后**语义不变**（虽然"两个包经 localStorage 协商"的理由消失了，但这是持久化状态，改它就会让老用户的当前外观判定错乱）。既有用例（"对侧 skin 已激活时主题包不主动覆盖 track"）必须继续绿。
 ### 3.6 自定义主题 JSON 导入契约（不得破坏）

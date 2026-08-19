@@ -69,10 +69,12 @@ test('反向_恢复默认外观不得清空主题registry', async () => {
   assert.equal(h.storage.raw(KEYS.THEME_CUSTOM), before);
 });
 
-test('反向_恢复默认主题不得删除已应用的皮肤键', async () => {
+// P0 修正：原断言是「不得删除已应用的皮肤键」—— 留着它，刷新后启动恢复把皮肤又拉回来。
+// registry 不许动这条由上面「不得清空皮肤registry」保。
+test('正向_恢复默认主题清掉已应用的皮肤键', async () => {
   const h = await started({ seed: { [KEYS.SKIN_BUILTIN]: 'xp' } });
   h.themeApi.restoreDefaultTheme();
-  assert.equal(h.storage.read(KEYS.SKIN_BUILTIN), 'xp');
+  assert.equal(h.storage.read(KEYS.SKIN_BUILTIN), '');
 });
 
 test('反向_删除一个自定义皮肤不得连带删掉另一个', async () => {

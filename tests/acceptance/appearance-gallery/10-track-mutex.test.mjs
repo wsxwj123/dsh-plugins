@@ -143,11 +143,15 @@ test('软互斥_对侧skin已激活时启动恢复主题不覆盖track', async (
   assert.equal(h.readTrack(), 'skin');
 });
 
-test('软互斥_应用主题不卸载正在生效的皮肤', async () => {
+// P0 修正：原断言是「应用主题不卸载正在生效的皮肤」，那正是事故本身 —— 皮肤运行时不卸、
+// 主题 token 又重画到 head 末尾盖过皮肤 CSS，两套外观同时生效导致整页塌陷。
+// §3.5 的「软」只指 track 键不做抢占式纠正（见下面 3 条启动恢复断言），不是「切轨不做动作」。
+// DOM 级回归见 packages/dsh-appearance-gallery/tests/unit/track-switch.test.mjs。
+test('切轨_应用主题必须卸载正在生效的皮肤', async () => {
   const h = await started({ seed: { [KEYS.SKIN_BUILTIN]: 'xp', [KEYS.TRACK]: 'skin' } });
   await tick();
   h.themeApi.activateFamily('azure');
-  assert.equal(h.dom.activeSkin, 'xp', '§3.5 是软互斥：不因写 track 就卸载对侧');
+  assert.equal(h.dom.activeSkin, null, '切到主题轨必须真卸皮肤，否则两套外观同时生效');
 });
 
 test('软互斥_应用皮肤不清空主题轨的键', async () => {
@@ -157,11 +161,14 @@ test('软互斥_应用皮肤不清空主题轨的键', async () => {
   assert.equal(h.storage.read(KEYS.THEME_TOUCHED), '1');
 });
 
-test('软互斥_应用主题不清空皮肤轨的键', async () => {
-  const h = await started({ seed: { [KEYS.SKIN_BUILTIN]: 'xp' } });
+// P0 修正：applied 键留着 → 刷新后启动恢复又把皮肤拉回来，用户点的「切主题」等于没点。
+// 分寸在「只清选中项、不碰用户导入的 registry」。
+test('切轨_应用主题清空皮肤applied键但保留registry', async () => {
+  const h = await started({ seed: { [KEYS.SKIN_BUILTIN]: 'xp', [KEYS.SKIN_CUSTOM]: skinRegistry(['keep']) } });
   await tick();
   h.themeApi.activateFamily('azure');
-  assert.equal(h.storage.read(KEYS.SKIN_BUILTIN), 'xp');
+  assert.equal(h.storage.read(KEYS.SKIN_BUILTIN), '');
+  assert.equal(h.storage.raw(KEYS.SKIN_CUSTOM), skinRegistry(['keep']), '用户导入的皮肤 registry 不许动');
 });
 
 test('软互斥_track值与实际生效外观不一致时不做纠正写入', async () => {
