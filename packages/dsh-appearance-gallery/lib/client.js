@@ -1265,6 +1265,7 @@ function createThemePanel(deps) {
  * engine 为 null（宿主没给 __DSH_MODULES__）时整段只渲染一行占位文案，S1–S8 全部入口不渲染。
  */
 
+
 const SKIN_SEARCH_MAX = 64
 const SKIN_UNAVAILABLE_TEXT = '皮肤轨道不可用：宿主未提供 __DSH_MODULES__。'
 /** 设计助手的 11 个版块（顺序即勾选索引） */
@@ -1272,6 +1273,59 @@ const DESIGN_SECTIONS = [
   '颜色', '气泡', '代码块', '按钮', '侧栏', '输入框',
   '背景图', '标题栏', '状态栏', '动效', 'JavaScript 控件',
 ]
+
+/** 皮肤文件夹三件套 → state 字段名（比对时统一转小写，大小写不敏感） */
+const SKIN_FOLDER_FILES = { 'skin.json': 'skin', 'client.js': 'client', 'a11y.css': 'a11y' }
+
+/**
+ * 从 <input type="file" webkitdirectory> 的 FileList 里挑出「所选文件夹根层」的三件套。
+ *
+ * 纯函数：只读 name / size / webkitRelativePath，不碰 DOM、不读文件内容，可直接单测。
+ * 层级判断只用 webkitRelativePath（浏览器一律给正斜杠），不做平台分支；子目录里的同名文件忽略。
+ * 体积只做「别把几十 MB 读进内存」的前置拦截，真正的 256KB / 65536 门禁仍在导入管道里。
+ *
+ * @param {ArrayLike<File>|null|undefined} files
+ * @returns {{ skin: File, client: File, a11y: File|null }} a11y 缺失合法（导入侧已支持降级）
+ * @throws {Error} 带 code（ERR_SKIN_MISSING_FILE / ERR_SKIN_SIZE），与导入管道同一套错误契约
+ */
+function pickSkinFolderFiles(files) {
+  const picked = { skin: null, client: null, a11y: null }
+  for (const file of Array.from(files || [])) {
+    const rel = String((file && file.webkitRelativePath) || '')
+    // 根层形如 "<所选文件夹>/<文件名>"，段数恰好 2；子目录 ≥3 段一律跳过。
+    // 少数环境不填 webkitRelativePath（空串），此时只能按根层文件处理。
+    if (rel !== '' && rel.split('/').length !== 2) continue
+    const slot = SKIN_FOLDER_FILES[String((file && file.name) || '').toLowerCase()]
+    if (slot === undefined || picked[slot] !== null) continue
+    picked[slot] = file
+  }
+
+  const missing = []
+  if (picked.skin === null) missing.push('skin.json')
+  if (picked.client === null) missing.push('client.js')
+  if (missing.length > 0) {
+    throw pickFail(SKIN_ERR.MISSING_FILE, `所选文件夹缺 ${missing.join(' 和 ')}（a11y.css 可缺省）`)
+  }
+  // 契约管的是 base64(skin + client) ≤ 256KB，这里用原始字节和做宽松前置拦截
+  if (size(picked.skin) + size(picked.client) > MAX_BUNDLE_B64) {
+    throw pickFail(SKIN_ERR.SIZE, '自定义皮肤包超 256KB')
+  }
+  if (picked.a11y !== null && size(picked.a11y) > MAX_A11Y_BYTES) {
+    throw pickFail(SKIN_ERR.SIZE, `a11y.css 超 ${MAX_A11Y_BYTES} 字节`)
+  }
+  return picked
+}
+
+/** size 缺失（部分测试替身 / 老浏览器）按 0 计，交给下游真门禁兜底。 */
+function size(file) {
+  return typeof file.size === 'number' && file.size > 0 ? file.size : 0
+}
+
+function pickFail(code, message) {
+  const err = new Error(message)
+  err.code = code
+  return err
+}
 
 function createSkinPanel(deps) {
   for (const field of ['React', 'customSkinApi', 'skinRuntime', 'subscribe', 'onBack']) {
@@ -1357,6 +1411,26 @@ function createSkinPanel(deps) {
     '当前选择的版块：' + state.picked.slice().sort((a, b) => a - b).map((i) => DESIGN_SECTIONS[i]).join('、'),
     '请先向我提问确认设计，不要直接生成代码。',
   ].join('\n')
+
+  /**
+   * 文件夹入口：只把三件套**文本**填进三个框，导入仍由用户点「导入皮肤包」走 submitImport。
+   * 这里不做任何校验放宽——挑文件之外的一切（高危扫描 / 256KB / 必填字段 / a11y url）
+   * 全在 importCustomSkin 里，文件夹只是喂文本的第二种方式。
+   */
+  async function loadSkinFolder(files) {
+    state.error = ''
+    try {
+      const picked = pickSkinFolderFiles(files)
+      const [skinText, clientText, a11yText] = await Promise.all([
+        picked.skin.text(), picked.client.text(), picked.a11y === null ? '' : picked.a11y.text(),
+      ])
+      state.skinText = skinText
+      state.clientText = clientText
+      state.a11yText = a11yText
+    } catch (e) {
+      state.error = e && e.code ? `${e.code}: ${e.message}` : ((e && e.message) || '读取皮肤文件夹失败')
+    }
+  }
 
   async function submitImport(parts) {
     state.error = ''
@@ -1480,6 +1554,20 @@ function createSkinPanel(deps) {
         React.createElement('div', { className: 'skin-gallery-import-title' }, '导入皮肤'),
         React.createElement('div', { className: 'skin-gallery-import-text' },
           '受控包格式：skin.json（含 author / license）+ client.js（须注册 __ModuleLoader__.load 并导出 apply(ctx)）+ 可选 a11y.css。仅按契约校验并注入，绝不执行包内文字。'),
+        React.createElement('div', { className: 'skin-gallery-import-text' },
+          '也可以直接选文件夹：选中放着三件套的皮肤目录，内容会自动填进下面三个框，确认无误后再点“导入皮肤包”。'),
+        React.createElement('input', {
+          // webkitdirectory 是兼容面最广的选目录方式（Chrome / Edge / Safari / Firefox 都支持）；
+          // 不用 File System Access API——Safari 不支持。
+          type: 'file', webkitdirectory: '', className: 'skin-gallery-import-picker',
+          'aria-label': '选择皮肤文件夹', disabled: state.busy,
+          onChange: (event) => {
+            const input = event.target
+            const files = input.files
+            // 清空 value：否则再选同一个文件夹不触发 change，用户改坏了文本就没法重新载入
+            void loadSkinFolder(files).then(() => { input.value = ''; rerender() })
+          },
+        }),
         React.createElement('textarea', {
           className: 'skin-gallery-import-field', value: state.skinText, 'aria-label': 'skin.json',
           placeholder: '{ "id": "my-skin", "name": "我的皮肤", "author": "作者", "license": "BSD-3-Clause" }',
@@ -1646,6 +1734,7 @@ const CSS = `
   .skin-gallery-import-title { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
   .skin-gallery-import-text { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
   .skin-gallery-import-field { width: 100%; box-sizing: border-box; min-height: 72px; padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 9px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); font: 12px/18px var(--ds-font-family-code, ui-monospace, monospace); }
+  .skin-gallery-import-picker { width: 100%; box-sizing: border-box; color: var(--dsw-alias-label-secondary); font-size: 12px; }
   .skin-gallery-import-err { color: var(--dsw-alias-state-error-primary); font-size: 11px; }
   .skin-gallery-empty { padding: 14px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-secondary); text-align: center; font-size: 12px; }
   @media (max-width: 900px) { .theme-gallery-grid, .skin-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
