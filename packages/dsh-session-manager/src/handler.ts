@@ -17,8 +17,8 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { TrashStore, SESSION_MARKER } from './trash.js'
-import { MAX_TITLE_LEN, WORKSPACE_DOMAIN } from './constants.js'
+import { TrashStore, SESSION_MARKERS, hasSessionMarker } from './trash.js'
+import { MAX_TITLE_LEN, NO_TRASH_ARTIFACT, TRASH_RETENTION_MS, WORKSPACE_DOMAIN } from './constants.js'
 import {
   assertValidId,
   isStableSegment,
@@ -29,6 +29,14 @@ import {
 } from './paths.js'
 
 export interface ArchiveDomain {
+  /**
+   * `set` returns `Promise<void>` in the real runtime (dsh-storage-domain
+   * `types/domain.d.ts`): the durable write is queued and the domain's in-memory
+   * value is replaced only AFTER it lands. It MUST be awaited (F1) — an
+   * un-awaited rejection reaches DSH's process-level `unhandledRejection`
+   * handler, which exits the whole `dsh web` host. A backend whose `set` is
+   * synchronous (in-memory stubs) is still supported: nothing is awaited then.
+   */
   global: { get(): unknown; set(value: unknown): unknown }
 }
 
@@ -111,6 +119,21 @@ function bodyIsObject(body: unknown): body is Record<string, unknown> {
   return typeof body === 'object' && body !== null && !Array.isArray(body)
 }
 
+/** A value that must be awaited (the real `domain.global.set` return). */
+function isThenable(v: unknown): v is Promise<unknown> {
+  return typeof (v as { then?: unknown } | null | undefined)?.then === 'function'
+}
+
+/**
+ * Mark a SUCCESSFUL delete response as "nothing landed in the recycle bin"
+ * (M5). Failures pass through untouched — they already carry their own code.
+ */
+function tagNoArtifact(res: SmResponse | Promise<SmResponse>): SmResponse | Promise<SmResponse> {
+  const tag = (r: SmResponse): SmResponse =>
+    r.json.ok === true ? { status: r.status, json: { ...r.json, code: NO_TRASH_ARTIFACT } } : r
+  return isThenable(res) ? res.then(tag) : tag(res)
+}
+
 /**
  * Resolve the project dir for a delete, honoring an optional test override.
  * The override + the shared lookup cover the harness's projectCwdMap semantics.
@@ -129,14 +152,80 @@ function resolveLookup(deps: SmHandlerDeps, cwd: unknown): ProjectLookup {
  * Create the /sm handler. `handle(method, req, body)` returns the HTTP status
  * + JSON to send for one request. The loopback trust fence is applied by the
  * route owner (src/index.ts); this function operates on already-trusted input.
+ *
+ * Await-able result (F1): the archive-set write goes through the storage domain,
+ * whose real `set()` is asynchronous, so the endpoints that write it resolve
+ * only after the write LANDS. `handle` therefore returns
+ * `SmResponse | Promise<SmResponse>` and every caller must `await` it (awaiting
+ * a plain object is a no-op, so a synchronous backend stays synchronous).
  */
 export function createSmHandler(deps: SmHandlerDeps): {
-  handle(method: string | null | undefined, req: unknown, body: unknown): SmResponse
+  handle(method: string | null | undefined, req: unknown, body: unknown): SmResponse | Promise<SmResponse>
 } {
   const log = deps.log ?? { warn: () => {} }
 
+  /**
+   * TAIL of the archive read-modify-write queue; null while the queue is idle.
+   * `readWorkspaceGlobal` reads the domain's IN-MEMORY value, which the domain
+   * replaces only after its durable write lands — so overlapping requests would
+   * all read the pre-write snapshot and each `{...global}` write would revert the
+   * previous one (lost update).
+   *
+   * H2b: it must be the queue TAIL, not "the write currently in flight". Chaining
+   * everyone onto the in-flight write put the 2nd and 3rd arrivals on the SAME
+   * link: once it settled they ran in one microtask batch, and the third read the
+   * second's pre-write snapshot. It is also why the tail is never reset to null
+   * on completion — clearing it re-opened exactly that hole for the next arrival.
+   *
+   * ponytail: one queue for the single workspace global; per-key queues only
+   * matter if this ever writes more than one domain object.
+   */
+  let archiveQueueTail: Promise<SmResponse> | null = null
+
+  /** Run one read-modify-write of the archive set, serialized at the queue tail. */
+  function withArchiveChain(run: () => SmResponse | Promise<SmResponse>): SmResponse | Promise<SmResponse> {
+    const tail = archiveQueueTail
+    if (tail === null) {
+      const result = run()
+      // Synchronous backend (in-memory stubs): the write already landed, so there
+      // is nothing to queue behind and the response stays synchronous.
+      if (!isThenable(result)) return result
+      archiveQueueTail = result
+      return result
+    }
+    // `run` is also the rejection handler so a rejected link can never stall the
+    // queue (the links themselves resolve — commitArchive maps failures).
+    const node = tail.then(run, run)
+    archiveQueueTail = node
+    return node
+  }
+
+  /**
+   * Write the archive payload and map the outcome to a response. Awaits the
+   * write when the backend returned a thenable (real runtime) — which is also
+   * what attaches the rejection handler that keeps a failed write from killing
+   * the host process (F1).
+   */
+  function commitArchive(
+    domain: ArchiveDomain,
+    payload: Record<string, unknown>,
+    onFail: (err: unknown) => SmResponse,
+  ): SmResponse | Promise<SmResponse> {
+    let result: unknown
+    try {
+      result = domain.global.set(payload)
+    } catch (err) {
+      return onFail(err)
+    }
+    if (!isThenable(result)) return ok()
+    // Attaching these handlers is also what keeps a failed write from reaching
+    // DSH's process-level unhandledRejection handler (F1). The queue tail is
+    // owned by withArchiveChain, which sees this whole read-modify-write.
+    return result.then(() => ok(), onFail)
+  }
+
   // ---- /sm/delete ----
-  function doDelete(_req: unknown, body: unknown): SmResponse {
+  function doDelete(_req: unknown, body: unknown): SmResponse | Promise<SmResponse> {
     if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
 
     const { id, cwd, title, force } = body as { id?: unknown; cwd?: unknown; title?: unknown; force?: unknown }
@@ -222,17 +311,21 @@ export function createSmHandler(deps: SmHandlerDeps): {
     //  - neither live nor persisted     → a genuine not-found (unchanged).
     if (!fs.existsSync(targetDir)) {
       if (deps.trash.hasItem(id as string)) return doArchivedCleanup(id as string)
-      if (liveSession) return doArchivedCleanup(id as string)
+      // M5: tag this success — the delete is effective but leaves NO recycle-bin
+      // entry, so the client must not un-hide the row when it later reconciles
+      // its hidden set against /sm/trash (there is nothing to find).
+      if (liveSession) return tagNoArtifact(doArchivedCleanup(id as string))
       return fail('session-dir-not-found', 'session dir not found')
     }
 
-    // The dir exists — INTERFACE §3.1 step 3 requires the session marker
-    // (session.jsonl.zstd) INSIDE it before anything is moved. A same-named
-    // non-session directory must never be pulled into the trash (S-3): refuse
-    // with a distinct code so the client keeps the row and nothing is ever
-    // bulk-moved by a title/id collision.
-    if (!fs.existsSync(path.join(targetDir, SESSION_MARKER))) {
-      return fail('not-a-session', 'target dir is not a session (missing session.jsonl.zstd)')
+    // The dir exists — INTERFACE §3.1 step 3 requires a session marker INSIDE
+    // it before anything is moved. Both the compressed (session.jsonl.zstd) and
+    // the plaintext (session.jsonl, `compression:'none'` deployments) names
+    // count (M3). A same-named non-session directory must never be pulled into
+    // the trash (S-3): refuse with a distinct code so the client keeps the row
+    // and nothing is ever bulk-moved by a title/id collision.
+    if (!hasSessionMarker(targetDir)) {
+      return fail('not-a-session', `target dir is not a session (no ${SESSION_MARKERS.join(' / ')})`)
     }
 
     // Move the whole directory into the trash.
@@ -262,31 +355,30 @@ export function createSmHandler(deps: SmHandlerDeps): {
   // nothing happened). The client branches on `moved` to keep the row hidden
   // and offer a "cleanup pending, retry" recovery instead of restoring a
   // session whose dir is already gone (INTERFACE §2.4).
-  function doArchivedCleanup(id: string): SmResponse {
-    const global = deps.readWorkspaceGlobal()
-    // A failed read is NOT the same as "not archived" — surface it as a
-    // retryable partial failure instead of silently skipping the cleanup (the
-    // old `catch { return {} }` turned read failure into a permanent ghost
-    // row with no recovery signal).
-    if (global === undefined) {
-      log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
-      return fail('system-error', 'archive state unreadable; file already moved, retry to complete', { moved: true })
-    }
-    const archived = archiveFromGlobal(global)
-    if (!archived.includes(id)) return ok()
+  function doArchivedCleanup(id: string): SmResponse | Promise<SmResponse> {
+    return withArchiveChain(() => {
+      const global = deps.readWorkspaceGlobal()
+      // A failed read is NOT the same as "not archived" — surface it as a
+      // retryable partial failure instead of silently skipping the cleanup (the
+      // old `catch { return {} }` turned read failure into a permanent ghost
+      // row with no recovery signal).
+      if (global === undefined) {
+        log.warn(`archive cleanup for ${id}: workspace global unreadable; retry to complete`)
+        return fail('system-error', 'archive state unreadable; file already moved, retry to complete', { moved: true })
+      }
+      const archived = archiveFromGlobal(global)
+      if (!archived.includes(id)) return ok()
 
-    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
-    if (domain === null || domain === undefined) {
-      log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
-      return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
-    }
-    try {
-      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
-      return ok()
-    } catch (err) {
-      log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
-      return fail('system-error', String(err), { moved: true })
-    }
+      const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
+      if (domain === null || domain === undefined) {
+        log.warn(`archive cleanup for ${id}: workspace domain unavailable after file moved; retry to complete`)
+        return fail('system-error', 'archive cleanup failed; file already moved, retry to complete', { moved: true })
+      }
+      return commitArchive(domain, { ...global, archivedSessionIds: archived.filter((x) => x !== id) }, (err) => {
+        log.warn(`archive cleanup for ${id} failed: ${String(err)}`)
+        return fail('system-error', String(err), { moved: true })
+      })
+    })
   }
 
   // ---- /sm/restore ----
@@ -300,6 +392,25 @@ export function createSmHandler(deps: SmHandlerDeps): {
     // present but original dir occupied → restore-target-exists (refuse, never
     // overwrite); otherwise move it back.
     if (rec === null) return fail('not-in-trash', 'no such trash entry')
+
+    // M1: the record is a plain JSON file any local process can rewrite, and
+    // restoreItem does mkdir -p + rename to whatever `originalDir` says. Restore
+    // therefore re-applies the SAME gates delete uses instead of trusting it:
+    //  - structure: a `{}` / partial record used to reach `hasItem(rec.id)` and
+    //    throw a TypeError that the route mapped to a bare 400;
+    //  - identity: a record whose id differs from the requested one would move
+    //    ANOTHER entry (and leave this record behind);
+    //  - bounds: the target must still land inside the sessions root.
+    if (typeof rec !== 'object' || typeof rec.id !== 'string' || rec.id !== id) {
+      return fail('invalid-record', 'trash record does not match the requested id')
+    }
+    if (typeof rec.originalDir !== 'string' || rec.originalDir.length === 0) {
+      return fail('invalid-record', 'trash record has no usable originalDir')
+    }
+    if (!isInsideOrEqual(deps.sessionsRoot, rec.originalDir)) {
+      return fail('path-out-of-bounds', 'recorded original dir is outside the sessions root')
+    }
+
     if (fs.existsSync(rec.originalDir)) {
       return fail('restore-target-exists', 'original dir occupied; refusing to overwrite')
     }
@@ -332,38 +443,43 @@ export function createSmHandler(deps: SmHandlerDeps): {
   }
 
   // ---- /sm/unarchive ----
-  function doUnarchive(_req: unknown, body: unknown): SmResponse {
+  function doUnarchive(_req: unknown, body: unknown): SmResponse | Promise<SmResponse> {
     if (!bodyIsObject(body)) return bad('bad-request', 'body must be an object')
     const { id } = body as { id?: unknown }
     if (!assertValidId(id)) return bad('invalid-id', 'invalid id')
 
-    // Domain availability is checked FIRST, before reading the set. An absent
-    // storageDomain read via ?. yields undefined, so the degradation is the
-    // same "workspace-domain-unavailable" as when get(WORKSPACE_DOMAIN) returns null.
-    const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
-    if (domain === null || domain === undefined) {
-      return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
-    }
-    // Single read (I-1): derive "is archived" and the write payload from the
-    // same snapshot. A read failure (undefined) is a retryable system-error —
-    // never treated as an empty global (which would clobber the other fields
-    // on write).
-    const global = deps.readWorkspaceGlobal()
-    if (global === undefined) {
-      return fail('system-error', 'workspace global unreadable; retry')
-    }
-    const archived = archiveFromGlobal(global)
-    if (!archived.includes(id as string)) return ok() // idempotent no-op
+    return withArchiveChain(() => {
+      // Domain availability is checked FIRST, before reading the set. An absent
+      // storageDomain read via ?. yields undefined, so the degradation is the
+      // same "workspace-domain-unavailable" as when get(WORKSPACE_DOMAIN) returns null.
+      const domain = deps.storageDomain?.get(WORKSPACE_DOMAIN)
+      if (domain === null || domain === undefined) {
+        return fail('workspace-domain-unavailable', 'workspace storage domain unavailable')
+      }
+      // Single read (I-1): derive "is archived" and the write payload from the
+      // same snapshot. A read failure (undefined) is a retryable system-error —
+      // never treated as an empty global (which would clobber the other fields
+      // on write). H2: the read happens INSIDE the chain, so a queued unarchive
+      // sees the previous write's result instead of the pre-write snapshot.
+      const global = deps.readWorkspaceGlobal()
+      if (global === undefined) {
+        return fail('system-error', 'workspace global unreadable; retry')
+      }
+      const archived = archiveFromGlobal(global)
+      if (!archived.includes(id as string)) return ok() // idempotent no-op
 
-    try {
-      domain.global.set({ ...global, archivedSessionIds: archived.filter((x) => x !== id) })
-      return ok()
-    } catch (err) {
-      return fail('system-error', String(err))
-    }
+      return commitArchive(domain, { ...global, archivedSessionIds: archived.filter((x) => x !== id) }, (err) =>
+        fail('system-error', String(err)),
+      )
+    })
   }
 
   // ---- /sm/trash ----
+  // Item shape (INTERFACE §3.5): id + title only — never originalDir/projectKey
+  // (path-leak guard, F-1). `deletedAt` is the real deletion time; `deadline` is
+  // deletedAt + the advisory retention (L2: it used to be deletedAt itself, i.e.
+  // already expired on arrival). Nothing purges automatically — see
+  // TRASH_RETENTION_MS.
   function doTrash(): SmResponse {
     return {
       status: 200,
@@ -372,14 +488,15 @@ export function createSmHandler(deps: SmHandlerDeps): {
         items: deps.trash.records().map((r) => ({
           id: r.id,
           title: r.title ?? undefined,
-          deadline: r.deletedAt,
+          deletedAt: r.deletedAt,
+          deadline: r.deletedAt + TRASH_RETENTION_MS,
         })),
       },
     }
   }
 
   return {
-    handle(method, _req, body): SmResponse {
+    handle(method, _req, body): SmResponse | Promise<SmResponse> {
       switch (method) {
         case 'delete':
           return doDelete(_req, body)

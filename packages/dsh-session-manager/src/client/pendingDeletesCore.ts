@@ -30,6 +30,8 @@
  * is a natural Map property — one entry + one timer per id.
  */
 
+import { NO_TRASH_ARTIFACT } from '../constants.ts'
+
 /** The countdown window before a deletion becomes permanent (ms). P8: 10s → 5s. */
 export const UNDO_WINDOW_MS = 5_000
 
@@ -105,8 +107,17 @@ export interface PendingDeleteDeps {
    * across mounts/refreshes even though the client's `sessions.list` still
    * carries them (host only re-scans its disk on a later refresh). Browser
    * wiring uses localStorage; tests inject an in-memory adapter.
+   *
+   * `loadGhosts`/`saveGhosts` (optional) persist the subset whose delete left NO
+   * recycle-bin entry (M5) — without them those ids are remembered only for the
+   * current page.
    */
-  storage?: { load(): string[]; save(ids: string[]): void }
+  storage?: {
+    load(): string[]
+    save(ids: string[]): void
+    loadGhosts?(): string[]
+    saveGhosts?(ids: string[]): void
+  }
 }
 
 export interface PendingDeletes {
@@ -143,6 +154,12 @@ export interface PendingDeletes {
    * no storage write).
    */
   reconcileWithTrash(trashIds: string[]): void
+  /**
+   * Re-read the persisted sets from storage (M5): another TAB deleted or undid
+   * something and localStorage changed under us. Notifies only when the merged
+   * state actually changed.
+   */
+  syncFromStorage(): void
   /** Fire the parked entry immediately (test/edge hook, bypasses the countdown). */
   fireNow(id: string): Promise<FireOutcome | undefined>
   /**
@@ -186,11 +203,25 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
   // moves the directory; the client list still shows the id until a re-pull).
   const storage = deps.storage
   const deletedIds = new Set<string>(storage?.load() ?? [])
+  /**
+   * M5: ids whose delete succeeded but left NO recycle-bin entry (the session
+   * lived only in host memory and was never flushed to disk). They are
+   * permanently hidden: reconciling against /sm/trash can never find them, so
+   * without this set every reconcile un-hid them and the deleted row came back.
+   */
+  const ghostIds = new Set<string>(storage?.loadGhosts?.() ?? [])
   const persistDeleted = (): void => {
     // Fire-and-forget: the store is best-effort (browser localStorage). Never
     // throw into the fire path over a storage error.
     try {
       storage?.save(Array.from(deletedIds))
+    } catch {
+      /* non-fatal */
+    }
+  }
+  const persistGhosts = (): void => {
+    try {
+      storage?.saveGhosts?.(Array.from(ghostIds))
     } catch {
       /* non-fatal */
     }
@@ -286,6 +317,13 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       // later re-pull). Persist so a refresh keeps the row hidden.
       deletedIds.add(entry.id)
       persistDeleted()
+      // M5: an effective delete with NO recycle-bin artifact can never be
+      // confirmed by /sm/trash — remember it separately so reconcile keeps it
+      // hidden instead of resurrecting the row.
+      if (outcome.code === NO_TRASH_ARTIFACT) {
+        ghostIds.add(entry.id)
+        persistGhosts()
+      }
       notify()
     }
     return outcome
@@ -360,6 +398,7 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       // practice an id only lands in deletedIds AFTER a successful fire (which
       // made it un-undoable), so this is a safety net, not the normal path.
       if (deletedIds.delete(id)) persistDeleted()
+      if (ghostIds.delete(id)) persistGhosts()
       notify()
       return true
     },
@@ -387,7 +426,9 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       const live = new Set(trashIds)
       let changed = false
       for (const id of deletedIds) {
-        if (!live.has(id)) {
+        // M5: a ghost delete (nothing to move, nothing in the trash) is never
+        // listed by /sm/trash — un-flagging it would bring the deleted row back.
+        if (!live.has(id) && !ghostIds.has(id)) {
           deletedIds.delete(id)
           changed = true
         }
@@ -396,9 +437,32 @@ export function createPendingDeletes(deps: PendingDeleteDeps): PendingDeletes {
       persistDeleted()
       notify()
     },
+    // M5: another tab changed the persisted sets (localStorage `storage` event).
+    // Adopt them wholesale — the peer tab's view is as authoritative as ours, and
+    // a union would resurrect ids the peer just restored.
+    syncFromStorage() {
+      // No persistent store → nothing authoritative to adopt. Without this guard
+      // a stray call would clear the hidden-rows set and un-hide deleted rows.
+      if (storage === undefined) return
+      const nextDeleted = new Set(storage?.load() ?? [])
+      const nextGhosts = new Set(storage?.loadGhosts?.() ?? [])
+      if (sameIds(deletedIds, nextDeleted) && sameIds(ghostIds, nextGhosts)) return
+      deletedIds.clear()
+      for (const id of nextDeleted) deletedIds.add(id)
+      ghostIds.clear()
+      for (const id of nextGhosts) ghostIds.add(id)
+      notify()
+    },
     fireNow,
     retry,
   }
+}
+
+/** Set equality over ids (cheap: the sets hold at most a few hundred ids). */
+function sameIds(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
 }
 
 /** In-memory storage adapter (tests, and a no-op fallback for non-web runs). */
