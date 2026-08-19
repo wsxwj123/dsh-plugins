@@ -491,6 +491,11 @@ function createSkinEngine({
       }
       this.deactivateSkin()
       snapshot = captureSnapshot(entry, doc)
+      // 激活前的 style 快照：卸载时只回收「本次激活期间新出现的」style。
+      // 宿主会给 head 里未打标的 <style> 统统盖上 data-plugin=<当时正在加载的包>，
+      // 光按 data-plugin 选，会把本插件自己的面板样式当成皮肤的一起删掉（P0 第二成因：
+      // 皮肤→主题切轨后面板按钮变浏览器默认样式）。
+      const stylesBefore = new Set(Array.from(doc.querySelectorAll('style')))
 
       const ctx = miniCtx()
       try {
@@ -507,10 +512,10 @@ function createSkinEngine({
       const packageId = entry.package
       // a11y style 由 afterApply 注入后，一并纳入本皮肤句柄以便卸载时移除。
       const a11yStyles = Array.from(doc.querySelectorAll(`style[data-theme-gallery-a11y="${entry.id}"]`))
-      // 皮肤内置 style（插件 css）：未打 a11y 标记、属于本 package 的注入。
+      // 皮肤内置 style（插件 css）：属于本 package、未打 a11y 标记，且**本次激活期间才出现**。
       const skinStyles = []
       for (const el of Array.from(doc.querySelectorAll(`style[data-plugin="${packageId}"]`))) {
-        if (!el.hasAttribute('data-theme-gallery-a11y')) skinStyles.push(el)
+        if (!el.hasAttribute('data-theme-gallery-a11y') && !stylesBefore.has(el)) skinStyles.push(el)
       }
       const bodyAttrs = []
       if (entry.bodyAttr && doc.body.hasAttribute(entry.bodyAttr)) bodyAttrs.push(entry.bodyAttr)
@@ -1659,6 +1664,7 @@ function createAppearanceRuntime(deps) {
   const families = deps.families || THEME_FAMILIES
 
   const readKey = (key) => { try { return storage.getItem(key) || '' } catch { return '' } }
+  const writeKey = (key, value) => { try { storage.setItem(key, value) } catch { /* 存储不可用则忽略 */ } }
 
   const listeners = new Set()
   const notify = () => { for (const listener of [...listeners]) listener() }
@@ -1697,6 +1703,25 @@ function createAppearanceRuntime(deps) {
     } finally { activating = false }
   }
 
+  // ---- 轨道切换闸（INTERFACE §3.5 的动作面）----
+  /**
+   * 切到主题轨时真正卸掉皮肤。原先「软互斥」只写 track 键、不做动作，于是皮肤运行时
+   * （body 属性 / chrome / 注入的 style）还在，主题又把 token override 重画到 head 末尾盖过
+   * 皮肤 CSS —— 两套外观同时生效，整页塌陷（P0）。所有会切到主题轨的路径必经此处。
+   *
+   * persist=false 是试穿：只卸运行时不动 storage，撤销试穿由 restoreFromStorage 按 storage 复原。
+   * 反向（切到皮肤轨）刻意不对称：启动恢复本就是「先画主题 token 再叠皮肤」，主题 override 是
+   * 皮肤底下的兜底层，切皮肤时删掉它只会让「即时应用」与「刷新后」两个状态不一致。
+   */
+  function enterThemeTrack({ persist = true } = {}) {
+    if (engine) engine.deactivateSkin()
+    if (!persist) return
+    preview.skinId = null
+    // 只清「选中了哪张皮肤」，不碰用户导入的皮肤 registry。不清的话刷新一次启动恢复又把皮肤拉回来。
+    if (readKey(STORAGE_SKIN)) writeKey(STORAGE_SKIN, '')
+    if (readKey(SKIN_STORAGE_CUSTOM_APPLIED)) writeKey(SKIN_STORAGE_CUSTOM_APPLIED, '')
+  }
+
   // ---- 主题轨 ----
   let removeOverride = null
   const rawThemeApi = createCustomThemeApi({
@@ -1714,26 +1739,33 @@ function createAppearanceRuntime(deps) {
    */
   const themeApi = Object.assign({}, rawThemeApi, {
     previewCustomTheme(id) {
+      enterThemeTrack({ persist: false })
       rawThemeApi.previewCustomTheme(id)
       preview.themeId = id
       notify()
     },
     applyCustomTheme(id) {
+      enterThemeTrack()
       rawThemeApi.applyCustomTheme(id)
       preview.themeId = null
       notify()
     },
     activateFamily(id) {
+      enterThemeTrack()
       rawThemeApi.activateFamily(id)
       preview.themeId = null
       notify()
     },
     deleteCustomTheme(id) {
+      // 只有删掉「正被应用」的那个才会回落到 jade（= 一次切轨），删别的不许动皮肤。
+      const switching = readKey(STORAGE_CUSTOM_APPLIED) === id
+      if (switching) enterThemeTrack()
       rawThemeApi.deleteCustomTheme(id)
       if (preview.themeId === id) preview.themeId = null
       notify()
     },
     restoreDefaultTheme() {
+      enterThemeTrack()
       rawThemeApi.restoreDefaultTheme()
       preview.themeId = null
       notify()
