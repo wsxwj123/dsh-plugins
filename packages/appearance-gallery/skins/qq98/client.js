@@ -74,7 +74,7 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			const body = document.body;
 			const originalTitle = document.title;
-			body.dataset.dshRetro = "";
+			body.dataset.dshQq98 = "";
 			const titlebar = document.createElement("div");
 			titlebar.className = cls("retroTitlebar");
 			titlebar.dataset.skinChrome = "titlebar";
@@ -111,7 +111,7 @@ window.__ModuleLoader__.load({
 			document.title = SKIN_TITLE;
 			body.append(titlebar, statusbar);
 			ctx.effect(() => () => {
-				delete body.dataset.dshRetro;
+				delete body.dataset.dshQq98;
 				titlebar.remove();
 				statusbar.remove();
 				favicon.remove();
