@@ -38,5 +38,14 @@
 - **卡点1已确认**：方案定稿（PLAN.md 756 行 / INTERFACE.md 348 行），形态 A（入口按钮+二级面板）用户重选后维持 @2026-08-17
 - 03 测试设计完成：黑盒代理产出 tests/acceptance/appearance-gallery/（458 条 node --test，对契约 harness 393 绿 65 skip）+ e2e 16 条 + TEST-PLAN.md；守卫检查通过（无实现细节泄露）@2026-08-17
 - **卡点2已确认**：验收测试锁定（软互斥按 INTERFACE §3.5；A1–A8 七处契约歧义 20 条 skip 挂账，解冻后先由方案代理补 INTERFACE 再解锁）@2026-08-17
-- **任务冻结**（用户拍板省额度）：合并任务停在测试锁定态；解冻路径=方案代理补 A1–A8 契约 → 测试解 skip → 04 开发（开发代理用本会话模型）。SM 修复线优先推进 @2026-08-17
+- ~~任务冻结~~ → 用户解冻，两线并行 @2026-08-17
+- **SM 线全部完成** @2026-08-18：18+1 条修复（含抽查 H2b 队尾串行）→ 裁判合格 → 用户确认 → 已合并推 GitHub main（92e4499）。遗留：H1 上游根治需 DSH issue；9 条真机 skip 待用户实测；回收站自动过期待用户拍板
+- 合并线 03 补全：A1–A8 裁决（d4c9a0f）→ 7 条契约 skip 解锁+13 派生断言（471 例 413 绿）→ 重锁定（LOCK=d5b310e）@2026-08-18
+- 合并线 04 开发完成 @2026-08-19：appearance-gallery 6 commit（骨架/双面板/资源治理/构建壳校验/单测接线/state 卸载即丢 65f7c8b）；spike：WebP -58%（815K→341K）、S1/S3 真机项走 PLAN B 支（G1 记卫生项收益 0）；旧三包已删（用户确认）；验收 464 绿/0 红/7 真机 skip + 包内单测 30 绿 + build --check 幂等（841KB<900KB 兜底）
+- 合并线 05 裁判盲判 @2026-08-19：**合格但附条件**——7 条关单证据缺口（P9/P10/P11 真机采样、启动 loader=0、subject=real 回显、e2e E-1/E-13/E-14/E-15、Windows 真跑、P5 阈值 TBD、TEST-PLAN 旧注记对账瑕疵）。⏸ 卡点3/4 待用户
+- 真机采证 @2026-08-19：换装成功（框架副本 0）、启动 loader 错误 0、验收在真实实现下 464 绿、帧率 p95 全部约 17ms（满帧）；灵敏度对照证明采样有效（强灌 blur=183ms）。**关键结论：删 fixed 背景零性能收益（走 PLAN B 支，记卫生项）；blur 是真凶，已 55→10**
+- 收尾修复 @2026-08-19：qq98 属性名统一（5ed27e1，该皮肤此前样式完全不生效）+ data-slot-id 可测性（b96aed5）+ 三个「返回」aria 去重（c03cbea）+ **三目录统一 dsh- 前缀（c678cff，用户要求）** + 路径同步（3cb8ea6）+ README 重写（中英+迁移+PowerShell）
+- **已发布** @2026-08-19：合并远端 SM 修复（冲突=旧包 package.json 保留删除）→ 全量复跑（验收 464/单测 31/SM regression 86 全绿）→ 推 GitHub main **e770f20**，ls-remote 核实
+- 本机 profile 已按新路径重装（dsh-appearance-gallery link 有效，@deepseek-ai 副本 0）
+- 遗留待办：① awesome-dsh-plugin 需提 PR（旧 theme/skin 两条→dsh-appearance-gallery 一条 + pet-bridge/turn-scrubber 改链接）② 另两个本地副本需 pull 对齐 e770f20 ③ pnpm-lock.yaml importers 仍是旧路径（需授权重生成）④ 截图 PR（可选，4 个包无图）⑤ tests/unit/skin-harness.mjs 的 loadSkinWithA11y 坏但零调用方
 - 并行事项：dsh-session-manager 盲审完成（报告 packages/dsh-session-manager/.devflow/REVIEW-BLIND-20260817.md，在 claude 副本）——3 致命 4 高 5 中 6 低；**用户拍板：18 条全修（3致命+4高+5中+6低）**（dev-flow 修 bug 模式，工作基线=claude 副本 main 对齐 70c230d 后开 fix 分支，与合并任务物理隔离并行）@2026-08-17
