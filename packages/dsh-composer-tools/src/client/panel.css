@@ -4,10 +4,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
   background: transparent;
-  color: inherit;
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 1;
   padding: 6px 10px;
@@ -16,7 +16,8 @@
   transition: background-color .15s ease, border-color .15s ease;
 }
 .dsh-ct-entry-btn:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  background: var(--dsw-alias-button-tool-bar-hover);
+  color: var(--dsw-alias-label-primary);
 }
 .dsh-ct-entry-btn .dsh-ct-entry-ico {
   font-size: 15px;
@@ -37,7 +38,7 @@
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
   border: 1px solid var(--dsw-alias-border-l2);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
+  box-shadow: var(--dsw-shadow-lv3);
   font-size: 13px;
 }
 
@@ -112,7 +113,7 @@
 }
 .dsh-ct-search input:focus {
   outline: none;
-  border-color: color-mix(in srgb, #4d9fff 60%, transparent);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .dsh-ct-icon-btn {
@@ -154,15 +155,23 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
+/*
+ * 级别标签（全局/项目/本地）：原来三个色值按深色主题写死（浅蓝/浅青/浅橙），
+ * 浅色底上就是浅色字 —— 用户截图里的"看不清"。
+ * 现在文字色 = 色相令牌与 --dsw-alias-label-primary 混合：浅色主题自动往深走、
+ * 深色主题往浅走，色相仍各自可辨。**不给底色**——实测 15 套主题 × 明暗共 90 种
+ * 组合，任何色底都会把对比度压到 4.5 以下 8~9 组；纯文字色时 89/90 达 WCAG AA，
+ * 唯一例外 eclipse 深色（4.12），而该主题宿主自己的正文也只有 4.52。
+ */
 .dsh-ct-lvl {
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 5px;
+  font-weight: 600;
+  padding: 1px 4px;
   letter-spacing: .3px;
 }
-.dsh-ct-lvl.global { background: rgba(90, 120, 255, .18); color: #9db4ff; }
-.dsh-ct-lvl.project { background: rgba(0, 180, 130, .16); color: #7fdcc2; }
-.dsh-ct-lvl.local { background: rgba(255, 170, 40, .16); color: #ffd189; }
+.dsh-ct-lvl.global { color: color-mix(in srgb, var(--dsw-alias-brand-primary) 25%, var(--dsw-alias-label-primary)); }
+.dsh-ct-lvl.project { color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 25%, var(--dsw-alias-label-primary)); }
+.dsh-ct-lvl.local { color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 25%, var(--dsw-alias-label-primary)); }
 
 .dsh-ct-edit-area {
   width: 100%;
@@ -180,7 +189,7 @@
 }
 .dsh-ct-edit-area:focus {
   outline: none;
-  border-color: color-mix(in srgb, #4d9fff 60%, transparent);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .dsh-ct-actions {
@@ -189,15 +198,15 @@
   justify-content: flex-end;
 }
 .dsh-ct-btn-primary {
-  background: #2f6fdb;
+  background: var(--dsw-alias-button-primary-fill);
   border: none;
-  color: #fff;
+  color: var(--dsw-alias-label-primary-foreground);
   border-radius: 8px;
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
 }
-.dsh-ct-btn-primary:hover:not(:disabled) { background: #3a7cf0; }
+.dsh-ct-btn-primary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
 .dsh-ct-btn-primary:disabled { opacity: .5; cursor: default; }
 
 .dsh-ct-hint {
@@ -260,7 +269,7 @@
 .dsh-ct-hit-file {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
-  color: #8fb3ff;
+  color: var(--dsw-alias-label-secondary);
 }
 .dsh-ct-hit-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -269,9 +278,9 @@
   word-break: break-all;
 }
 .dsh-ct-err {
-  color: #ff8f8f;
-  background: rgba(255, 80, 80, .08);
-  border: 1px solid rgba(255, 80, 80, .22);
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, var(--dsw-alias-label-primary));
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 24%, transparent);
   border-radius: 8px;
   padding: 7px 9px;
   font-size: 12px;

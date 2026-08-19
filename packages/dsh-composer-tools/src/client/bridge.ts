@@ -52,5 +52,24 @@ export function ctPrompts(): Promise<CtResult> {
   return post('/prompts', {})
 }
 
+/**
+ * 新建指令文件（INTERFACE §1.5）。body 仅 cwd + 可选 scope（'project' | 'global'，
+ * 缺省 project）；目标路径由 host 按 scope + 发现结果严格推导（不接受客户端传 path）。
+ * 成功返回 {ok, path, content, mtimeMs}；失败码见契约（invalid-scope / no-project-root /
+ * path-exists / path-out-of-scope / system-error）。
+ */
+export function ctInstructionsCreate(cwd: string, scope?: 'project' | 'global'): Promise<CtResult> {
+  return post('/instructions.create', { cwd, ...(scope !== undefined ? { scope } : {}) })
+}
+
+/**
+ * 删除指令文件（INTERFACE §1.6，增量 2）。与 read/save 同款"收 path + 白名单校验"
+ * 风格：目标必须是发现集合成员。成功 {ok:true}；失败码 file-not-found /
+ * path-out-of-scope / system-error。
+ */
+export function ctInstructionsDelete(cwd: string, path: string): Promise<CtResult> {
+  return post('/instructions.delete', { cwd, path })
+}
+
 /** 导出 Ct 结果类型别名供调用方使用。 */
 export type CtBridgeResult = CtResult

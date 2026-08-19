@@ -76,7 +76,9 @@
 ## 敏感面声明（安全审计依据）
 
 1. **读取范围**：`~/.dsh/AGENTS.md`、项目目录树中的 AGENTS.md/CLAUDE.md 及其 .local 变体、浏览器 localStorage（仅本插件自己的 key）
-2. **写入范围**：**全局 + 项目级指令文件**（用户明确确认可编辑）：`~/.dsh/AGENTS.md`、项目根内各层 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md——写回前路径校验必须在项目根内（防逃逸）；**不写会话文件、不碰 trash/删除逻辑**；浏览器 localStorage（输入历史、UI 状态）
+2. **写入范围**：**全局 + 项目级指令文件**（用户明确确认可编辑/可新建）：`~/.dsh/AGENTS.md`、项目根内各层 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md——写回与新建前路径校验必须在项目根内或 dshHome 内（防逃逸）；浏览器 localStorage（输入历史、UI 状态）
+   - **增量 2（删除与全局新建）**：**删除范围** = 发现集合内任意 level 的指令文件（`~/.dsh/AGENTS.md`、项目根内各层 AGENTS.md/CLAUDE.md/AGENTS.local.md/CLAUDE.local.md），走 `/ct/instructions.delete`，client 强制确认（全局文件明示"移除 DSH 加载的全局指令、影响模型行为"）；删除前双闸门（basename 白名单 + 发现集合成员）+ 父目录 realpath 包含性校验（防 symlink 目录链越界），**绝不删除发现集合外/符号链接指向的文件**；**不做回收站/恢复**（删除即 unlink，不可恢复，UI 已明示）。
+   - **增量 2（新建）**：`/ct/instructions.create` 支持 scope='global'（目标 `~/.dsh/AGENTS.md`）与 scope='project'（目标项目根 AGENTS.md），仅 host 按 scope 推导目标、body 不收 path；**全局新建 client 二次确认**（对所有会话生效）。
 3. **密钥/登录态**：不需要
 4. **外部地址**：不发起任何网络请求（提示词数据随包内置，不下载）
 5. **第三方数据**：提示词库 780 条源自 Cherry Studio agents-zh.json（AGPL-3.0），打包进 MIT 插件，README+面板标注来源与许可（用户已确认接受该风险）

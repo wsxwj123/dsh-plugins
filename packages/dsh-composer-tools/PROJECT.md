@@ -50,3 +50,14 @@
 - 提示词库复用 claude gui prompt-templates.json（Cherry Studio **AGPL-3.0**，打包+标注来源，用户已确认）
 - 提示词"发送到输入框"= 追加到末尾、已有内容前空一行（不覆盖不自动发送）
 - 指令面板支持跨文件全文搜索
+
+## 增量：新建项目级 AGENTS.md（轻量档）
+
+- 卡点①②（合并确认）：方案定稿 + 测试锁定——PLAN §7 / INTERFACE §1.5（POST /ct/instructions.create，只收 cwd，realpath 目标，flag:'wx' 原子创建，list 增补 projectRootFound/canCreateRootAgents）+ test-12 22 条黑盒用例（LOCK=52846fc）@用户确认 23:12
+
+## 增量 2：全局新建 + 删除 + 返回 + 拖拽修复（轻量档）
+
+- 卡点①②（合并确认）：PLAN §8 / INTERFACE §1.5 扩展+§1.6 delete+§2.4+§2.6 reducer+§3 拖拽修复；审查修订后定稿（5 重要项全处理）；test-13 31 条锁定（LOCK=f2c5c4b）@用户确认 08-17 09:xx
+- 04 开发完成（4 commit：host create scope/delete/list 字段 + client reducer/双入口/删除/返回 + 拖拽修复）→ 05 裁判盲判：合格（184 验收+145 单测全绿，25ms 会合窗口专项判定接受）@待用户实测确认
+- 真实环境实测（playwright 3080）：面板打开✓ 提示词 tab 不塌陷✓ 拖拽后点 tab 不塌陷✓ 项目级显示+删除按钮✓ ——但发现运行中 web（12:25 启动）host 是旧版（增量1），delete 404 + 无 canCreateGlobalAgents → 需重启 web 生效
+- 卡点⑤待用户：重启 dsh web 后实测（删除可用/新建全局按钮/提示词不塌陷）

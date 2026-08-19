@@ -147,8 +147,14 @@ export default [
       gate: 'src/client/gate.ts',
       'history-core': 'src/client/history-core.ts',
       'history-storage': 'src/client/history-storage.ts',
+      'session-history': 'src/client/session-history.ts',
+      // HistoryNav 是采集/回填的接线层（非纯函数但无 DOM 依赖，rAF 只在回填时
+      // 调用）——一起建到 node ESM，验收测试才能驱动"快照采集 → 落盘 → ↑ 回填"
+      // 整条链，而不是在测试里重写一遍接线（那正是 Bug 3 漏检的原因）。
+      'history-nav': 'src/client/HistoryNav.ts',
       append: 'src/client/append.ts',
       'bridge-core': 'src/client/bridgeCore.ts',
+      'instruction-view': 'src/client/instruction-view.ts',
     },
     outDir: 'lib',
     format: 'esm',

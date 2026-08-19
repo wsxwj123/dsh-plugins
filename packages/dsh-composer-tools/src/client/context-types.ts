@@ -43,10 +43,37 @@ export interface SessionListFeed {
   subscribe(listener: () => void): () => void
 }
 
+/**
+ * The conversation snapshot subset this plugin reads: `nodes` is the kind-
+ * discriminated `ConversationNode[]` (see dsh-client-runtime
+ * types/client/sessions/conversation.d.ts). Nodes stay `unknown` here — the
+ * `kind === 'user'` narrowing lives in session-history.ts.
+ */
+export interface ConversationSnapshotFace {
+  nodes?: readonly unknown[]
+}
+
+/** `SessionBinding.session` — the ObservableSnapshot half is all this plugin needs. */
+export interface SessionFaceLike {
+  getSnapshot(): ConversationSnapshotFace | undefined
+  subscribe(listener: () => void): () => void
+}
+
+/** `SessionBinding` (types/client/sessions/service.d.ts), read-only subset. */
+export interface SessionBindingFace {
+  session?: SessionFaceLike
+}
+
 /** The client `sessions` service face. */
 export interface SessionsFace {
   list: SessionListFeed
   clear(): void
+  /**
+   * Stable per-session binding (`ISessions.binding`). Returns undefined for a
+   * session neither listed nor already scoped — callers must retry when the
+   * list changes rather than giving up.
+   */
+  binding?(id: string): SessionBindingFace | undefined
 }
 
 /**

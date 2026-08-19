@@ -10,15 +10,20 @@
  *      menuOpen 判定（data-phase 存在且 !== 'plain'；属性读不到 → menuOpen=true
  *      fail-safe，SPIKE-T0 ③）。命中 gate → preventDefault + stopPropagation +
  *      HistoryNav 回填。cleanup 摘监听。
- *   3. 发送采集：useEffect 订阅 useInput 的 phase；submitting/adjudicating 时
- *      draft 未清 → capturePending；draft 变 '' → commitPending；phase 回 plain
- *      且 draft 恢复 pending 原文（发送失败）→ dropPending。claimed 不动。
+ *   3. 发送采集（主路径）：订阅当前会话的快照，新落地的 user 消息文本即历史条目
+ *      （session-history.ts 水位线 diff）。普通消息 phase 恒为 plain、发送按钮
+ *      点击没有 keydown，只有快照覆盖得全。
+ *   4. 发送采集（斜杠命令路径，保留）：useInput 的 phase 进 submitting/
+ *      adjudicating 时 draft 未清 → capturePending；draft 变 '' → commitPending；
+ *      phase 回 plain 且 draft 恢复 pending 原文（发送失败）→ dropPending。
+ *      claimed 不动。斜杠命令在快照里是 CommandNode，主路径采不到，故两条并存。
  */
 import { createElement, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { Context, InputActions, InputPhase, InputSelection } from './context-types.ts'
 import { createHistoryNav, type HistoryNavController } from './HistoryNav.ts'
 import { Panel } from './Panel.tsx'
+import { createSnapshotCapture } from './session-history.ts'
 import './panel.css'
 
 interface EntryProps {
@@ -116,7 +121,35 @@ export function ComposerEntry(props: EntryProps): ReactNode {
     return () => document.removeEventListener('input', onInput, true)
   }, [nav])
 
-  // ---- 发送采集（phase 机两段式，INTERFACE §3；claimed 不动） ----
+  // ---- 发送采集主路径：订阅会话快照，新落地的 user 消息即历史条目 ----
+  // phase 机对普通消息永远不触发（onEnter 走 default-sink，phase 恒 plain），
+  // 且发送按钮点击根本没有 keydown —— 只有快照能覆盖全部已受理的发送。
+  useEffect(() => {
+    if (sessionId === undefined) return
+    const capture = createSnapshotCapture((text) => {
+      nav.record(text)
+    })
+    let offSession: (() => void) | null = null
+    const attach = (): void => {
+      if (offSession !== null) return
+      const session = ctx.sessions.binding?.(sessionId)?.session
+      if (session === undefined || session === null) return
+      const pump = (): void => {
+        capture.onSnapshot(session.getSnapshot()?.nodes)
+      }
+      pump() // 首帧只初始化水位线（已在窗口里的旧消息不回补）
+      offSession = session.subscribe(pump)
+    }
+    attach()
+    // binding 暂缺（会话未打开/未 staged）时不能只试一次就放弃：会话列表变化即补挂。
+    const offList = ctx.sessions.list.subscribe(attach)
+    return () => {
+      offList()
+      if (offSession !== null) offSession()
+    }
+  }, [ctx, sessionId, nav])
+
+  // ---- 发送采集（phase 机两段式，INTERFACE §3；斜杠命令路径；claimed 不动） ----
   const prevPhase = useRef<InputPhase>('plain')
   useEffect(() => {
     const p = phase

@@ -55,6 +55,21 @@ export function dropPending(state: HistoryState): HistoryState {
 }
 
 /**
+ * 单段式写入（会话快照采集入口，INTERFACE §2.2 增量 3）：文本已被快照确认受理，
+ * 不存在"发送失败误录"，所以不需要 pending 两阶段。
+ * trim 后为空 → 原样返回；否则去重（键 = trim 后全文）+ unshift 置顶 + 裁到上限。
+ * 若当前正在翻历史（cursor ≥ 0）→ cursor 置 -1、stash 清空：本次写入挪动了
+ * entries，旧 cursor 会指向别的条目。
+ */
+export function recordSend(state: HistoryState, text: string): HistoryState {
+  const trimmed = typeof text === 'string' ? text.trim() : ''
+  if (!trimmed) return state
+  const entries = [trimmed, ...state.entries.filter((e) => e !== trimmed)].slice(0, HISTORY_LIMIT)
+  if (state.cursor === -1) return { ...state, entries }
+  return { ...state, entries, cursor: -1, stash: null }
+}
+
+/**
  * entries 为空 → null（放行）。cursor === -1：stash = currentDraft，cursor = 0。
  * cursor 已在最旧（=== entries.length - 1）→ 仍消费：返回最旧条目文本，状态不变。
  * 其余：cursor + 1。返回 entries[cursor]。
