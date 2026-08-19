@@ -16,6 +16,24 @@ English: [README.en.md](README.en.md)
 
 所有插件在 macOS 与 Windows 上均可使用。
 
+## 界面预览
+
+### 外观画廊（主题 + 皮肤）
+
+![外观画廊](assets/screenshots/appearance-gallery.png)
+
+### 会话管理（归档 + 回收站）
+
+<img src="assets/screenshots/session-manager.png" alt="会话管理归档视图" width="420">
+
+### 输入体验增强（指令面板 + 提示词库）
+
+<img src="assets/screenshots/composer-tools.png" alt="指令与提示词面板" width="520">
+
+### 对话回合刻度
+
+<img src="assets/screenshots/turn-scrubber.png" alt="对话回合刻度" width="620">
+
 ## 从旧版本升级（装过主题画廊 / 皮肤画廊的看这里）
 
 `dsh-theme-gallery`、`dsh-skin-gallery`、`dsh-skin-runtime` 三个插件已合并为 `dsh-appearance-gallery`，原目录不再存在。已安装旧插件的用户需要卸旧装新，否则 `dsh web` 启动时会因插件目录消失而报 loader 错误。
