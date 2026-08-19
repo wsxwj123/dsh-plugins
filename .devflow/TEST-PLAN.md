@@ -191,7 +191,7 @@ node --test "tests/acceptance/appearance-gallery/*.test.mjs"
 | 06-24 | 取消勾选还原 | 勾了再取消 | 文本框内容回到原样 |
 | 06-25 | 版块数量 | 数一下 | 恰好 11 个 |
 | 06-26 | 设计助手不碰数据 | 勾完 11 个 | 一次 storage 写操作都没有 |
-| 06-27 | 助手里的仓库路径已更新 | 看文本 | 含 `packages/appearance-gallery/skins/`，不含旧路径 |
+| 06-27 | 助手里的仓库路径已更新 | 看文本 | 含 `packages/dsh-appearance-gallery/skins/`，不含旧路径 |
 | 06-28 | 助手里的验收命令已更新 | 看文本 | 含 `pnpm --filter dsh-appearance-gallery`，不含旧命令 |
 | 06-29 | 删除自定义皮肤 | 删 a | 列表只剩 b |
 | 06-30 | 删掉正在用的皮肤 | 删 applied 项 | 两个 applied 键清空、track='skin'、皮肤被卸载 |

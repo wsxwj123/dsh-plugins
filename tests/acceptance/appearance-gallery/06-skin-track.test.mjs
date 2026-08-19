@@ -212,7 +212,7 @@ test('S6设计助手_仓库路径已更新为appearance-gallery', async () => {
   const h = await started();
   h.entry.openPanel();
   const text = h.entry.skinPanel.designSummary();
-  assert.ok(text.includes('packages/appearance-gallery/skins/'), '缺新仓库路径');
+  assert.ok(text.includes('packages/dsh-appearance-gallery/skins/'), '缺新仓库路径');
   assert.equal(text.includes('packages/skin-gallery/skins/'), false, '仍残留旧仓库路径');
 });
 

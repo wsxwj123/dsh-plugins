@@ -53,7 +53,7 @@ export function createSkinPanel(deps) {
   /** designSummary：仓库路径与验收命令是 §3.3 节末明确要求更新的文本 */
   const buildSummary = () => [
     ...[...state.picked].sort().map((i) => SECTIONS[i]),
-    'packages/appearance-gallery/skins/<skin-id>/',
+    'packages/dsh-appearance-gallery/skins/<skin-id>/',
     TEXT.winReservedHint,                        // A7-1 裁决：目录建议段必须带这句
     'pnpm --filter dsh-appearance-gallery test',
   ].join('\n');

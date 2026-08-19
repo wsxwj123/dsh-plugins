@@ -169,7 +169,7 @@ test.describe('外观插件二级面板（UI 真实流程）', () => {
     await page.getByRole('checkbox').first().check();
     await expect(area).not.toHaveValue(before);
     expect(await area.inputValue()).not.toContain('packages/skin-gallery/skins/');
-    expect(await area.inputValue()).toContain('packages/appearance-gallery/skins/');
+    expect(await area.inputValue()).toContain('packages/dsh-appearance-gallery/skins/');
   });
 
   test('删除皮肤_勾选后需二次确认才真的删掉', async ({ page }) => {

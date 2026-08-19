@@ -62,7 +62,7 @@
 | **G1** | 疑似：`background-attachment: fixed` + `background-size: cover` 打在 `<body>`，背景是 286 KB 大图；5/9 皮肤命中（§3 C 类：`blue-fantasy/client.js:87`、`miku:122`、`dragon-heir:90`、`whale-song:83`、`xp:8`）。Chromium 对**滚动元素上**的 fixed 背景无法合成，每帧重绘整视口。**"滚动元素上"是这条因果链的必要条件——先证实再动手，见下方 §1.4.1** | 由归因实验（T0.2）分三支：**A（fixed 是主因，且 document 在滚）** → 改为单个 `position:fixed; inset:0; z-index:-1; pointer-events:none` 的专用背景层（`data-skin-bg`），皮肤自己在 `ctx.effect` 里建/拆，视觉等价、可被提升为独立合成层。**B（fixed 不是主因）** → G1 降级为零成本卫生项（仍删掉 fixed，因为此时删它视觉零变化且省一张全视口纹理），性能战线转 G2/G3/G7。**C（fixed 是主因但 document 不滚）** → 说明背景挂在内层滚动容器或其祖先上，按 A 的手法治那一层 | A 支：滚动时背景重绘从"每帧整视口"降到 0。B 支：G1 性能收益 **0**（必须承认，不许拿 P1 变绿充账） | ① 静态 P1：`skins/**/{client.js,a11y.css}` 中 `background-attachment\s*:\s*fixed` 命中 = **0**；② 运行时 P2：`getComputedStyle(document.body).backgroundAttachment !== 'fixed'`；③ A/C 支下 P3：`[data-skin-bg]` 层 ≤1 且带 `position:fixed` + `pointer-events:none` + 负 `z-index`；④ **决定性的是 P9 的三组对照采样**，P1-P3 全绿不等于滚动变快 |
 | **G2** | `backdrop-filter: blur()` 全仓 **55 处**（miku 45 + blue-fantasy 5 + whale-song 5，§3 C 类）。backdrop-filter 每帧重采样背景，和 fixed 背景叠加代价最高 | 把 blur **限制在不随内容滚动的固定层**（顶栏 / 侧栏 / 背景层）；滚动内容里的元素改用半透明纯色 `background: rgba(...)` | 每帧背景重采样元素数从数十降到 ≤4 | 静态：全仓 `backdrop-filter` 出现次数 ≤ **12**，**单皮肤 ≤ 4**（当前 55 / miku 45） |
 | **G3** | 815 KB（65%）产物是 4 张内嵌 base64 图（§1.3、§9.2-C4：blue-fantasy 286671 / whale-song 204727 / dragon-heir 109823+105871 / miku 84759 字符） | 4 张图重编码为 **WebP**（q≈80，必要时限宽 1920）后回填 data URI。**不**外置成独立资源文件（宿主是否提供包内静态 URL 未验证，见 R7/S2） | **估算，非实测**：base64 合计 ~773 KB → 300~500 KB。WebP 对**已经是 JPEG 的照片类**素材通常只有 25%-35% 收益，对大面积渐变/插画类可能到 60%+。"没达到 300 KB"要当正常结果对待，不是例外 | `build.mjs --check` 硬门禁，数值 **T3.4 按实测落定**（先做后定）；**兜底上限不可协商：>900 KB 不许收工**。T3.4 落定之后只准下调 |
-| **G4** | 1.26 MB 皮肤资源在 skin-gallery / skin-runtime 各存一份（§1.1），且 skin-gallery 那份对其 3 KB 产物是死代码（§6.2） | 合并后只留一份 `packages/appearance-gallery/skins/` | 仓库 -1.26 MB；构建输入唯一，不再有"改了一份忘改另一份"的机会 | `find packages -name skin.json -not -path '*/node_modules/*'` 命中 **9** 条，且全部在 `packages/appearance-gallery/skins/` 下 |
+| **G4** | 1.26 MB 皮肤资源在 skin-gallery / skin-runtime 各存一份（§1.1），且 skin-gallery 那份对其 3 KB 产物是死代码（§6.2） | 合并后只留一份 `packages/dsh-appearance-gallery/skins/` | 仓库 -1.26 MB；构建输入唯一，不再有"改了一份忘改另一份"的机会 | `find packages -name skin.json -not -path '*/node_modules/*'` 命中 **9** 条，且全部在 `packages/dsh-appearance-gallery/skins/` 下 |
 | **G5** | render body 里同步 `localStorage.getItem` + 全量 `JSON.parse`，registry 里存的是皮肤 `client.js` 全文（可达 ~1.5 MB），一次 render 至少解析两遍；搜索框每敲一个字触发一次（§3 B1、B5） | 在 `readCustomItems` 一处做**按 raw 字符串的解析记忆化**（raw 未变则复用上次 items）。这是根因位置：theme/skin 两侧全部读路径（`getSkins` / `currentSkinState` / `findByCustomId` / `getCustomThemes` / `getCustomAppliedId`）都汇到这一个函数，改一处等于修全部调用方；用 raw 比对而非"写时失效"，跨标签页改动也不会读到脏数据 | 装了自定义皮肤时，每次 render 的 `JSON.parse` 次数从 ≥2 × 1.5 MB 降到 **0**（registry 未变时） | 单测：用计数替身 storage，连续 10 次 `getSkins()` 只发生 **1** 次 `JSON.parse`；`importCustomSkin` 之后的第一次读**恰好**重新解析 1 次 |
 | **G6** | 设置页一打开就渲染 15+9 张卡（~200 节点）、3 个 textarea，并拼 `designSummary`（§3 B2/B4） | 面板懒挂载（§1.2） | 设置→通用初次打开时本插件贡献 DOM ≤10 节点；`designSummary` 未打开面板时**根本不执行** | 单测（fake React 记录树）：`open=false` 时渲染树节点数 ≤10 且不含 `theme-gallery-card` / `skin-gallery-card`；`open=true` 后才出现 |
 
@@ -167,7 +167,7 @@ packages/appearance-gallery/
 
 ### 2.4 皮肤资源去重与体积治理落点
 
-- **去重**：物理上只有 `packages/appearance-gallery/skins/` 一处（G4）。搬迁用 `git mv packages/skin-runtime/skins packages/appearance-gallery/skins`，保留 git 履历与 blame。
+- **去重**：物理上只有 `packages/dsh-appearance-gallery/skins/` 一处（G4）。搬迁用 `git mv packages/skin-runtime/skins packages/appearance-gallery/skins`，保留 git 履历与 blame。
 - **体积**：G3 只改 4 个文件里的 data URI 字符串（`blue-fantasy/client.js`、`whale-song/client.js`、`dragon-heir/client.js`、`miku/client.js`）。
   - 每个皮肤**单独一个 commit**，便于逐个回退。
   - `skins/*/LICENSE` 与 `skins/NOTICE.md` 不动；重编码不改变作者与许可（`attribution.test.mjs` 继续守着）。
@@ -289,7 +289,7 @@ slots.inject('settings.general.item', () => slots.register(
 
 断言：`await Promise.all([applySkin('qq98'), applySkin('miku')])` 之后——body 上只有一套皮肤的属性/内联 style/chrome 残留，且与 `skin-gallery-skin-v1` 的值一致；重复点同一个「应用」两次不产生第二次脚本注入（用可计数的 `__TG_EXEC_SCRIPT__` 替身断言注入次数 = 1）。
 
-`designSummary` 文本里的仓库路径需从 `packages/skin-gallery/skins/<skin-id>/` 更新为 `packages/appearance-gallery/skins/<skin-id>/`，验收命令从 `pnpm --filter dsh-skin-gallery …` 更新为 `pnpm --filter dsh-appearance-gallery …`。其余文字（含契约 8 条、a11y 标准、设计前 5 问）逐字保留。
+`designSummary` 文本里的仓库路径需从 `packages/skin-gallery/skins/<skin-id>/` 更新为 `packages/dsh-appearance-gallery/skins/<skin-id>/`，验收命令从 `pnpm --filter dsh-skin-gallery …` 更新为 `pnpm --filter dsh-appearance-gallery …`。其余文字（含契约 8 条、a11y 标准、设计前 5 问）逐字保留。
 
 ### 3.4 storage 键：沿用哪些、迁移哪些、老用户怎么兼容
 

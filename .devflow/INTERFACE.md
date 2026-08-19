@@ -98,7 +98,7 @@ slots.inject('settings.general.item', () => slots.register(
 
 断言：`await Promise.all([applySkin('qq98'), applySkin('miku')])` 之后——body 上只有一套皮肤的属性/内联 style/chrome 残留，且与 `skin-gallery-skin-v1` 的值一致；重复点同一个「应用」两次不产生第二次脚本注入（用可计数的 `__TG_EXEC_SCRIPT__` 替身断言注入次数 = 1）。
 
-`designSummary` 文本里的仓库路径需从 `packages/skin-gallery/skins/<skin-id>/` 更新为 `packages/appearance-gallery/skins/<skin-id>/`，验收命令从 `pnpm --filter dsh-skin-gallery …` 更新为 `pnpm --filter dsh-appearance-gallery …`。其余文字（含契约 8 条、a11y 标准、设计前 5 问）逐字保留。
+`designSummary` 文本里的仓库路径需从 `packages/skin-gallery/skins/<skin-id>/` 更新为 `packages/dsh-appearance-gallery/skins/<skin-id>/`，验收命令从 `pnpm --filter dsh-skin-gallery …` 更新为 `pnpm --filter dsh-appearance-gallery …`。其余文字（含契约 8 条、a11y 标准、设计前 5 问）逐字保留。
 
 ### 3.4 storage 键：沿用哪些、迁移哪些、老用户怎么兼容
 
