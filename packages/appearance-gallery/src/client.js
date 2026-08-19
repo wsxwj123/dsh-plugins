@@ -384,7 +384,8 @@ export function createAppearanceRuntime(deps) {
         React.createElement(themePanel.Panel, { key: 'theme' }),
         React.createElement(skinPanel.Panel, { key: 'skin' }),
         React.createElement('button', {
-          key: 'back', type: 'button', className: 'appearance-back', onClick: closePanel,
+          // 面板内三个「返回」可见文案相同（本处 + 主题区 + 皮肤区），靠 aria-label 区分可访问名称
+          key: 'back', type: 'button', className: 'appearance-back', 'aria-label': '返回设置', onClick: closePanel,
         }, '返回')))
     }
     // data-slot-id 取槽位 id 原值（INTERFACE §3.1）：e2e/自动化按它定位入口，

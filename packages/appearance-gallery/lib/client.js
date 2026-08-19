@@ -1241,7 +1241,8 @@ function createThemePanel(deps) {
             onClick: () => { customThemeApi.restoreDefaultTheme(); activateFamily('jade'); rerender() },
           }, '恢复默认主题')),
         customs.length === 0 ? null : React.createElement('div', { className: 'theme-gallery-custom-list' }, ...customs.map(customRow))),
-      React.createElement('button', { className: 'theme-gallery-action', type: 'button', onClick: onBack }, '返回'))
+      // aria-label 区分同名「返回」（另两个在皮肤区与入口面板底部），可见文案不变
+      React.createElement('button', { className: 'theme-gallery-action', type: 'button', 'aria-label': '返回设置（主题区）', onClick: onBack }, '返回'))
   }
 
   return { Panel, state, setSearch, submitImport, reset }
@@ -1523,7 +1524,8 @@ function createSkinPanel(deps) {
             type: 'button', className: 'skin-gallery-action',
             onClick: () => { state.confirming = false; state.selectedForDelete = []; rerender() },
           }, '取消'))),
-      React.createElement('button', { className: 'skin-gallery-action', type: 'button', onClick: onBack }, '返回'))
+      // aria-label 区分同名「返回」（另两个在主题区与入口面板底部），可见文案不变
+      React.createElement('button', { className: 'skin-gallery-action', type: 'button', 'aria-label': '返回设置（皮肤区）', onClick: onBack }, '返回'))
   }
 
   return {
@@ -1925,7 +1927,8 @@ function createAppearanceRuntime(deps) {
         React.createElement(themePanel.Panel, { key: 'theme' }),
         React.createElement(skinPanel.Panel, { key: 'skin' }),
         React.createElement('button', {
-          key: 'back', type: 'button', className: 'appearance-back', onClick: closePanel,
+          // 面板内三个「返回」可见文案相同（本处 + 主题区 + 皮肤区），靠 aria-label 区分可访问名称
+          key: 'back', type: 'button', className: 'appearance-back', 'aria-label': '返回设置', onClick: closePanel,
         }, '返回')))
     }
     // data-slot-id 取槽位 id 原值（INTERFACE §3.1）：e2e/自动化按它定位入口，

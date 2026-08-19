@@ -273,7 +273,8 @@ export function createSkinPanel(deps) {
             type: 'button', className: 'skin-gallery-action',
             onClick: () => { state.confirming = false; state.selectedForDelete = []; rerender() },
           }, '取消'))),
-      React.createElement('button', { className: 'skin-gallery-action', type: 'button', onClick: onBack }, '返回'))
+      // aria-label 区分同名「返回」（另两个在主题区与入口面板底部），可见文案不变
+      React.createElement('button', { className: 'skin-gallery-action', type: 'button', 'aria-label': '返回设置（皮肤区）', onClick: onBack }, '返回'))
   }
 
   return {

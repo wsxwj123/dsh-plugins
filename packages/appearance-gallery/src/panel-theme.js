@@ -133,7 +133,8 @@ export function createThemePanel(deps) {
             onClick: () => { customThemeApi.restoreDefaultTheme(); activateFamily('jade'); rerender() },
           }, '恢复默认主题')),
         customs.length === 0 ? null : React.createElement('div', { className: 'theme-gallery-custom-list' }, ...customs.map(customRow))),
-      React.createElement('button', { className: 'theme-gallery-action', type: 'button', onClick: onBack }, '返回'))
+      // aria-label 区分同名「返回」（另两个在皮肤区与入口面板底部），可见文案不变
+      React.createElement('button', { className: 'theme-gallery-action', type: 'button', 'aria-label': '返回设置（主题区）', onClick: onBack }, '返回'))
   }
 
   return { Panel, state, setSearch, submitImport, reset }
