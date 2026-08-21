@@ -38,6 +38,35 @@ Restart `dsh web` and reload the page afterwards. **Your appearance settings sur
 
 ## Installing
 
+### From npm (recommended)
+
+No clone needed, and you get the prebuilt artifact — installs skip the local build step:
+
+```bash
+dsh plugin --profile web add dsh-appearance-gallery
+dsh plugin --profile web add dsh-turn-scrubber
+dsh plugin --profile web add dsh-composer-tools
+dsh plugin --profile web add @wsxwj123/dsh-session-manager
+```
+
+> The flat name `dsh-session-manager` was already taken on npm by an unrelated package, so this plugin ships as the scoped package `@wsxwj123/dsh-session-manager`. It is identical to `packages/dsh-session-manager` in this repo.
+
+`dsh-pet-bridge` requires [cc-pet](https://github.com/wsxwj123/cc-pet) to be installed first (it listens on `127.0.0.1:7779`; no changes needed on the pet side):
+
+```bash
+dsh plugin --profile web add dsh-pet-bridge
+```
+
+| Plugin | npm package |
+|---|---|
+| Appearance gallery | [`dsh-appearance-gallery`](https://www.npmjs.com/package/dsh-appearance-gallery) |
+| Turn scrubber | [`dsh-turn-scrubber`](https://www.npmjs.com/package/dsh-turn-scrubber) |
+| Composer tools | [`dsh-composer-tools`](https://www.npmjs.com/package/dsh-composer-tools) |
+| Session manager | [`@wsxwj123/dsh-session-manager`](https://www.npmjs.com/package/@wsxwj123/dsh-session-manager) |
+| Pet bridge | [`dsh-pet-bridge`](https://www.npmjs.com/package/dsh-pet-bridge) |
+
+### From source
+
 ```bash
 git clone https://github.com/wsxwj123/dsh-plugins
 cd dsh-plugins
@@ -46,11 +75,13 @@ dsh plugin --profile web add "link:$PWD/packages/<plugin-dir>"
 
 On Windows (PowerShell), use backslashes: `"link:$PWD\packages\<plugin-dir>"`.
 
-`dsh-pet-bridge` requires [cc-pet](https://github.com/wsxwj123/cc-pet) to be installed first (it listens on `127.0.0.1:7779`; no changes needed on the pet side). `dsh-composer-tools` needs `pnpm install && pnpm build` inside its package directory (`lib/` is not committed).
+`dsh-composer-tools` needs `pnpm install && pnpm build` inside its package directory when installed from source (`lib/` is not committed); the npm package ships prebuilt.
+
+### Either way
 
 Restart the running `dsh web` process after installing, and reload open pages. Do not start a second web server.
 
-> After installing, check whether `~/.dsh/profiles/web/node_modules/@deepseek-ai` exists as a real directory. **It should not.** A real directory there means a second copy of the framework was installed into the profile, which splits Cordis / Tool Symbols and breaks tool calls (`Cannot read properties of undefined`). See [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783). Every plugin here declares framework packages as `peerDependencies: "*"` precisely so the package manager never auto-installs a second copy.
+> After installing, check whether `~/.dsh/profiles/web/node_modules/@deepseek-ai` exists as a real directory. **It should not.** A real directory there means a second copy of the framework was installed into the profile, which splits Cordis / Tool Symbols and breaks tool calls (`Cannot read properties of undefined`). See [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783). Every plugin here pins framework peer ranges to explicitly match the host version (e.g. `^0.1.0-rc.6`, cordis `^4.0.1`). Note that a bare `"*"` does not match prereleases like `0.1.0-rc.6` under semver, leaving the peer permanently unsatisfied.
 
 ## Building
 

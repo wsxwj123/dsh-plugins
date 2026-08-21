@@ -56,6 +56,37 @@ dsh plugin --profile web add "link:$PWD\packages\dsh-appearance-gallery"
 
 ## 安装插件
 
+### 方式一：从 npm 安装（推荐）
+
+无需克隆仓库，装的是预构建产物，跳过本地构建步骤：
+
+```bash
+dsh plugin --profile web add dsh-appearance-gallery
+dsh plugin --profile web add dsh-turn-scrubber
+dsh plugin --profile web add dsh-composer-tools
+dsh plugin --profile web add @wsxwj123/dsh-session-manager
+```
+
+> `dsh-session-manager` 这个扁平包名在 npm 上已被他人占用，本插件发布为作用域包 `@wsxwj123/dsh-session-manager`，功能与仓库内的 `packages/dsh-session-manager` 完全一致。
+
+安装 `dsh-pet-bridge` 前需先安装 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物（它监听 `127.0.0.1:7779` 接收状态推送，pet 端代码无需修改）：
+
+```bash
+dsh plugin --profile web add dsh-pet-bridge
+```
+
+npm 包一览：
+
+| 插件 | npm 包名 |
+|---|---|
+| 外观画廊 | [`dsh-appearance-gallery`](https://www.npmjs.com/package/dsh-appearance-gallery) |
+| 回合刻度 | [`dsh-turn-scrubber`](https://www.npmjs.com/package/dsh-turn-scrubber) |
+| 输入体验增强 | [`dsh-composer-tools`](https://www.npmjs.com/package/dsh-composer-tools) |
+| 会话管理 | [`@wsxwj123/dsh-session-manager`](https://www.npmjs.com/package/@wsxwj123/dsh-session-manager) |
+| 桌面宠物状态桥 | [`dsh-pet-bridge`](https://www.npmjs.com/package/dsh-pet-bridge) |
+
+### 方式二：从源码安装
+
 先克隆仓库：
 
 ```bash
@@ -75,25 +106,13 @@ Windows（PowerShell）下把路径分隔符换成反斜杠：
 dsh plugin --profile web add "link:$PWD\packages\dsh-appearance-gallery"
 ```
 
-其余插件同理：
+`dsh-composer-tools` 从源码安装时需要先在包目录内 `pnpm install && pnpm build`（`lib/` 不入库）；从 npm 安装则无需此步。
 
-```bash
-dsh plugin --profile web add "link:$PWD/packages/dsh-turn-scrubber"
-dsh plugin --profile web add "link:$PWD/packages/dsh-session-manager"
-dsh plugin --profile web add "link:$PWD/packages/dsh-composer-tools"
-```
-
-安装 `dsh-pet-bridge` 前需先安装 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物（它监听 `127.0.0.1:7779` 接收状态推送，pet 端代码无需修改）：
-
-```bash
-dsh plugin --profile web add "link:$PWD/packages/dsh-pet-bridge"
-```
-
-`dsh-composer-tools` 需要先在包目录内 `pnpm install && pnpm build`（`lib/` 不入库）。
+### 两种方式都适用
 
 安装完成后，重启当前 `dsh web` 进程，并刷新已有页面地址。不要另起第二个 Web 服务。
 
-> 安装后请检查 `~/.dsh/profiles/web/node_modules/@deepseek-ai` 是否被创建成真实目录。**正常情况下它不应存在**——出现真实目录意味着 profile 里多了一份框架副本，会导致 Cordis / Tool Symbol 分裂（工具调用报 `Cannot read properties of undefined`）。相关背景见 [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783)。本仓库所有插件已把框架包声明为 `peerDependencies: "*"`，正是为了避免包管理器自动补装第二份副本。
+> 安装后请检查 `~/.dsh/profiles/web/node_modules/@deepseek-ai` 是否被创建成真实目录。**正常情况下它不应存在**——出现真实目录意味着 profile 里多了一份框架副本，会导致 Cordis / Tool Symbol 分裂（工具调用报 `Cannot read properties of undefined`）。相关背景见 [deepseek-harness discussion #783](https://github.com/deepseek-ai/deepseek-harness/discussions/783)。本仓库所有插件的框架包 peer 范围都显式匹配宿主版本（如 `^0.1.0-rc.6`、cordis `^4.0.1`）。注意通配符 `"*"` 在 semver 下匹配不到 `0.1.0-rc.6` 这类预发布版本，反而会让 peer 永远不满足。
 
 ## 仓库结构
 
