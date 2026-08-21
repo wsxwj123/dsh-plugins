@@ -98,7 +98,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:src/client/rail.module.css.mjs
-		const css = "._7YEcIa_rail{z-index:45;pointer-events:auto;width:18px;position:absolute;right:6px}._7YEcIa_group{pointer-events:auto;flex-direction:column;align-items:flex-end;padding:0 0 0 14px;display:flex;position:absolute;right:0}._7YEcIa_line{cursor:pointer;background:0 0;border:none;justify-content:flex-end;align-items:center;margin:0;padding:0;transition:transform 90ms ease-out;display:flex}._7YEcIa_compacted{cursor:pointer}._7YEcIa_compacted ._7YEcIa_bar{opacity:.28}._7YEcIa_loading{color:var(--dsw-alias-label-tertiary,#c8c8d299);pointer-events:none;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;animation:.14s ease-out _7YEcIa_tip-in;position:absolute}._7YEcIa_bar{transform-origin:100%;will-change:transform;border-radius:1px;flex:none;transition:transform 90ms ease-out,background-color .16s,opacity .16s;display:block}._7YEcIa_tip{border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf0);width:max-content;max-width:280px;box-shadow:var(--dsw-shadow-lv2,0 4px 16px #00000059);pointer-events:auto;color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);border-radius:8px;padding:6px 10px;font-size:12px;line-height:1.45;animation:.14s ease-out _7YEcIa_tip-in;position:absolute;transform:translateY(-50%)}@keyframes _7YEcIa_tip-in{0%{opacity:0;transform:translateY(-50%)translate(5px)}to{opacity:1;transform:translateY(-50%)translate(0)}}._7YEcIa_tipTitle{color:var(--dsw-alias-label-tertiary,#c8c8d299);margin-bottom:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}._7YEcIa_tipText{-webkit-line-clamp:2;word-break:break-word;-webkit-box-orient:vertical;display:-webkit-box;overflow:hidden}@media (width<=767px){._7YEcIa_rail{display:none}}";
+		const css = ".p1xOoW_rail{z-index:45;pointer-events:auto;width:18px;position:absolute;right:6px}.p1xOoW_group{pointer-events:auto;flex-direction:column;align-items:flex-end;padding:0 0 0 14px;display:flex;position:absolute;right:0}.p1xOoW_line{cursor:pointer;background:0 0;border:none;justify-content:flex-end;align-items:center;margin:0;padding:0;transition:transform 90ms ease-out;display:flex}.p1xOoW_compacted{cursor:pointer}.p1xOoW_compacted .p1xOoW_bar{opacity:.28}.p1xOoW_loading{color:var(--dsw-alias-label-tertiary,#c8c8d299);pointer-events:none;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;animation:.14s ease-out p1xOoW_tip-in;position:absolute}.p1xOoW_bar{transform-origin:100%;will-change:transform;border-radius:1px;flex:none;transition:transform 90ms ease-out,background-color .16s,opacity .16s;display:block}.p1xOoW_tip{border:1px solid var(--dsw-alias-border-l2,#8080804d);background:var(--dsw-alias-bg-overlay,#18181cf0);width:max-content;max-width:280px;box-shadow:var(--dsw-shadow-lv2,0 4px 16px #00000059);pointer-events:auto;color:var(--dsw-alias-label-primary,#e8e8ec);font-family:var(--dsw-font-body,system-ui, sans-serif);border-radius:8px;padding:6px 10px;font-size:12px;line-height:1.45;animation:.14s ease-out p1xOoW_tip-in;position:absolute;transform:translateY(-50%)}@keyframes p1xOoW_tip-in{0%{opacity:0;transform:translateY(-50%)translate(5px)}to{opacity:1;transform:translateY(-50%)translate(0)}}.p1xOoW_tipTitle{color:var(--dsw-alias-label-tertiary,#c8c8d299);margin-bottom:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}.p1xOoW_tipText{-webkit-line-clamp:2;word-break:break-word;-webkit-box-orient:vertical;display:-webkit-box;overflow:hidden}@media (width<=767px){.p1xOoW_rail{display:none}}";
 		const tagId = "dsh-turn-scrubber/rail.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -108,16 +108,16 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var rail_module_css_default = {
-			"line": "_7YEcIa_line",
-			"bar": "_7YEcIa_bar",
-			"tip-in": "_7YEcIa_tip-in",
-			"group": "_7YEcIa_group",
-			"compacted": "_7YEcIa_compacted",
-			"tip": "_7YEcIa_tip",
-			"rail": "_7YEcIa_rail",
-			"tipTitle": "_7YEcIa_tipTitle",
-			"loading": "_7YEcIa_loading",
-			"tipText": "_7YEcIa_tipText"
+			"compacted": "p1xOoW_compacted",
+			"line": "p1xOoW_line",
+			"tip": "p1xOoW_tip",
+			"tipTitle": "p1xOoW_tipTitle",
+			"group": "p1xOoW_group",
+			"tipText": "p1xOoW_tipText",
+			"rail": "p1xOoW_rail",
+			"tip-in": "p1xOoW_tip-in",
+			"bar": "p1xOoW_bar",
+			"loading": "p1xOoW_loading"
 		};
 		//#endregion
 		//#region src/client/TurnRail.tsx

@@ -50,5 +50,14 @@
     "@deepseek-ai/cordis": "*",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wsxwj123/dsh-plugins.git",
+    "directory": "packages/dsh-composer-tools"
+  },
+  "homepage": "https://github.com/wsxwj123/dsh-plugins/tree/main/packages/dsh-composer-tools#readme",
+  "bugs": {
+    "url": "https://github.com/wsxwj123/dsh-plugins/issues"
   }
 }

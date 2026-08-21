@@ -45,5 +45,14 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "@deepseek-ai/cordis": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wsxwj123/dsh-plugins.git",
+    "directory": "packages/dsh-turn-scrubber"
+  },
+  "homepage": "https://github.com/wsxwj123/dsh-plugins/tree/main/packages/dsh-turn-scrubber#readme",
+  "bugs": {
+    "url": "https://github.com/wsxwj123/dsh-plugins/issues"
   }
 }

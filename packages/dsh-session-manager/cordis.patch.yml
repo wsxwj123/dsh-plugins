@@ -5,4 +5,4 @@
 # entry = package main `lib/index.js`).
 - insert:
     - id: session-manager
-      name: 'dsh-session-manager'
+      name: '@wsxwj123/dsh-session-manager'
