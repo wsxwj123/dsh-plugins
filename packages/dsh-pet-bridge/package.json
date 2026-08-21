@@ -17,7 +17,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*"
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "license": "MIT",
   "repository": {
