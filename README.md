@@ -8,7 +8,7 @@ English: [README.en.md](README.en.md)
 
 | 插件 | 功能 |
 |---|---|
-| [`dsh-appearance-gallery`](packages/dsh-appearance-gallery) | 外观画廊：15 个主题家族 + 9 个完整 dsh-web-ui 皮肤复刻，合并为单一插件、设置页单一入口，支持自定义主题 JSON 与自定义皮肤包导入。 |
+| [`dsh-appearance-gallery`](packages/dsh-appearance-gallery) | 外观画廊：15 个主题家族 + 9 个 dsh-web-ui 皮肤复刻（复刻程度不一，详见下文），合并为单一插件、设置页单一入口，支持自定义主题 JSON 与自定义皮肤包导入。 |
 | [`dsh-turn-scrubber`](packages/dsh-turn-scrubber) | 在对话右侧显示回合刻度，悬停展开，点击跳转到对应用户回合。 |
 | [`dsh-pet-bridge`](packages/dsh-pet-bridge) | 桌面宠物状态桥：把 dsh 会话状态（思考中 / 读取文件 / 运行命令 / 完成）实时推送到 [cc-pet](https://github.com/wsxwj123/cc-pet) 桌面宠物气泡。 |
 | [`dsh-session-manager`](packages/dsh-session-manager) | 会话删除（5 秒可撤销 + 回收站式硬删）与归档视图（查看/取消归档）。 |
@@ -148,7 +148,15 @@ pnpm check
 
 ### 皮肤
 
-内置 9 款完整 dsh-web-ui 皮肤复刻（QQ2008 怀旧版、Windows XP、Minecraft、初音未来、蓝色幻想、龙的传人、同花顺、交易终端、鲸吟），每款支持试穿与应用。
+内置 9 款 dsh-web-ui 皮肤复刻，每款支持试穿与应用。**各款复刻程度不同**：
+
+| 复刻程度 | 皮肤 |
+|---|---|
+| 完整界面复刻（含控件、标题栏等细节） | 初音未来、同花顺、QQ2008 怀旧版、Windows XP |
+| 较完整 | Minecraft |
+| 以配色为主（界面结构基本保持 DSH 原样） | 交易终端、蓝色幻想、龙的传人、鲸吟 |
+
+复刻程度沿用上游 dsh-web-ui 原包，本插件未做增删。若期待"换个皮肤界面完全变样"，请优先选前四款。
 
 ### 自定义主题（CSS-only JSON 导入）
 

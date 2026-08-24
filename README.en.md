@@ -8,7 +8,7 @@ A plugin collection for [DeepSeek Harness](https://github.com/deepseek-ai/deepse
 
 | Plugin | What it does |
 |---|---|
-| [`dsh-appearance-gallery`](packages/dsh-appearance-gallery) | Appearance gallery: 15 theme families + 9 full dsh-web-ui skin replicas, merged into one plugin with a single settings entry. Supports custom theme JSON and custom skin package import. |
+| [`dsh-appearance-gallery`](packages/dsh-appearance-gallery) | Appearance gallery: 15 theme families + 9 dsh-web-ui skin replicas (fidelity varies, see below), merged into one plugin with a single settings entry. Supports custom theme JSON and custom skin package import. |
 | [`dsh-turn-scrubber`](packages/dsh-turn-scrubber) | A turn cluster pinned to the right edge of the conversation — hover to ripple, click to jump to that user turn. |
 | [`dsh-pet-bridge`](packages/dsh-pet-bridge) | Pushes live dsh session state (thinking / reading files / running commands / done) to the [cc-pet](https://github.com/wsxwj123/cc-pet) desktop pet. |
 | [`dsh-session-manager`](packages/dsh-session-manager) | Session deletion (5s undo + recycle bin) and an archive view (inspect / unarchive). |
@@ -96,7 +96,7 @@ DSH runtime packages are declared as optional peer dependencies so a second copy
 
 ## Appearance gallery
 
-15 theme families; light / dark / follow-system stays under DSH's own appearance setting. 9 built-in skin replicas (QQ2008, Windows XP, Minecraft, Hatsune Miku, Blue Fantasy, Dragon Heir, THS, Trading Terminal, Whale Song), each with try-on and apply.
+15 theme families; light / dark / follow-system stays under DSH's own appearance setting. 9 built-in skin replicas, each with try-on and apply. **Fidelity varies by skin**: Hatsune Miku, THS, QQ2008 and Windows XP are full interface replicas (chrome, title bars, controls); Minecraft is close behind; Trading Terminal, Blue Fantasy, Dragon Heir and Whale Song are mostly palette-level — the interface structure stays close to stock DSH. Fidelity is inherited from the upstream dsh-web-ui packages; this plugin neither adds to nor strips from them. Pick one of the first four if you want the interface to look genuinely different.
 
 Custom themes are **CSS-variable injection only, no JS execution**. Custom skins use a three-file controlled import (`skin.json` / `client.js` / optional `a11y.css`) with a hard rejection list for dangerous capabilities (`eval`, `fetch`, `localStorage`, `document.cookie`, …), a 256KB per-package ceiling, at most 8 custom skins, and `a11y.css` restricted to `data:` and relative `url()`. Themes and skins are softly mutually exclusive through the shared `dsh-appearance-track-v1` key — at most one track drives the appearance at a time.
 
