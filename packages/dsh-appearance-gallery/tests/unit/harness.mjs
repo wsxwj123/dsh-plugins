@@ -10,11 +10,16 @@
  *   - import(spec)：seed → memoized → registered factory(materialize) → 抛错。
  *   - invalidate(id)：删 factory + cache。
  *   - materialize 时把 factory 执行后注入的 <style> 计入 styles 记录。
+ *
+ * 注意：这里的 system 是**直接注入**给 createSkinEngine 的（引擎只认参数，不读全局）。
+ * 真实宿主里同一个实例，新宿主（≥ 0.1.0-rc.8）经 cordis service `ctx.modules` 拿，
+ * 旧宿主经 `window.__DSH_MODULES__` 拿；那一层的取法在 apply 层，由
+ * tests/unit/resolve-modules.test.mjs 单独覆盖，本底座不重复模拟。
  */
 
 import { createRequire } from 'node:module'
 
-// ---- window / __DSH_MODULES__ / __ModuleLoader__ ----
+// ---- fake window + ClientModuleSystem 替身（旧宿主形状：window.__DSH_MODULES__）----
 export function createModules() {
   const seed = new Map()
   const factories = new Map()
@@ -164,7 +169,8 @@ export function makeWindow({ installModules = true } = {}) {
     MutationObserver: class { constructor(cb) { this.cb = cb } observe() {} disconnect() {} takeRecords() { return [] } },
   }
   if (installModules) {
-    // globalThis.__ModuleLoader__ / __DSH_MODULES__ 供 bundle 访问（bundle 走 window.__ModuleLoader__）。
+    // 皮肤 bundle 只消费 window.__ModuleLoader__.load；__DSH_MODULES__ 留在 win 上是为了
+    // 忠实还原旧宿主的 window 形状（新宿主该实例改由 ctx.modules 提供，引擎那层无差别）。
     win.globalThis = win
   }
   return win

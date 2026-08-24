@@ -24,7 +24,7 @@ export const DEFAULT_BUILTIN_SKINS = BUILTIN_SKIN_IDS.map((id, i) => ({
 
 export function createHarness(opts = {}) {
   const storage = opts.storage || createMemoryStorage(opts.seed || {});
-  const hasModules = opts.modules !== false; // false ⇒ 宿主缺 __DSH_MODULES__
+  const hasModules = opts.modules !== false; // false ⇒ 宿主既无 ctx.modules 也无旧 window 全局
   const families = opts.families || DEFAULT_FAMILIES;
   const builtinSkins = opts.builtinSkins || DEFAULT_BUILTIN_SKINS;
   // 内置皮肤内嵌 bundle 文本；测试可以删掉某个 id 来触发 no-embedded-bundle 运行时错误

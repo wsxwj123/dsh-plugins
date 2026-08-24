@@ -1,7 +1,10 @@
 // 被测对象接线点。默认跑真实实现（packages/dsh-appearance-gallery），
 // APPEARANCE_SUBJECT=harness 可切回参考桩对照。断言一行都不用改。
 //
-// 真实实现是浏览器插件：apply 层要 document / storage / __DSH_MODULES__ / React。
+// 真实实现是浏览器插件：apply 层要 document / storage / 宿主模块系统 / React。
+// 模块系统在浏览器里由 apply(ctx) 经 resolveModules(ctx) 取（新宿主 ctx.modules，
+// 旧宿主 window.__DSH_MODULES__）；本文件走 applyWith 的 deps.modules 注入口直接塞替身，
+// opts.modules === false 即模拟「两条都取不到」的降级态。
 // 本文件用 applyWith(ctx, deps) 的注入口把这四样换成 Node 侧替身，于是被测的是
 // **真实的 apply 层逻辑**（启动恢复、串行化闸、试穿撤销、槽位注册、面板懒挂载），
 // 只有「皮肤 bundle 执行后往 DOM 上写什么」这一段由替身模拟——那段在 Node 里没有等价物。

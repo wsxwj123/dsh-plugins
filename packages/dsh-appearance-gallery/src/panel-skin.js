@@ -6,7 +6,9 @@
  * 与 panel-theme.js 同样的边界：只做 UI，引擎实例 / 启动恢复 / 串行化闸 / 试穿撤销全在
  * apply 层（INTERFACE §3.0）；本文件不引用 apply 层的任何模块级标识符。
  *
- * engine 为 null（宿主没给 __DSH_MODULES__）时整段只渲染一行占位文案，S1–S8 全部入口不渲染。
+ * engine 为 null（宿主既没有 cordis service `ctx.modules`，也没有旧宿主的
+ * `window.__DSH_MODULES__` 全局）时整段只渲染一行占位文案，S1–S8 全部入口不渲染。
+ * 占位文案的字面量按 INTERFACE §A5 逐字钉死（验收逐字断言），不随取法变化。
  */
 
 import { MAX_BUNDLE_B64, MAX_A11Y_BYTES, SKIN_ERR } from './custom-skin.js'

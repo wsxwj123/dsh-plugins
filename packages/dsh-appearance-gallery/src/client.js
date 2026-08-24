@@ -123,7 +123,8 @@ export function createAppearanceRuntime(deps) {
   const notify = () => { for (const listener of [...listeners]) listener() }
   const subscribe = (listener) => { listeners.add(listener); return () => listeners.delete(listener) }
 
-  // ---- 皮肤引擎（宿主没给 __DSH_MODULES__ 时为 null，皮肤区只渲染占位）----
+  // ---- 皮肤引擎（宿主既无 ctx.modules service 也无旧 window 全局时为 null，皮肤区只渲染占位）----
+  // 取法见 resolveModules()；这里只认注入进来的 deps.modules，不碰任何全局。
   const engine = deps.modules === undefined || deps.modules === null
     ? null
     : createSkinEngine({

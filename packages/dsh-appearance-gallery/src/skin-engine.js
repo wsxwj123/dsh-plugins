@@ -6,12 +6,14 @@
  * registerCustomBundle 插进内部 manifest/bundles，走与内置皮肤完全相同的 activateSkin 链路。
  * 校验是「契约+黑名单第一道门」，运行时为 Blob-URL 经典脚本 + ctx.effect 可逆 + 引擎兜底
  * 快照，不替代浏览器自身安全边界（见 PLAN §5.2 诚实声明）。
- * 真实契约（对齐官方 dsh-client-modules）：
- *   - `__ModuleLoader__.load({ id, factory })` 只把 factory 注册进模块表；重复注册同一 id
- *     会抛错，所以同一 bundle 重新注册前必须 invalidate 该 id。
- *   - `__DSH_MODULES__.import(id)` 才对已注册 factory 做 materialize——此时才执行 factory 体
+ * 真实契约（对齐官方 dsh-client-modules 的 ClientModuleSystem）。下面的 `modules` 就是本引擎
+ * 的注入参数：新宿主（≥ 0.1.0-rc.8）由 apply 层从 cordis service `ctx.modules` 取，旧宿主从
+ * `window.__DSH_MODULES__` 取——同一个实例、同一组方法，引擎本身不关心它是哪来的。
+ *   - `window.__ModuleLoader__.load({ id, factory })` 只把 factory 注册进模块表；重复注册同一 id
+ *     会抛错，所以同一 bundle 重新注册前必须 invalidate 该 id。（这条一直是 window 全局，未变）
+ *   - `modules.import(id)` 才对已注册 factory 做 materialize——此时才执行 factory 体
  *     （注入皮肤内置 `<style data-plugin>`），返回其 exports（含 `apply`）。
- *   - `__DSH_MODULES__.invalidate(id)` 删除 factory 与缓存，让同一 bundle 可再次注册。
+ *   - `modules.invalidate(id)` 删除 factory 与缓存，让同一 bundle 可再次注册。
  *
  * 本引擎按「构建期嵌入、运行期按需执行」实现：9 款 bundle 文本在 build.mjs 阶段内联进
  * lib/client.js（作为 __SKIN_BUNDLES__ 常量），运行期 activateSkin(id) 才取出目标文本，用
@@ -99,7 +101,7 @@ export function createSkinEngine({
   // 文档对象注入：浏览器给真实 document，Node 侧验收给替身。默认取全局，浏览器侧行为不变。
   doc = typeof document === 'undefined' ? undefined : document,
 }) {
-  if (modules === undefined) throw new Error('[theme-gallery-skin] engine requires window.__DSH_MODULES__')
+  if (modules === undefined) throw new Error('[theme-gallery-skin] engine requires a host module system (ctx.modules)')
   if (!Array.isArray(manifest)) throw new Error('[theme-gallery-skin] engine requires manifest array')
   if (typeof bundles !== 'object' || bundles === null) throw new Error('[theme-gallery-skin] engine requires bundles map')
   const runScript = executeScript ?? ((code) => defaultExecuteScript(code, doc))

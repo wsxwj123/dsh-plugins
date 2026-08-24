@@ -28,6 +28,8 @@ export async function loadSkinWithA11y(id, { includeA11y = true, log = console }
   const bundles = { [id]: await readText(`skins/${id}/client.js`) }
   const a11y = { [id]: includeA11y ? await readText(`skins/${id}/a11y.css`) : '' }
   const engine = createSkinEngine({
+    // 引擎只认注入进来的实例；真实宿主里它来自 ctx.modules（旧宿主来自 window 全局），
+    // 取法差异在 apply 层，见 resolve-modules.test.mjs。
     modules: win.__DSH_MODULES__,
     manifest,
     bundles,
