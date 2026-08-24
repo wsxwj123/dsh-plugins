@@ -1,0 +1,26 @@
+dsh-composer-tools
+Copyright (c) 2026 wsxwj123 and dsh-plugins contributors
+
+This product is licensed under the MIT License (see the LICENSE file at the
+repository root), with the following exception for bundled third-party data.
+
+--------------------------------------------------------------------------
+Bundled third-party material
+--------------------------------------------------------------------------
+
+data/prompt-templates.json
+
+  780 Chinese prompt templates derived from the `agents-zh.json` corpus of
+  Cherry Studio.
+
+  Source:  https://github.com/CherryHQ/cherry-studio
+  License: GNU Affero General Public License v3.0 (AGPL-3.0)
+           https://www.gnu.org/licenses/agpl-3.0.html
+
+  This file is data, not source code, and is redistributed under AGPL-3.0.
+  It is NOT covered by the MIT License that applies to the rest of this
+  package. The plugin surfaces this attribution in its prompt-library panel
+  at runtime and in README.md.
+
+  If you redistribute this package or a derivative of it, the AGPL-3.0 terms
+  continue to apply to this corpus and to any modified version of it.

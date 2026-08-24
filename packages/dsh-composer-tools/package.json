@@ -14,7 +14,8 @@
   "files": [
     "lib",
     "data",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "NOTICE"
   ],
   "dsh": {
     "bundle": {
