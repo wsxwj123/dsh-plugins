@@ -1,6 +1,6 @@
 {
   "name": "dsh-appearance-gallery",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "One DSH appearance plugin: 15 curated theme families + 9 complete skins + controlled custom import, behind a single settings entry.",
   "type": "module",
   "main": "lib/index.js",
