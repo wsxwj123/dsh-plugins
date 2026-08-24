@@ -2148,12 +2148,30 @@ function applyWith(ctx, deps) {
   return { registered: true, dispose: () => runtime.dispose(), runtime }
 }
 
+/**
+ * 解析宿主的客户端模块系统（皮肤轨道的唯一硬依赖）。
+ *
+ * 宿主 0.1.0-rc.8 起把它从 window 全局收进 cordis service：`ctx.reflect.provide('modules', …)`
+ * 里 provide 的就是原来 `window.__DSH_MODULES__` 那个 ClientModuleSystem 实例，
+ * `import` / `invalidate` 的签名与分支逐字未变，所以两条取法拿到的能力完全等价。
+ * 旧宿主（≤ rc.7）只有 window 全局，故保留回落；两者都取不到才返回 null（皮肤区降级占位，
+ * 主题区不受影响）。
+ *
+ * 刻意**不**把 'modules' 写进 exports.inject：inject 未满足会让本 entry 停在 pending，
+ * 宿主的 assertEntriesActive 会让整页 boot 失败——比皮肤区一行降级文案严重得多。
+ * ctx.get() 对未 provide 的服务返回 undefined 且不抛错（cordis ReflectService.get），
+ * 这就是软依赖的正确姿势。
+ */
+function resolveModules(ctx, globals = globalThis) {
+  return ctx.get('modules') ?? globals.__DSH_MODULES__ ?? null
+}
+
 function apply(ctx) {
   return applyWith(ctx, {
     React,
     doc: document,
     storage: browserStorage(),
-    modules: globalThis.__DSH_MODULES__,
+    modules: resolveModules(ctx),
     manifest: __SKIN_MANIFEST__,
     bundles: __SKIN_BUNDLES__,
     a11y: __SKIN_A11Y__,
