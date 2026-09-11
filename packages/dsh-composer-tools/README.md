@@ -39,7 +39,18 @@ DSH web 输入体验增强插件：**方向键输入历史** + **指令查看/�
 
 ## 安装
 
-从全家桶 monorepo 克隆后，**先构建**（lib/ 不入库），再装：
+### 从 dsh-market / GitHub 安装
+
+包内已声明 `prepare` 构建脚本；pnpm 从 Git 安装时会自动执行 `node build.mjs` 生成 `lib/`。pnpm 10+ 默认拦截依赖的构建脚本，按 dsh-market 的提示把 pnpm 打印的 key 加入 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。
+
+```bash
+# dsh-market 目标与此等价：
+dsh plugin --profile web add "github:wsxwj123/dsh-plugins#path:/packages/dsh-composer-tools"
+```
+
+### 从本地源码 link 安装
+
+`lib/` 不入库，本地 `link:` 安装不会触发依赖构建，需要先构建：
 
 ```bash
 # 1. 构建
