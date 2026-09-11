@@ -75,16 +75,23 @@ export interface WorkspacesListFeed {
 /** The client `workspaces` service face. */
 export interface WorkspacesFace {
   list: WorkspacesListFeed
-  /** Re-pull the host workspace list (archive-set fallback when the host
-   *  broadcast is missed) — PLAN §5.1 risk 4 sub-state B. */
-  refresh(): Promise<unknown>
+  /**
+   * DSH >= 0.1.5's client workspaces service exposes no re-pull: its public
+   * surface is create/rename/delete/insertBefore/archiveSession/
+   * insertSessionBefore, and the archive set arrives over the Gateway follow
+   * stream. 0.1.1 had `refresh()`; calling it on 0.1.5 threw
+   * `ctx.workspaces.refresh is not a function`, so the declared face no longer
+   * carries it. A direct archive-set write made by our host half still reaches
+   * clients: the workspace domain emits `domain/changed` and the Gateway
+   * workspace feed republishes `{ type: 'archived', … }` from that payload.
+   */
 }
 
 /**
- * The client `slots` service face (SlotRegistry). Only the register surface is
- * touched; full typing lives in @deepseek-ai/dsh-client-runtime's client
- * augmentation and is intentionally kept structural here to avoid depending on
- * that package's installed types.
+ * The client `slots` service face (SlotRegistry). Only the register/inject
+ * surface is touched; full typing lives in @deepseek-ai/dsh-client-runtime's
+ * client augmentation and is intentionally kept structural here to avoid
+ * depending on that package's installed types.
  */
 export interface SlotsFace {
   register: (
@@ -97,6 +104,15 @@ export interface SlotsFace {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component: (props: any) => unknown,
   ) => () => void
+  /**
+   * Install an effect for each declaration lifetime of a slot. The callback runs
+   * synchronously when the declaration already exists; otherwise it runs inside
+   * the declaring `register()` call after the declaration is committed.
+   *
+   * DSH >= 0.1.5 declares `sidebar`/`sidebar.footer.action` lazily, so an eager
+   * `register` would observe no declaration and fail loud.
+   */
+  inject: (slot: string, callback: () => unknown) => () => void
 }
 
 /** Context augmentation for the services this plugin injects. */

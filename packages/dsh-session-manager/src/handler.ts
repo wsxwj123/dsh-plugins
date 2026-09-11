@@ -319,11 +319,12 @@ export function createSmHandler(deps: SmHandlerDeps): {
     }
 
     // The dir exists — INTERFACE §3.1 step 3 requires a session marker INSIDE
-    // it before anything is moved. Both the compressed (session.jsonl.zstd) and
-    // the plaintext (session.jsonl, `compression:'none'` deployments) names
-    // count (M3). A same-named non-session directory must never be pulled into
-    // the trash (S-3): refuse with a distinct code so the client keeps the row
-    // and nothing is ever bulk-moved by a title/id collision.
+    // it before anything is moved. Compressed (session.jsonl.zstd), plaintext
+    // (session.jsonl, `compression:'none'` deployments) and the format-V3 names
+    // DSH >= 0.1.5 writes (session.v3.jsonl.zstd / session.v3.jsonl) all count —
+    // see SESSION_MARKERS. A same-named non-session directory must never be
+    // pulled into the trash (S-3): refuse with a distinct code so the client
+    // keeps the row and nothing is ever bulk-moved by a title/id collision.
     if (!hasSessionMarker(targetDir)) {
       return fail('not-a-session', `target dir is not a session (no ${SESSION_MARKERS.join(' / ')})`)
     }

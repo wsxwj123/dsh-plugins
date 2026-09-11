@@ -28,12 +28,29 @@ import { assertValidId, isStableSegment } from './paths.js'
 export const SESSION_MARKER = 'session.jsonl.zstd'
 
 /**
- * Every filename that marks a directory as a DSH session directory. A
- * `compression:'none'` deployment writes the PLAINTEXT `session.jsonl` instead
- * of the zstd one, and only accepting the compressed name made every delete on
- * such a deployment fail with `not-a-session` (M3). Order = most common first.
+ * Every filename that marks a directory as a DSH session directory.
+ *
+ * Two independent axes produce the names:
+ *  - compression: zstd writes `session.jsonl.zstd`, `compression:'none'` writes
+ *    the plaintext `session.jsonl`. Only accepting the compressed name made
+ *    every delete on a plaintext deployment fail with `not-a-session` (M3).
+ *  - session format: DSH >= 0.1.5 migrates a session to format V3 and writes
+ *    `session.v3.jsonl.zstd` (or `session.v3.jsonl` plaintext). The V3 name is
+ *    NOT covered by the V2 entries, so before this list carried it every
+ *    migrated session failed the /sm/delete gate with `not-a-session`: its row
+ *    never reached the recycle bin while an un-migrated V2 session in the same
+ *    list deleted normally. That asymmetry is the reported "列表里删的不进回收站"
+ *    bug — a session silently stopped being deletable the moment it was
+ *    resumed under 0.1.5.
+ *
+ * Order = most common first.
  */
-export const SESSION_MARKERS: readonly string[] = [SESSION_MARKER, 'session.jsonl']
+export const SESSION_MARKERS: readonly string[] = [
+  SESSION_MARKER,
+  'session.jsonl',
+  'session.v3.jsonl.zstd',
+  'session.v3.jsonl',
+]
 
 /** True when `dir` carries a session log under any supported marker name. */
 export function hasSessionMarker(dir: string): boolean {

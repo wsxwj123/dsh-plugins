@@ -80,12 +80,23 @@ export function apply(ctx: Context): void {
   // ---- Archive entry in the sidebar footer (slots.register into a list slot). ---
   // The slot renders `{ wide }`; we pass the ctx so ArchiveEntry can toggle the
   // shared archive-open store. React-root mounting for the overlay happens below.
-  const disposeSlot = ctx.slots.register(
-    { name: 'sidebar.footer.action', id: FOOTER_ACTION_ID, order: 1000 },
-    // The registrant component receives owner props `{ wide }`; we ignore wide
-    // here but pass ctx via closure.
-    (props: { wide: boolean }) => createElement(ArchiveEntry, { ctx, wide: props.wide }),
-  )
+  //
+  // The registration goes through `slots.inject`: DSH >= 0.1.5 declares the
+  // sidebar's children table lazily (ui-sidebar registers it inside its own
+  // `slots.inject('sidebar', …)`), so an eager `slots.register` runs before the
+  // declaration exists and fails loud with
+  // 'slot "sidebar.footer.action" is not declared'. `inject` runs the callback
+  // once the declaration is committed — synchronously when it already exists —
+  // so it is the correct form on both 0.1.x lines.
+  let disposeSlot = (): void => {}
+  ctx.slots.inject('sidebar.footer.action', () => {
+    disposeSlot = ctx.slots.register(
+      { name: 'sidebar.footer.action', id: FOOTER_ACTION_ID, order: 1000 },
+      // The registrant component receives owner props `{ wide }`; we ignore wide
+      // here but pass ctx via closure.
+      (props: { wide: boolean }) => createElement(ArchiveEntry, { ctx, wide: props.wide }),
+    )
+  })
 
   // ---- Delete-button injection + row visibility reconciliation. ----
   const controller = createDeleteController(
