@@ -121,11 +121,27 @@
 }
 
 .divider {
-  /* Horizontal divider between stacked rail rows. */
+  /* Horizontal divider between stacked rail rows. Pure separator: no text. */
   height: 1px;
   width: 100%;
   flex: none;
   background: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
+}
+
+.sectionLabel {
+  /* Section heading inside the archive panel (e.g. 「回收站」).
+   *
+   * Deliberately NOT `.divider`: that class is a 1px pure-separator line, so a
+   * heading rendered inside it overflows the 1px box and paints straight over
+   * the next row's title. A heading carries text, so it needs real height, and
+   * the separating line moves to a top border instead. */
+  flex: none;
+  margin-top: 4px;
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));
+  color: var(--dsw-alias-label-tertiary, rgba(200, 200, 210, 0.62));
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Delete button injected into the official session-row `.rowActions` cell. */

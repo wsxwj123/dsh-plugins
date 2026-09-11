@@ -161,8 +161,12 @@ export function ArchiveView({
       setError(null)
       const t = await smTrash()
       if (t.ok) applyTrashRead(t)
-      // 恢复后会话文件已回到原位，但 host 的会话列表要等下一次刷新/重扫才带上它。
-      void ctx.workspaces.refresh()
+      // 恢复后会话文件已回到原位。DSH >= 0.1.5 的 client workspaces 服务没有
+      // refresh()（0.1.1 有）：它的公开面只有 create/rename/delete/insertBefore/
+      // archiveSession/insertSessionBefore，归档集合由 Gateway 的 follow 流推送。
+      // 旧代码这里 `void ctx.workspaces.refresh()` 会抛 TypeError 被下面的 catch
+      // 接住，把一次成功的恢复报成红色「恢复失败：ctx.workspaces.refresh is not a
+      // function」。宿主重扫会话目录后该行会随下一次列表推送回来，这里不再越权去拉。
     } catch (err) {
       setError(`恢复失败：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -177,7 +181,6 @@ export function ArchiveView({
       const res = await smUnarchive(id)
       if (!res.ok) {
         setError(`取消归档失败：${res.code ?? res.message ?? 'unknown'}`)
-        void ctx.workspaces.refresh()
       }
     } catch (err) {
       setError(`取消归档失败：${err instanceof Error ? err.message : String(err)}`)
@@ -251,7 +254,7 @@ export function ArchiveView({
       : createElement(
           'div',
           { className: css.list },
-          createElement('div', { className: css.divider }, '回收站'),
+          createElement('div', { className: css.sectionLabel }, '回收站'),
           trash.map((row) =>
             createElement(
               'div',
