@@ -2127,30 +2127,59 @@ function createAppearanceRuntime(deps) {
 
 /**
  * apply(ctx) 的可注入版本：验收测试直接调它塞替身，浏览器侧由 apply(ctx) 调。
- * 前置服务任一缺失 → 直接 return，不注册槽位、不注入样式、不碰 storage。
+ * `slots` 缺失 → 直接 return（注册入口的前提）。`theme` 是**软依赖且可能迟到**：
+ * DSH >= 0.1.5 的客户端插件挂载顺序不保证 ui-theme 先于本插件，theme 服务在
+ * 我们 apply 时可能尚未 provide。旧实现一次性 `ctx.get('theme')` 取不到就静默
+ * return —— 表现是「通用设置」里的外观入口凭空消失、控制台也没有任何报错（0.1.5
+ * 上实测复现）。现在改为：能立刻拿到就走同步路径（验收测试与旧宿主行为不变），
+ * 拿不到就交给 `ctx.inject(['theme','slots'], …)`，等服务就绪后再启动同一段 boot。
+ * 刻意不把 theme 写进 `exports.inject`：inject 未满足会让本 entry 停在 pending，
+ * 触发宿主 assertEntriesActive 使整页 boot 失败，代价远大于一个入口晚出现几毫秒。
  */
 function applyWith(ctx, deps) {
-  const themeService = ctx.get('theme')
   const slots = ctx.get('slots')
-  if (themeService === undefined || slots === undefined) {
+  if (slots === undefined) {
     return { registered: false, dispose: () => {}, runtime: null }
   }
 
-  const runtime = createAppearanceRuntime(Object.assign({}, deps, { themeService }))
-  runtime.injectStyle()
-  runtime.restoreFromStorage()
+  const boot = (themeService) => {
+    const runtime = createAppearanceRuntime(Object.assign({}, deps, { themeService }))
+    runtime.injectStyle()
+    runtime.restoreFromStorage()
 
-  ctx.effect(() => () => runtime.dispose())
+    ctx.effect(() => () => runtime.dispose())
 
-  slots.inject('settings.general.item', () => slots.register(
-    { name: 'settings.general.item', id: SLOT_ID, order: 11 },
-    runtime.AppearanceEntry,
-  ))
+    slots.inject('settings.general.item', () => slots.register(
+      { name: 'settings.general.item', id: SLOT_ID, order: 11 },
+      runtime.AppearanceEntry,
+    ))
 
-  // 浏览器侧测试钩子：8 个皮肤单测靠它拿到真实运行时（12 个字段，语义与合并前一致）
-  if (typeof globalThis.__TG_SURFACE__ === 'function') globalThis.__TG_SURFACE__(runtime.surface)
+    // 浏览器侧测试钩子：8 个皮肤单测靠它拿到真实运行时（12 个字段，语义与合并前一致）
+    if (typeof globalThis.__TG_SURFACE__ === 'function') globalThis.__TG_SURFACE__(runtime.surface)
 
-  return { registered: true, dispose: () => runtime.dispose(), runtime }
+    return { registered: true, dispose: () => runtime.dispose(), runtime }
+  }
+
+  const themeService = ctx.get('theme')
+  if (themeService !== undefined) return boot(themeService)
+
+  // 旧宿主没有 ctx.inject（cordis 服务等待 API）时维持原语义：拒绝启动胜过报错。
+  if (typeof ctx.inject !== 'function') {
+    return { registered: false, dispose: () => {}, runtime: null }
+  }
+
+  let started = null
+  ctx.inject(['theme', 'slots'], (readyCtx) => {
+    if (started !== null) return
+    const late = readyCtx.get('theme')
+    if (late === undefined) return
+    started = boot(late)
+  })
+  return {
+    registered: false,
+    get runtime() { return started === null ? null : started.runtime },
+    dispose: () => { if (started !== null) started.dispose() },
+  }
 }
 
 /**
