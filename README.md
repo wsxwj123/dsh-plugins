@@ -106,7 +106,7 @@ Windows（PowerShell）下把路径分隔符换成反斜杠：
 dsh plugin --profile web add "link:$PWD\packages\dsh-appearance-gallery"
 ```
 
-`dsh-composer-tools` 从源码安装时需要先在包目录内 `pnpm install && pnpm build`（`lib/` 不入库）；从 npm 安装则无需此步。
+`dsh-composer-tools` 与 `packages/dsh-session-manager` 从源码 `link:` 安装时，需要先在各自包目录内 `pnpm install && pnpm build`（`lib/` 不入库，`link:` 不会触发依赖构建）；从 npm 安装则无需此步。若通过 dsh-market / GitHub 安装，pnpm 会执行包内 `prepare` 自动构建，但 pnpm 10+ 默认拦截依赖构建脚本，需按提示在 profile 的 `pnpm-workspace.yaml` 中允许对应的 `allowBuilds`。
 
 ### 两种方式都适用
 

@@ -1,5 +1,10 @@
 # LEARNINGS — dsh-composer-tools
 
+## 2026-09-11 打包安装：lib/ 不入库必须有 prepare
+- `lib/` 被 `.gitignore` 忽略、仓库不提交构建产物时，`package.json` 必须声明 `"prepare": "node build.mjs"`（与 `build` 一致）。
+- pnpm 安装 Git 依赖只会自动执行 `prepare`；缺失时 pnpm 没有可授权的构建步骤，dsh-market 会报 "nothing installable"（同类问题见 dsh-session-manager issue #3）。
+- 本地 `link:` 安装不会触发依赖构建，仍需先 `pnpm build`。
+
 ## 2026-08-15 开发过程沉淀（项目专属）
 
 ### 1. 子代理"大而全"任务容易空转，拆小批量有效

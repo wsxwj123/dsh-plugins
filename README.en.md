@@ -75,7 +75,7 @@ dsh plugin --profile web add "link:$PWD/packages/<plugin-dir>"
 
 On Windows (PowerShell), use backslashes: `"link:$PWD\packages\<plugin-dir>"`.
 
-`dsh-composer-tools` needs `pnpm install && pnpm build` inside its package directory when installed from source (`lib/` is not committed); the npm package ships prebuilt.
+When installed from source via `link:`, both `dsh-composer-tools` and `packages/dsh-session-manager` need `pnpm install && pnpm build` inside their package directories (`lib/` is not committed and `link:` does not run dependency builds); the npm packages ship prebuilt. For dsh-market / GitHub installs, pnpm runs the package's `prepare` build automatically, but on pnpm 10+ you must authorize the build via the corresponding `allowBuilds` entry in the profile's `pnpm-workspace.yaml` when prompted.
 
 ### Either way
 
