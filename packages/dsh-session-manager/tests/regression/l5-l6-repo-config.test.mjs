@@ -66,3 +66,21 @@ test('L6: LEARNINGS.md 关于 lib/ 的说明必须与 .gitignore 一致', () => 
     'LEARNINGS 写着“lib/ 被 git 跟踪、commit 时必须 git add lib/”，.gitignore 却忽略 lib/——改一处必须同步另一处',
   )
 })
+
+test('P1: lib/ 被 gitignore 时必须有 prepare 构建脚本（dsh-market Git 安装，issue #3）', () => {
+  const ignoreLines = readPkgFile('.gitignore')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('#'))
+  const ignoresLib = ignoreLines.some((l) => ['lib', 'lib/', '/lib', '/lib/'].includes(l))
+  const pkg = JSON.parse(readPkgFile('package.json'))
+
+  if (ignoresLib) {
+    assert.equal(
+      pkg.scripts?.prepare,
+      pkg.scripts?.build,
+      'lib/ 不入库时，Git 依赖安装只会跑 prepare；必须在 scripts.prepare 里生成构建产物',
+    )
+    assert.match(pkg.scripts.prepare, /\bbuild\.mjs\b/, 'prepare 必须调用本包的构建脚本')
+  }
+})

@@ -22,10 +22,22 @@
 
 ## 安装
 
-插件装进 DSH 的 **web profile**（`dsh web` 对应 `web` profile）：
+插件装进 DSH 的 **web profile**（`dsh web` 对应 `web` profile）。
+
+### 从 dsh-market / GitHub 安装
+
+包内已声明 `prepare` 构建脚本；pnpm 从 Git 安装时会自动执行 `node build.mjs` 生成 `lib/`。pnpm 10+ 默认拦截依赖的构建脚本，按 dsh-market 的提示把 pnpm 打印的 key 加入 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。
 
 ```bash
-# 从全家桶 monorepo 克隆后，先构建（lib/ 不入库），再用 link 方式装
+# dsh-market 目标与此等价：
+dsh plugin --profile web add "github:wsxwj123/dsh-plugins#path:/packages/dsh-session-manager"
+```
+
+### 从本地源码 link 安装
+
+`lib/` 不入库，本地源码安装需要先构建：
+
+```bash
 cd dsh-plugins
 pnpm install          # 装依赖
 node build.mjs        # 或 pnpm -r build：生成 packages/dsh-session-manager/lib/

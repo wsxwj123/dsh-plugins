@@ -8,6 +8,7 @@
   `package.json` 的 `pretest:unit` / `pretest:integration` 先跑 `npm run build`，
   所以 `npm run test:unit` / `test:integration` 永远测的是当前源码。
   手工直接 `node --test tests/unit/...` 时要自己先 `npm run build`。
+- 发布 / Git 安装：包必须声明 `"prepare": "node build.mjs"`。pnpm 安装 Git 依赖时只自动跑 `prepare`；缺失时 `lib/` 不会生成，dsh-market 会报 "nothing installable"（issue #3）。改完 `build` 脚本时必须同步检查 `prepare`。
 - 反例（勿回退）：靠"记得 git add lib/"来保证一致性——漏一次就得到假绿。
 - 本仓库 `test:unit` 脚本硬编码文件列表（package.json scripts）：新增单测文件需改
   package.json（红线需用户确认），新断言优先复用现有测试文件，不要为此动 package.json。
