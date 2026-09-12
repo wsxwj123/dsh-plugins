@@ -16,3 +16,17 @@
 ## 单测里 fire stub 的默认行为
 - `tests/unit/pendingDeletes.unit.test.js` 的 `makeDeps()` 默认 `fire` 返回 `{ ok: true }`。
   测 failed/cleanup 状态时若不覆盖 fire，断言会拿到"成功清除"而非预期状态——写新用例前先想清楚 fire 要返回什么。
+
+## 浏览器模块身份 = 包名，PLUGIN_ID 必须从 package.json 派生（2026-09-12）
+- 现象：dsh 0.1.5 web 全页报 `loaded without registering "@wsxwj123/dsh-session-manager"
+  via __ModuleLoader__.load`，仅此一个 scoped 插件失败。
+- 契约：宿主把 Loader 条目解析到包后，用 **manifest 包名** 作为 boot-graph 行 id
+  （`dsh-client-modules/lib/index.js` 的 `graphRow(packageName, ...)`）；
+  浏览器侧 `arrive(row)` 要求 bundle 执行时 `window.__ModuleLoader__.load`
+  注册**完全相同**的 id，缺了即抛上述错误。非 scoped 包名恰与短 id 相同所以从不暴露。
+- 根因：commit 52b518d 把包改名为 `@wsxwj123/…` 时没同步 tsdown.config.mjs 里
+  硬编码的 `PLUGIN_ID = 'dsh-session-manager'`。
+- 现行规则：`PLUGIN_ID = requireFromHere('./package.json').name`——**永远不要硬编码
+  插件 id**，重命名包名时构建产物身份必须自动跟随。`data-plugin`/`data-plugin-css`
+  标签 id 也由它派生，与 genui 的全名约定一致。
+- 完整取证见 `.devflow/DIAGNOSIS-20260912.md`。

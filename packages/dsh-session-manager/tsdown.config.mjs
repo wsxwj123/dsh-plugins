@@ -55,7 +55,14 @@ const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
-const PLUGIN_ID = 'dsh-session-manager'
+// The browser module identity MUST equal the package name. The host resolves each
+// Loader entry to a package manifest and uses that package name as the boot-graph
+// row id; ClientModuleSystem.arrive() then rejects the row unless
+// `window.__ModuleLoader__.load` registered exactly that id ("loaded without
+// registering ... via __ModuleLoader__.load"). Deriving it from package.json keeps
+// the id correct across scope renames — the @wsxwj123/ rename (52b518d) left a
+// hard-coded flat name behind and broke the whole web plugin load.
+const PLUGIN_ID = requireFromHere('./package.json').name
 
 /** The style-injection prologue shared by module css and plain css loads. */
 function injectTag(pluginId, fileId, cssText) {
