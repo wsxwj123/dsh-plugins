@@ -66,7 +66,7 @@
 对照 0.1.5 的初始状态（**有** `current`）：
 
 ```js
-// /Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
+// ~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 3061:  this.list = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({
 3062:    ids: [],
 3063:    byId: {},
@@ -147,7 +147,7 @@
 插件取法（已证实，读自插件源码）：
 
 ```tsx
-// /Users/wsxwj/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-composer-tools/src/client/ComposerEntry.tsx
+// ~/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-composer-tools/src/client/ComposerEntry.tsx
 63:  const snapshot = ctx.sessions.list.getSnapshot()
 64:  const sessionId = snapshot.current
 ...
@@ -237,7 +237,7 @@
 ```
 
 ```js
-// 0.1.5 —— /Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-session/lib/client.js
+// 0.1.5 —— ~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-session/lib/client.js
 64:    props: ["sessionId"],
 ...
 68:      props: { sessionId: binding.sessionId }
@@ -278,7 +278,7 @@
 0.1.5 同槽也是 `scope: "session"`（已证实）：
 
 ```js
-// /Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+// ~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 16728:  "conversation.input.left": {
 16729:    kind: "list",
 16730:    scope: "session"
@@ -288,7 +288,7 @@
 并且插件注册回调里已经 `{...props}` 透传了标准 props（只是没去用 `sessionId`）：
 
 ```tsx
-// /Users/wsxwj/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-composer-tools/src/client/index.tsx
+// ~/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-composer-tools/src/client/index.tsx
 25:  const offSlot = ctx.slots.inject('conversation.input.left', () =>
 26:    ctx.slots.register(
 27:      { name: 'conversation.input.left', id: SLOT_ID, order: 1000 },

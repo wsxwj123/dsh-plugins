@@ -187,7 +187,7 @@ turn-scrubber `src/index.ts:141` 传入的 `{ authority: 'loopback' }` 在 0.1.5
 
 ### 3.1 旧版 `register` 有 `this.webCtx` 回退，调用方**本就不需要**注入 webServer（已证实）
 
-文件：`/Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js`
+文件：`~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js`
 
 ```js
 // line 602-618
@@ -320,8 +320,8 @@ ctx.inject(["webServer"], (webCtx) => {
 | 0.2 | `app.asar/dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js` | 623-626（官方 connection+webServer 注入范例）、642 |
 | 0.2 | `app.asar/dsh/node_modules/@deepseek-ai/dsh-host-frontend-static/lib/index.js` | 21（`inject=["webServer","connection"]`） |
 | 0.2 | `app.asar/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js` | 1209-1212（client 端 rpc.call） |
-| 0.1.5 | `/Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js` | 618（`(this.webCtx ?? owner).webServer`）、758-759（挂 webCtx） |
+| 0.1.5 | `~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js` | 618（`(this.webCtx ?? owner).webServer`）、758-759（挂 webCtx） |
 | 0.1.5 | `…/dsh-host-webserver/lib/index.js` | 157（super ctx "webServer"） |
 | 0.1.5 | `…/cordis/lib/index.js` | 128（同样 createTraceable 覆写） |
-| 插件 | `/Users/wsxwj/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-turn-scrubber/src/index.ts` | 22（inject）、94/103/141（ctx 访问）、55-59（handle 旧签名） |
-| 插件 | `/Users/wsxwj/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-turn-scrubber/src/client/index.tsx` | 28（inject）、66/67/202（ctx 访问） |
+| 插件 | `~/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-turn-scrubber/src/index.ts` | 22（inject）、94/103/141（ctx 访问）、55-59（handle 旧签名） |
+| 插件 | `~/Desktop/app/dsh-plugins-wt-0.2/packages/dsh-turn-scrubber/src/client/index.tsx` | 28（inject）、66/67/202（ctx 访问） |

@@ -8,7 +8,7 @@
 
 ## 0. 版本勘误（必须说明）
 
-- 提示词写「对照旧版 0.1.5-rc.1」，但实际参考目录 `/Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 里读到的 `dsh-client-ui-theme` / `-settings` / `-settings-general` 版本号均为 **`0.1.5-rc.2`**（见各包 `package.json` 的 `"version"` 字段）。本报告按实际读到的 `0.1.5-rc.2` 标注对照侧。
+- 提示词写「对照旧版 0.1.5-rc.1」，但实际参考目录 `~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 里读到的 `dsh-client-ui-theme` / `-settings` / `-settings-general` 版本号均为 **`0.1.5-rc.2`**（见各包 `package.json` 的 `"version"` 字段）。本报告按实际读到的 `0.1.5-rc.2` 标注对照侧。
 - 0.2 侧三个 peer 包版本均为 **`0.2.0-rc.2`**（`dsh-client-ui-theme` / `-slots` / `-settings` 的 `package.json`）。
 - 0.2 源码从 asar 提取到 `/tmp/asar_out/`，文件名中 `/` 变 `__`。下文「0.2 侧」行号均指提取文件，其 asar 内路径为 `dsh/node_modules/@deepseek-ai/<pkg>/lib/<file>`。
 
@@ -48,7 +48,7 @@
 
 已证实。两侧签名都是 `(source, tokens)` 两个参数，语义都是「按 source 叠一层 token override，返回 disposer；同 source 再调即整体替换」：
 
-- 0.1.5 侧：`/Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js:1364`
+- 0.1.5 侧：`~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js:1364`
   ```js
   overrideTokens(source, tokens) {
       const layer = { seq: this.overrideSeq++, tokens: validateOverrides(source, tokens) };
@@ -98,7 +98,7 @@
 
 已证实。该槽**始终由 `dsh-client-ui-settings-general` 声明**（不是 `dsh-client-ui-settings` 基座包）：
 
-- 0.1.5 侧：`/Users/wsxwj/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js:657-660`
+- 0.1.5 侧：`~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js:657-660`
   ```js
   children: { "settings.general.item": {
       kind: "list",

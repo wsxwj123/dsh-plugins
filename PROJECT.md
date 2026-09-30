@@ -67,9 +67,18 @@
 - 任务分级：**标准任务**（多模块 + 发布 + 外部网络）@2026-09-30，主会话判定，用户未反对
 - 接手已有项目扫描 @2026-09-30：继承根 `.devflow/`（PLAN/INTERFACE/TEST-PLAN/LOCK）+ 各包 `.devflow/` + `LEARNINGS.md`；**主 clone = `app/dsh-plugins`**（origin=GitHub，与 origin/main 同步于 aea84ea），另两个副本待 pull 对齐
 - 卡点0 用户拍板 @2026-09-30：① 开 **git worktree** 隔离（不碰主 clone 里 composer-tools 的 3 个已改 .devflow 文件 + 1 个未跟踪文件，属另一条未完的线）② **一个分支一个 PR** ③ 卡点③验收标准 = **真机 UI 实测**（不是只看启动无告警）④ 脱敏 = 排查既有版本
-- 脱敏排查完成 @2026-09-30：305 个 commit 全历史无明文密钥/硬编码凭据；**但个人绝对路径 `/Users/wsxwj` 在 6 个文件里**（最重：`packages/dsh-composer-tools/tests/e2e/composer.e2e.spec.mjs`、`.devflow/RESEARCH-input-injection.md`），提交者邮箱 `842374616@qq.com` 在 295 个 commit 的 author 里。清历史需 filter-repo + 强推（用户红线，未授权）→ 本次只保证新增内容干净 + 顺手清理上述文件的硬编码路径
+- 脱敏排查完成 @2026-09-30：305 个 commit 全历史无明文密钥/硬编码凭据；**但个人家目录绝对路径在 6 个既有文件里**（最重：`packages/dsh-composer-tools/tests/e2e/composer.e2e.spec.mjs`、`.devflow/RESEARCH-input-injection.md`），且提交者身份用的是个人邮箱（见 `git log --format='%ae'`，295 个 commit）——两者都已在公开历史里。清历史需 filter-repo + 强推（用户红线，未授权）→ 本次只保证新增内容干净 + 顺手清理上述文件的硬编码路径
 - 工作区：`git worktree add ~/Desktop/app/dsh-plugins-wt-0.2 -b fix/dsh-0.2-adapt main`（基线 aea84ea）@2026-09-30
 - 02 Step 1 调研派发 @2026-09-30：3 个独立调研代理（`deepseek-v4-pro`，workflow 工具并行，互不知情），产出 `.devflow/RESEARCH-ct-cwd-0.2.md`、`RESEARCH-turn-scrubber-inject-0.2.md`、`RESEARCH-appearance-gallery-0.2.md`
 - 02 Step 2-3 方案 + 盲审 @2026-09-30：方案代理产出 `PLAN-dsh-0.2-adapt.md`(148 行) + `INTERFACE-dsh-0.2-adapt.md`(211 行)；盲审代理（只给 BRIEF+PLAN，白名单禁令）结论 **0 致命 / 4 重要 / 6 建议**
 - 02 Step 4 修订 @2026-09-30：I1（两症状同一根因，证据 `InstructionsTab.tsx:80-84`，已补 BRIEF §6）、I2（INTERFACE 写全错误码表）、I3（新增 A7 运行时断言：非 loopback 调用被拒）、I4（主会话实测 `app-boot:300` 用 `includePrerelease:true` → peer 写双区间 `^0.1.0-rc.6 || ^0.2.0-rc.1`，两版都满足，成功标准#4 不降级）全部处理；S5 用户改判为采纳（加自动脱敏闸门）
 - **卡点1已确认** @2026-09-30：方案定稿；用户补充决策 = ①三包各 bump 一个 patch ②脱敏固化为推送前自动闸门 ③turn-scrubber 死参数按方案删并补 A7
+- 03 测试设计 @2026-09-30：独立代理黑盒产出 `tests/acceptance/dsh-0.2-adapt/`（静态门禁 + 行为级激活审计 + 3 个 playwright spec）+ `TEST-PLAN-dsh-0.2-adapt.md`；守卫检查通过（断言均可追溯 INTERFACE 必验清单，无清单外实现细节）
+- 行为级补测 @2026-09-30（用户要求）：`A3-C2-activation-behavior.test.mjs` —— 造最小临时 profile（base+web-app+三个包 link，无版本豁免）真启动一次，断言输出无 `did not activate`/`without inject`/`skipping profile bundle`；单次约 38 秒，修复前实测红（三条标记全命中）
+- **卡点2已确认** @2026-09-30：清单锁定，`LOCK-dsh-0.2-adapt = 4ca47cd1cb3724b18710ed46b99ef39b2b454e60`（23 个自动用例：修复前 11 红 13 绿）；e2e 实跑放 05
+- 事故与修复 @2026-09-30：用户自行删除了两个冗余 clone（`Desktop/app/dsh-plugins-runtime`、`Desktop/claude/dsh-plugins`），导致 desktop profile 里 `dsh-pet-bridge` 的 link 断链 → 已用 `dsh plugin --profile desktop add dsh-pet-bridge@link:.../app/dsh-plugins/packages/dsh-pet-bridge` 重指并核实目标存在。两个 clone 的未跟踪文件（`RESEARCH-module-api-rc2.md`、session-manager 的 package-lock）随之丢失，已提交内容可从 GitHub 重新 clone
+- 04 开发派发 @2026-09-30：单开发代理（用户选 `deepseek-flash` 高性价比档），一个包一个 commit；不拆并行 worktree（三处改动各 1-3 行，拆并行收益低于合并成本）。任务含三包适配 + 版本 bump + 推送前脱敏闸门（用户卡点1 决策）
+- 04 开发结果 @2026-09-30：6 个 commit。composer-tools ✅（静态断言全绿）、appearance-gallery ✅（行为级审计里 `skipping profile bundle` 消失，免豁免即可加载）、版本 bump ✅、脱敏闸门 ✅（9 条规则自检 + 对分支 diff 实跑通过）。**turn-scrubber ❌：方案 §1.1 的 `inject` 修法在 0.2 真机上不成立**——开发代理按流程停下上报，未自行偏离
+- turn-scrubber 机制调研 @2026-09-30（高推理代理，`RESEARCH-turn-scrubber-0.2-rpc.md`）：根因是**宿主回归缺陷**——0.2 把 `(this.webCtx ?? owner).webServer` 改成 `owner.webServer`，而 `owner` 是 cordis 影子上下文（inject 仅 `credentials`），故必抛；顶层 inject 永远救不了（影子 fiber 重定向）；`rpc.handle` 在 0.2 **官方零调用**，只有第三方插件踩。插件侧有个**已真机验证通过**的绕法（`ctx.webServer.register` 手写同形路由 + `requestRejection` fence，客户端契约不动），代价 ~40 行复刻宿主信封。报告里另含可直接贴的上游 issue 草稿
+- **范围变更** @2026-09-30（用户决定）：turn-scrubber 是「Codex 风格回合刻度簇」（会话右缘细横线，每用户回合一根，含未加载/已压缩回合；悬停鱼眼、点击平滑跳转），用户判定优先级低 → **本次不修**。处置：回退其适配改动（`git revert`，版本退回 0.2.0、CHANGELOG 条目撤下），验收集收窄到 composer-tools + appearance-gallery 并重新锁定。以后要做时直接照上面那份调研改即可
+- 脱敏闸门误报修复 @2026-09-30：闸门扫 diff 时命中已锁定测试 `D1-D2-release-gates.test.mjs` 里的规则字面量（它自身职责就是持有这些模式）。按规则性质分级修：密钥类对全部路径生效，个人路径/邮箱类跳过 `tests/**`（并注明为何不是文件白名单）
