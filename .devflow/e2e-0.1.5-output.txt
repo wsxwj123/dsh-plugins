@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+(node:71874) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/acceptance/dsh-0.2-adapt/e2e/appearance-gallery.spec.mjs:25:1 › C5 0.1.5回归_去豁免后设置页仍出现外观入口且无插件错误 (3.1s)
+  ✓  2 tests/acceptance/dsh-0.2-adapt/e2e/composer-tools.spec.mjs:25:1 › B6 0.1.5回归_面板入口按钮注入且点开无插件错误 (5.6s)
+
+  2 passed (21.0s)

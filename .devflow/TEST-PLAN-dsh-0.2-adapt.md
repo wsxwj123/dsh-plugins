@@ -13,8 +13,9 @@
 #    glob *.test.mjs 已包含 C2 行为级测试（起桌面 0.2 临时 profile，约 40 秒）
 node --test "tests/acceptance/dsh-0.2-adapt/*.test.mjs"
 
-# 2) 0.1.5 dsh web 回归 e2e（自动可跑；先起实例）
-DSH_E2E_BASE_URL=http://127.0.0.1:3099 npx playwright test tests/acceptance/dsh-0.2-adapt/e2e/
+# 2) 0.1.5 dsh web 回归 e2e（自动可跑；夹具自起隔离 0.1.5 实例，无需手动起）
+#    注意：不能用 npx playwright（会命中 pyenv 的 Python 版、无 test 子命令），必须用本地 CLI。
+node packages/dsh-composer-tools/node_modules/@playwright/test/cli.js test tests/acceptance/dsh-0.2-adapt/e2e/ --reporter=list --workers=1
 
 # 3) 两个包既有单测（B7/C6，回归面，自动可跑；composer-tools 需先 build）
 (cd packages/dsh-composer-tools && node --test "tests/unit/*.test.mjs")   # 需先 node build.mjs
@@ -33,13 +34,13 @@ node --test "tests/acceptance/dsh-0.2-adapt/C2-activation-behavior.test.mjs"
 | B3 | 0.2 面板列出并打开 `~/.dsh/AGENTS.md`（global） | 面板点开 global 文件 | 编辑器读到 AGENTS.md 内容 | 人工真机 | 🔴红 |
 | B4 | 0.2 空白新会话 cwd=undefined 不崩 | 桌面 0.2 新建空白会话，打开面板 | 显示空/无目录状态，不抛错不崩溃 | 人工真机 | 🔴红 |
 | B5 | **首验项**：`props.sessionId` 随会话切换变化 | 桌面 0.2 `console.log(props.sessionId)` + 切换会话 | 切会话后值跟着变（不通过即上报，不硬写后续断言） | 人工真机 | 🔴红 |
-| B6 | 0.1.5 回归：面板仍正常 | 跑命令②（B6 用例） | 入口注入、点开正常、无插件错误 | 自动 | 🟢绿 |
+| B6 | 0.1.5 回归：面板仍正常 | 跑命令②（B6 用例；夹具自起隔离 0.1.5 实例，无需手动起） | 入口注入、点开正常、无插件错误 | 自动 | 🟢绿 |
 | B7 | composer-tools 既有单测全绿 | 跑命令③第 1 条（先 build） | 全绿 | 自动 | 🟢绿 |
 | C1 | appearance-gallery 三 ui-* peer 改 `^0.1.0-rc.6 \|\| ^0.2.0-rc.1`，cordis/react/meta 不变 | 跑命令① | 静态断言全绿 | 自动 | 🔴红 |
 | C2 | 0.2 去豁免后能加载、审计无 peer 告警、无 `did not activate` | 跑命令④：临时 profile 不拷 `compatibility.json` 豁免、bundle 用工作区本地 link | 无 `skipping profile bundle`（appearance-gallery）、加载成功、有就绪行 | 自动（行为级） | 🔴红 |
 | C3 | 0.2「打开外观设置」入口出现 | 桌面 0.2 设置→通用 | 出现外观入口（order:11 与原生并列） | 人工真机 | 🔴红 |
 | C4 | 0.2 功能闭环 5 条（切主题/切皮肤/试穿回滚/导入应用/恢复默认） | 桌面 0.2 逐条触发 | 全部生效、无残留 `<style data-plugin>` 与 `data-dsh-*` body 属性 | 人工真机 | 🔴红 |
-| C5 | 0.1.5 去豁免后仍能加载（双区间覆盖 0.1.5-rc.2） | 跑命令②（C5 用例）；pnpm 可能打一条 peer WARN 属预期 | 设置页出现外观入口、无插件错误 | 自动 | 🟢绿 |
+| C5 | 0.1.5 去豁免后仍能加载（双区间覆盖 0.1.5-rc.2） | 跑命令②（C5 用例；夹具自起隔离 0.1.5 实例，无需手动起）；pnpm 可能打一条 peer WARN 属预期 | 设置页出现外观入口、无插件错误 | 自动 | 🟢绿 |
 | C6 | appearance-gallery 既有单测全绿 | 跑命令③第 2 条 | 全绿 | 自动 | 🟢绿 |
 | D1 | `git diff` 脱敏扫描通过 | 跑命令①（D1 用例） | 开发者手写内容无 \/Users\/…、邮箱、sk-/ghp_/私钥 | 自动 | 🟢绿 |
 | D2 | 各包 lib 均已重建、产物与 src 一致 | 跑命令①（D2 用例）+ 改后 `node build.mjs` | 构建入口齐全、已提交产物非空；composer-tools lib 为构建期生成 | 自动＋人工（重建） | 🟢绿 |
@@ -61,5 +62,6 @@ node --test "tests/acceptance/dsh-0.2-adapt/C2-activation-behavior.test.mjs"
 ## 没覆盖 / 需人工（交卡点③）
 
 - 桌面 0.2 全部会话/UI 运行时：B2、B3、B4、B5、C3、C4（上表「人工真机」行）。C2 已由命令④自动覆盖。
-- 0.1.5 `dsh web` 的 e2e（B6/C5）需先手动起实例并 `dsh plugin add` 装入 profile；
-  本机未装 node_modules / playwright，未实跑（测试文件已语法校验通过）。
+- 0.1.5 `dsh web` 的 e2e（B6/C5）已由命令②自动覆盖：夹具自建临时 DSH_HOME + 预置「引导已看过」状态 +
+  一个 workspace，并自起隔离 0.1.5 实例，用完自清理，无需手动起实例、不碰用户全局 `~/.dsh`。
+  实跑输出见 `.devflow/e2e-0.1.5-output.txt`（2 passed）。
