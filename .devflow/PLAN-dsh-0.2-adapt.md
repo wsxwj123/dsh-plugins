@@ -129,7 +129,7 @@
 |---|---|
 | 推 GitHub（远端写） | 只走 SSH 别名远端（`git remote -v` 先核实），推前 `git ls-remote` 核对基线 `aea84ea`；不 `push -f`/`reset --hard`（红线）。本次 diff 仅 3 个源文件 + 1 个 package.json，可一眼审完。 |
 | 本机 profile 安装 | 只用 `dsh plugin --profile desktop add/remove`，不在 profile 目录跑 `pnpm install`；装完 `ls -la` 核对 `@deepseek-ai` 是 symlink 非物理副本，出现真目录就 `mv`（LEARNINGS 红线）。 |
-| 个人路径/邮箱泄漏 | 推前对 `git diff` 跑脱敏扫描（`/Users/<用户名>`、邮箱、`sk-`/`ghp_`/私钥），命中即改。本次改动内容（inject 数组、prop 读取、peer 版本号）本就不含任何个人路径/邮箱字面量。 |
+| 个人路径/邮箱泄漏 | 推前对 `git diff` 跑脱敏扫描（`\/Users\/<用户名>`、邮箱、`sk-`/`ghp_`/私钥），命中即改。本次改动内容（inject 数组、prop 读取、peer 版本号）本就不含任何个人路径/邮箱字面量。 |
 | 用户既有 AGENTS.md | 只读不改。composer-tools 改动只碰「sessionId 从哪来」，不读取、不复制、不落盘 AGENTS.md 内容；测试 fixture 用假路径/假正文，不夹带用户真实 AGENTS.md。 |
 
 ## 6. 审查意见处置（I1-I4 / S1-S6）

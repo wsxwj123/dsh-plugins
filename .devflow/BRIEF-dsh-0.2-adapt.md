@@ -41,7 +41,7 @@
 |---|---|
 | 推 GitHub（远端写操作） | 走 SSH 别名远端；推前 `git ls-remote` 核实基线；不 `push -f`、不 `reset --hard`（红线） |
 | 本机 profile 安装（link 依赖） | 只用 `dsh plugin --profile desktop add/remove`，不在 profile 目录跑 `pnpm install`；装完按仓库 LEARNINGS 检查 `@deepseek-ai` 副本数 |
-| 个人路径/邮箱泄漏 | 推前对 `git diff` 跑脱敏扫描（`/Users/<用户名>`、邮箱、`sk-`/`ghp_`/私钥），命中即改 |
+| 个人路径/邮箱泄漏 | 推前对 `git diff` 跑脱敏扫描（`\/Users\/<用户名>`、邮箱、`sk-`/`ghp_`/私钥），命中即改 |
 | 用户既有 AGENTS.md 内容 | 只读不改；不在任何产物里复制其内容 |
 
 ## 6. 已证实的关键事实（来自三份独立调研，详见 `.devflow/RESEARCH-*-0.2.md`）
@@ -61,5 +61,5 @@
 ## 8. 卡点1 用户补充决策（2026-09-30）
 
 1. **版本号 bump patch**：三个包各 bump 一个 patch（`dsh-turn-scrubber` 0.2.0→0.2.1、`dsh-appearance-gallery` 1.0.1→1.0.2、`dsh-composer-tools` 0.1.0→0.1.1），让"适配 0.2"在版本上可见。
-2. **脱敏固化为自动闸门**：在仓库里加推送前自动扫描（`/Users/<用户名>`、邮箱、`sk-`/`ghp_`/私钥等模式），命中即拦下，不再依赖人工记得。这是用户明确授权的配置改动（超出方案代理默认的"不采纳 S5"）。
+2. **脱敏固化为自动闸门**：在仓库里加推送前自动扫描（`\/Users\/<用户名>`、邮箱、`sk-`/`ghp_`/私钥等模式），命中即拦下，不再依赖人工记得。这是用户明确授权的配置改动（超出方案代理默认的"不采纳 S5"）。
 3. turn-scrubber 死参数 `{authority:'loopback'}`：**采纳方案**，删掉并补 A7 运行时断言。

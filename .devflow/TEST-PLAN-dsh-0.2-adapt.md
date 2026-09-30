@@ -41,7 +41,7 @@ node --test "tests/acceptance/dsh-0.2-adapt/C2-activation-behavior.test.mjs"
 | C4 | 0.2 功能闭环 5 条（切主题/切皮肤/试穿回滚/导入应用/恢复默认） | 桌面 0.2 逐条触发 | 全部生效、无残留 `<style data-plugin>` 与 `data-dsh-*` body 属性 | 人工真机 | 🔴红 |
 | C5 | 0.1.5 去豁免后仍能加载（双区间覆盖 0.1.5-rc.2） | 跑命令②（C5 用例）；pnpm 可能打一条 peer WARN 属预期 | 设置页出现外观入口、无插件错误 | 自动 | 🟢绿 |
 | C6 | appearance-gallery 既有单测全绿 | 跑命令③第 2 条 | 全绿 | 自动 | 🟢绿 |
-| D1 | `git diff` 脱敏扫描通过 | 跑命令①（D1 用例） | 开发者手写内容无 /Users/…、邮箱、sk-/ghp_/私钥 | 自动 | 🟢绿 |
+| D1 | `git diff` 脱敏扫描通过 | 跑命令①（D1 用例） | 开发者手写内容无 \/Users\/…、邮箱、sk-/ghp_/私钥 | 自动 | 🟢绿 |
 | D2 | 各包 lib 均已重建、产物与 src 一致 | 跑命令①（D2 用例）+ 改后 `node build.mjs` | 构建入口齐全、已提交产物非空；composer-tools lib 为构建期生成 | 自动＋人工（重建） | 🟢绿 |
 
 > 🔴 = 修复前预期失败（证明真复现）；🟢 = 修复前已通过（回归/门禁，修后必须仍绿）。
