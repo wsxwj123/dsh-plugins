@@ -1,0 +1,55 @@
+#!/bin/sh
+# pre-push 脱敏闸门 —— 由 git 在 push 前调用。
+#
+# 启用（每台机器/每个 clone 做一次，在仓库根执行）：
+#     git config core.hooksPath .githooks
+# 关闭：
+#     git config --unset core.hooksPath
+# 本次推送临时跳过：
+#     git push --no-verify
+#
+# git 通过 stdin 传来每个 ref 的四元组：
+#     <local ref> <local sha> <remote ref> <remote sha>
+# 远端 sha 全 0 表示新建分支。据此算出本次真正要推的提交范围。
+#
+# D1 排序说明（重要）：验收测试 D1「脱敏门禁」扫的是三个包里的手写源码与顶层
+# 文档，其中包括各包 README.md。**本 hook 及启用说明因此刻意不写进任何包的
+# README/CHANGELOG**，只写在仓库根的 README.md 与 LEARNINGS.md（不在 D1 扫描
+# 范围内）。这样门禁不会因为「文档里讲解密钥长什么样」而自己命中自己。
+set -eu
+
+ZERO=0000000000000000000000000000000000000000
+EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+RANGE=""
+STATUS=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # 只扫分支推送；删分支（local sha 全 0）无需扫内容。
+  [ "$local_sha" = "$ZERO" ] && continue
+  case "$local_ref" in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # 新建远端分支：远端还没有这个分支，扫从仓库起点到 local_sha 的全部提交。
+    # （对全新分支而言「新增内容」就是整条历史，没有更小的可扫范围。）
+    RANGE="${EMPTY_TREE}..${local_sha}"
+  else
+    RANGE="${remote_sha}..${local_sha}"
+  fi
+
+  echo "[pre-push] 脱敏扫描 ${RANGE}"
+  if ! node scripts/scan-sanitize.mjs --range "$RANGE"; then
+    STATUS=1
+  fi
+done
+
+if [ "$STATUS" -ne 0 ]; then
+  echo ""
+  echo "[pre-push] 已拦下推送：上面的内容含个人路径/邮箱/密钥/私钥。" >&2
+  echo "[pre-push] 改完再推；确认误报可加 --no-verify 显式跳过。" >&2
+  exit 1
+fi
+
+exit 0

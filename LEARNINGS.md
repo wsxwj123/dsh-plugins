@@ -54,3 +54,15 @@
 2. **stale-fork guard**：CI 统计 README 条目行 diff，`removed > 2 && removed > added` 即判定 fork 陈旧并失败。一次合并 2 条 + 改名 2 条 = -4/+3 会被拦；**拆成多个 PR**（改名 -2/+2、合并 -2/+1）各自都在阈值内。等量修改（-5/+5）不触发。
 3. **fork 要跟得上**：该仓每天新增几十条，基线落后会 `CONFLICTING`。生成文件冲突不要 rebase 解冲突，直接 `git checkout -B <branch> upstream/main` 重做改动更干净。
 - `data/screenshots.json`：key 必须逐字等于 README 里的条目链接，图片限 GitHub 域名、每条 1-8 张；**追加时不要重排整个文件**（重排会产生 1882 行 diff，违反「只改自己那条」）。
+
+## [LRN-20260930-A] 脱敏闸门：扫描器自身的模式字面量会把门禁弄红
+
+- **背景**：按 BRIEF §8.2 新增推送前脱敏闸门（`scripts/scan-sanitize.mjs` + `.githooks/pre-push`，启用 `git config core.hooksPath .githooks`）。
+- **坑**：这个扫描器天然要写「密钥长什么样」的规则；只要规则以字面量形式出现在文件文本里，任何「扫仓库里有没有这些模式」的门禁都会在扫到扫描器自己时命中。
+- **本仓库的具体边界**：验收测试 D1 只扫 `packages/*/src/**` 与各包顶层文件（package.json、build.mjs、README/CHANGELOG/LICENSE/NOTICE、cordis.patch.yml）。所以
+  1. 闸门放在仓库根（`scripts/`、`.githooks/`），**不放进任何包的 README/CHANGELOG**，启用说明只写根 README 与本文件；写进包 README 会立刻让 D1 变红。
+  2. 所有高危字面量（家目录前缀、密钥前缀、邮箱分隔符、私钥头）一律用 `String.fromCharCode` 拼装，源码里不出现可直接匹配的完整模式——注释和文档字符串也算文件内容，同样不能写。
+- **踩到的次生坑**：
+  - 用字符码拼正则源（`\\/`、`\\\\`）极易多转义一层，结果是**永不命中的静默假绿**。改成「纯子串查找 + 允许字符集计数」，并在启动时跑 `runSelfTest()`：规则漏报/误报就直接报错退出，不静默放行。
+  - 自检样本本身也要用字符码拼，否则样本（如一条 `sk-` 开头的假密钥）又会命中扫描器自己。
+- **验证方式**：`node scripts/scan-sanitize.mjs --self-test`（规则自检）+ 对一个装了假密钥的临时仓库跑 `--range` 应 `exit 1`。
