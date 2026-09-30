@@ -207,5 +207,5 @@ peer 写双区间 `^0.1.0-rc.6 || ^0.2.0-rc.1`。DSH 自己的兼容性判定用
 - [ ] C6 既有单测全绿（`node --test "tests/unit/*.test.mjs"`）。
 
 **D. 跨包（发布面）**
-- [ ] D1 `git diff` 脱敏扫描通过（无 `/Users/wsxwj`、邮箱、`sk-`/`ghp_`/私钥）。
+- [ ] D1 `git diff` 脱敏扫描通过（无 `/Users/<用户名>`、邮箱、`sk-`/`ghp_`/私钥）。
 - [ ] D2 三包 `lib/` 均已重建（源码改动的包），产物与 `src/` 一致。
