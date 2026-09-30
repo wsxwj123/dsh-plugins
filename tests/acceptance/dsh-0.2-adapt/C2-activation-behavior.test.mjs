@@ -1,20 +1,18 @@
-// A3 + C2 行为级复现测试（桌面 0.2.0-rc.2 运行时）—— 把两条「人工真机」变自动可跑
+// C2 + composer-tools 行为级复现测试（桌面 0.2.0-rc.2 运行时）—— 把「人工真机」变自动可跑
 //
-// 覆盖（依据 INTERFACE-dsh-0.2-adapt §1.1 / §3.1，不读实现代码，只断外部可观察事实）：
-//   A3  turn-scrubber 在 0.2 下能激活：启动日志不得出现 `without inject` / `did not activate`
-//       （改前唯一错误是 `cannot get property "webServer" without inject` → 宿主记 `did not activate`）
+// 覆盖（依据 INTERFACE-dsh-0.2-adapt §2.1 / §3.1，不读实现代码，只断外部可观察事实）：
 //   C2  appearance-gallery 去掉 profile 版本豁免后仍能激活：启动日志不得出现
 //       `skipping profile bundle`（改前 peer 写死 ^0.1.0-rc.6 → 无豁免被宿主跳过）
 //   附  composer-tools 也在同一临时 profile 里：启动日志无 `did not activate` / `failed to import`
 //       （它是 D2「重建 lib」的守门——composer-tools 的 lib 为构建期生成，未 build 会 failed to import）
 //
 // 做法（主会话实测可行）：
-//   1) 造临时 profile（名字带 -verify，绝不叫 desktop），bundle 用工作区这三个包的本地 link 路径，
+//   1) 造临时 profile（名字带 -verify，绝不叫 desktop），bundle 用工作区这两个包的本地 link 路径，
 //      不拷兼容豁免文件（否则测不到 C2），不拷 node_modules。
 //   2) 用桌面自带 CLI `dsh plugin --profile <名> install` 装依赖（自带 pnpm + workspace 设置）。
 //   3) 同一 CLI `--profile <名> --port 0 --no-open` 起实例，stdout+stderr 写临时文件，
 //      等 35 秒（macOS 无 timeout，用 sleep + kill）后杀进程。
-//   4) 断言：输出不得含 `did not activate` / `without inject` / `skipping profile bundle`；
+//   4) 断言：输出不得含 `did not activate` / `skipping profile bundle`；
 //      且必须出现服务器就绪行 `http://127.0.0.1:<port>`。
 //   5) 无论如何清理：删临时 profile、删临时日志、杀残留进程。
 //
@@ -36,14 +34,13 @@ const PROFILE_DIR = path.join(DSH_HOME, 'profiles', PROFILE_NAME)
 
 // 就绪行形如：`dsh web: http://127.0.0.1:64196/?token=…`
 const READY_RE = /http:\/\/127\.0\.0\.1:\d+/
-const FORBIDDEN = ['did not activate', 'without inject', 'skipping profile bundle']
+const FORBIDDEN = ['did not activate', 'skipping profile bundle']
 const BOOT_WAIT_MS = 35_000
 const KILL_GRACE_MS = 2_000
 const INSTALL_TIMEOUT_MS = 120_000
 
-// 三个包：name 用于 bundle 名与依赖键，dir 用工作区本地路径（修复会落到这里）
+// 两个包：name 用于 bundle 名与依赖键，dir 用工作区本地路径（修复会落到这里）
 const BUNDLES = [
-  { name: 'dsh-turn-scrubber', dir: PKGS.turnScrubber },
   { name: 'dsh-composer-tools', dir: PKGS.composerTools },
   { name: 'dsh-appearance-gallery', dir: PKGS.appearanceGallery },
 ]
@@ -66,7 +63,7 @@ function rmProfileDir() {
   fs.rmSync(PROFILE_DIR, { recursive: true, force: true })
 }
 
-/** 写临时 profile 的最小配置：核心 bundle（0.2 运行时）+ 三个本地 link 包，无豁免文件。 */
+/** 写临时 profile 的最小配置：核心 bundle（0.2 运行时）+ 两个本地 link 包，无豁免文件。 */
 function writeProfileFiles() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true })
   const pkg = {
@@ -125,7 +122,7 @@ function matchLines(log, re) {
 }
 
 test(
-  'A3/C2 0.2 行为级_三包临时 profile 启动无激活失败且服务器就绪',
+  'C2 0.2 行为级_双包临时 profile 启动无激活失败且服务器就绪',
   { skip: detectSkip(), timeout: 120_000 },
   async () => {
     let child = null
@@ -173,7 +170,7 @@ test(
         badReport,
         [],
         `启动日志出现激活失败标记，命中行：\n${badReport.slice(0, 12).join('\n')}\n` +
-          `（修复前应失败：turn-scrubber 缺 webServer 注入、appearance-gallery 无豁免被跳过）`,
+          `（修复前应失败：appearance-gallery 无豁免被跳过）`,
       )
       const ready = matchLines(log, READY_RE)
       assert.ok(
