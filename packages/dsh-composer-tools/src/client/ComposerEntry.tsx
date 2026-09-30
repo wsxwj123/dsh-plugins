@@ -28,6 +28,12 @@ import './panel.css'
 
 interface EntryProps {
   ctx: Context
+  /**
+   * slot standard prop: the session this composer is scoped to (provided by
+   * dsh-client-ui-session on both 0.1.5 and 0.2). 0.2 dropped `current` from
+   * the sessions.list snapshot, so this is the only source of the current id.
+   */
+  sessionId?: string
   /** slot standard props: conversation session-scope provide channel. */
   useInput: (selector: (s: InputSelection) => unknown) => unknown
   inputActions: InputActions
@@ -61,7 +67,10 @@ export function ComposerEntry(props: EntryProps): ReactNode {
 
   // ---- 会话快照（sessionId + cwd） ----
   const snapshot = ctx.sessions.list.getSnapshot()
-  const sessionId = snapshot.current
+  // 当前会话 id：标准 slot prop 优先；snapshot.current 仅作 0.1.5 兜底。
+  // TODO(0.3): drop snapshot.current fallback — dead on 0.1.5/0.2 since
+  // sessionId prop is always provided.
+  const sessionId = props.sessionId ?? snapshot.current
 
   // ---- useInput selector 采集（draft + phase） ----
   const draft = (props.useInput((s: InputSelection) => s?.draft ?? '') as string) ?? ''

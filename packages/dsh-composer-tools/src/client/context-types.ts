@@ -14,12 +14,15 @@ import type { Context as CordisContext } from 'cordis'
 /** One entry in `sessions.list.byId` — a host session's metadata summary. */
 export interface SessionSummary {
   id: string
+  /**
+   * Working directory label, used to resolve the instruction cwd on the host.
+   * Optional: a blank (New Session) row has no working directory.
+   */
+  cwd?: string
   /** Raw stored title. Prefer `title ?? displayTitle` for the visible label. */
   title?: string
   /** Derived display title, present on every session (title } cwd-derived } id). */
   displayTitle: string
-  /** Working directory label; used to resolve the instruction cwd on the host. */
-  cwd: string
   /** A blank (New Session) row has no underlying session file. */
   blank?: boolean
   /** Whether the host agent for this session is actively running a turn. */
@@ -27,12 +30,23 @@ export interface SessionSummary {
   updatedAt?: number
   completed?: boolean
   origin?: string
+  /**
+   * 0.2-only fork parent (subagent sessions). Type alignment only — this
+   * plugin never reads it.
+   */
+  parentId?: string
+  /**
+   * 0.2-only retention info for subagent sessions kept in the main view.
+   * Type alignment only — this plugin never reads it.
+   */
+  retainedBy?: { mainView?: number }
 }
 
 /** The `sessions.list` SnapshotStore snapshot (the subset this plugin reads). */
 export interface SessionListSnapshot {
   ids: string[]
   byId: Record<string, SessionSummary | undefined>
+  /** 0.1.5-only; 0.2 removed it (see the fallback in ComposerEntry). */
   current?: string
   phase: string
 }
