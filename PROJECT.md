@@ -49,3 +49,27 @@
 - 本机 profile 已按新路径重装（dsh-appearance-gallery link 有效，@deepseek-ai 副本 0）
 - 遗留待办：① awesome-dsh-plugin 需提 PR（旧 theme/skin 两条→dsh-appearance-gallery 一条 + pet-bridge/turn-scrubber 改链接）② 另两个本地副本需 pull 对齐 e770f20 ③ pnpm-lock.yaml importers 仍是旧路径（需授权重生成）④ 截图 PR（可选，4 个包无图）⑤ tests/unit/skin-harness.mjs 的 loadSkinWithA11y 坏但零调用方
 - 并行事项：dsh-session-manager 盲审完成（报告 packages/dsh-session-manager/.devflow/REVIEW-BLIND-20260817.md，在 claude 副本）——3 致命 4 高 5 中 6 低；**用户拍板：18 条全修（3致命+4高+5中+6低）**（dev-flow 修 bug 模式，工作基线=claude 副本 main 对齐 70c230d 后开 fix 分支，与合并任务物理隔离并行）@2026-08-17
+
+---
+
+## 2026-09-30 · 桌面端 DSH 0.2 适配（新任务）
+
+**目标**：三个自研插件适配 DeepSeek Harness 桌面版 0.2.0-rc.2，完成后推 GitHub。
+
+| 插件 | 类型 | 现象 |
+|---|---|---|
+| dsh-turn-scrubber | 修 bug | 启动即挂：`cannot get property "webServer" without inject`（lib/index.js:216 调 `ctx.connection.rpc.handle`，inject 缺 webServer） |
+| dsh-composer-tools | 修 bug | 「指令/提示词」面板显示「无当前会话目录」：`snapshot.byId[sessionId]?.cwd` 在 0.2 取不到（0.1.5 正常） |
+| dsh-appearance-gallery | 适配 | 能加载，但 3 个 `@deepseek-ai/dsh-client-ui-*` peer 写死 `^0.1.0-rc.6`，靠 profile 版本豁免强装；需查清 API 是否真的兼容再改 peer |
+
+### 阶段进度
+
+- 任务分级：**标准任务**（多模块 + 发布 + 外部网络）@2026-09-30，主会话判定，用户未反对
+- 接手已有项目扫描 @2026-09-30：继承根 `.devflow/`（PLAN/INTERFACE/TEST-PLAN/LOCK）+ 各包 `.devflow/` + `LEARNINGS.md`；**主 clone = `app/dsh-plugins`**（origin=GitHub，与 origin/main 同步于 aea84ea），另两个副本待 pull 对齐
+- 卡点0 用户拍板 @2026-09-30：① 开 **git worktree** 隔离（不碰主 clone 里 composer-tools 的 3 个已改 .devflow 文件 + 1 个未跟踪文件，属另一条未完的线）② **一个分支一个 PR** ③ 卡点③验收标准 = **真机 UI 实测**（不是只看启动无告警）④ 脱敏 = 排查既有版本
+- 脱敏排查完成 @2026-09-30：305 个 commit 全历史无明文密钥/硬编码凭据；**但个人绝对路径 `/Users/wsxwj` 在 6 个文件里**（最重：`packages/dsh-composer-tools/tests/e2e/composer.e2e.spec.mjs`、`.devflow/RESEARCH-input-injection.md`），提交者邮箱 `842374616@qq.com` 在 295 个 commit 的 author 里。清历史需 filter-repo + 强推（用户红线，未授权）→ 本次只保证新增内容干净 + 顺手清理上述文件的硬编码路径
+- 工作区：`git worktree add ~/Desktop/app/dsh-plugins-wt-0.2 -b fix/dsh-0.2-adapt main`（基线 aea84ea）@2026-09-30
+- 02 Step 1 调研派发 @2026-09-30：3 个独立调研代理（`deepseek-v4-pro`，workflow 工具并行，互不知情），产出 `.devflow/RESEARCH-ct-cwd-0.2.md`、`RESEARCH-turn-scrubber-inject-0.2.md`、`RESEARCH-appearance-gallery-0.2.md`
+- 02 Step 2-3 方案 + 盲审 @2026-09-30：方案代理产出 `PLAN-dsh-0.2-adapt.md`(148 行) + `INTERFACE-dsh-0.2-adapt.md`(211 行)；盲审代理（只给 BRIEF+PLAN，白名单禁令）结论 **0 致命 / 4 重要 / 6 建议**
+- 02 Step 4 修订 @2026-09-30：I1（两症状同一根因，证据 `InstructionsTab.tsx:80-84`，已补 BRIEF §6）、I2（INTERFACE 写全错误码表）、I3（新增 A7 运行时断言：非 loopback 调用被拒）、I4（主会话实测 `app-boot:300` 用 `includePrerelease:true` → peer 写双区间 `^0.1.0-rc.6 || ^0.2.0-rc.1`，两版都满足，成功标准#4 不降级）全部处理；S5 用户改判为采纳（加自动脱敏闸门）
+- **卡点1已确认** @2026-09-30：方案定稿；用户补充决策 = ①三包各 bump 一个 patch ②脱敏固化为推送前自动闸门 ③turn-scrubber 死参数按方案删并补 A7
