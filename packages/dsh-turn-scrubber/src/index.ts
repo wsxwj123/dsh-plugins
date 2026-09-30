@@ -18,8 +18,15 @@
  */
 import { buildTurnIndex, type TurnIndexBuildResult, type TurnIndexEvent } from './turn-index.ts'
 
-/** Services required on the host before this plugin may apply. */
-export const inject = ['connection', 'sessionPersistence', 'sessions']
+/**
+ * Services required on the host before this plugin may apply.
+ *
+ * `webServer` is not read here, but `connection.rpc.handle` registers the route
+ * on the OWNER context's web server: 0.2 resolves `owner.webServer`
+ * unconditionally while 0.1.5 falls back to its own `webCtx`. Declaring the
+ * service keeps the 0.2 RPC channel registrable (and is harmless on 0.1.5).
+ */
+export const inject = ['connection', 'sessionPersistence', 'sessions', 'webServer']
 
 /** Business error codes this endpoint can return (INTERFACE §1.4). */
 type ErrorCode = 'session-not-found' | 'unavailable' | 'bad-request'
@@ -55,7 +62,6 @@ interface NodeContext {
       handle(
         channel: string,
         handler: (endpoint: string, payload: unknown, signal?: AbortSignal) => unknown,
-        options?: { authority?: 'loopback' | 'trusted' },
       ): unknown
     }
   }
@@ -138,5 +144,8 @@ function turnIndexHandler(ctx: NodeContext) {
 }
 
 export function apply(ctx: NodeContext): void {
-  ctx.connection.rpc.handle('/turn-scrubber', turnIndexHandler(ctx), { authority: 'loopback' })
+  // Two-arg form: `handle` never accepted a third options argument on either
+  // 0.1.5 or 0.2 (it was silently ignored), and loopback-only isolation comes
+  // from the host RPC channel boundary, not from a caller-supplied flag.
+  ctx.connection.rpc.handle('/turn-scrubber', turnIndexHandler(ctx))
 }

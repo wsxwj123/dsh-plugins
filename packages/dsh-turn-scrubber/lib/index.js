@@ -118,11 +118,19 @@ function buildTurnIndex(events) {
 * Response contract (INTERFACE §1.3/§1.4): business errors are ALWAYS HTTP 200
 * with `result.ok === false`; the envelope layer alone decides non-200 codes.
 */
-/** Services required on the host before this plugin may apply. */
+/**
+* Services required on the host before this plugin may apply.
+*
+* `webServer` is not read here, but `connection.rpc.handle` registers the route
+* on the OWNER context's web server: 0.2 resolves `owner.webServer`
+* unconditionally while 0.1.5 falls back to its own `webCtx`. Declaring the
+* service keeps the 0.2 RPC channel registrable (and is harmless on 0.1.5).
+*/
 const inject = [
 	"connection",
 	"sessionPersistence",
-	"sessions"
+	"sessions",
+	"webServer"
 ];
 /** Stable, content-free failure messages (INTERFACE §1.4: message 不含会话内容). */
 const MESSAGE = {
@@ -213,7 +221,7 @@ function turnIndexHandler(ctx) {
 	};
 }
 function apply(ctx) {
-	ctx.connection.rpc.handle("/turn-scrubber", turnIndexHandler(ctx), { authority: "loopback" });
+	ctx.connection.rpc.handle("/turn-scrubber", turnIndexHandler(ctx));
 }
 //#endregion
 export { apply, inject };
