@@ -30,6 +30,7 @@ const LIT = {
   email: t(97, 108, 105, 99, 101, 64, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109), // 示例邮箱
   openai: t(115, 107, 45) + t(97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118), // 够长的假密钥
   pem: t(45, 45, 45, 45, 45, 66, 69, 71, 73, 78, 32, 82, 83, 65, 32, 80, 82, 73, 86, 65, 84, 69, 32, 75, 69, 89, 45, 45, 45, 45, 45), // 私钥头
+  gitIdent: t(116, 64, 101, 120, 97, 109, 112, 108, 101, 46, 105, 110, 118, 97, 108, 105, 100), // 临时仓库的提交身份
 }
 
 const tempDirs = []
@@ -41,10 +42,39 @@ function fixture(lines, name = 'sample.txt') {
   return file
 }
 
+/**
+ * 建一个独立的临时 git 仓库并提交 files（路径 → 全文）。
+ * 「按路径分级」必须看真实仓库里的路径，所以夹具得是真仓库，不能只给 --files 传文件。
+ */
+function tempGitRepo(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-sanitize-repo-'))
+  tempDirs.push(dir)
+  const git = (...args) =>
+    execFileSync('git', args, {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'scan-sanitize-test',
+        GIT_COMMITTER_NAME: 'scan-sanitize-test',
+        GIT_AUTHOR_EMAIL: LIT.gitIdent,
+        GIT_COMMITTER_EMAIL: LIT.gitIdent,
+      },
+    })
+  git('init', '-q')
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
+    fs.writeFileSync(path.join(dir, rel), text)
+  }
+  git('add', '-A')
+  git('commit', '-q', '-m', 'base')
+  return dir
+}
+
 /** 跑扫描器，返回 {status, stdout, stderr}；非零退出不抛。 */
-function runScanner(args) {
+function runScanner(args, cwd = REPO_ROOT) {
   try {
-    const stdout = execFileSync(process.execPath, [SCANNER, ...args], { cwd: REPO_ROOT, encoding: 'utf8' })
+    const stdout = execFileSync(process.execPath, [SCANNER, ...args], { cwd, encoding: 'utf8' })
     return { status: 0, stdout, stderr: '' }
   } catch (error) {
     return { status: error.status, stdout: error.stdout ?? '', stderr: error.stderr ?? '' }
@@ -154,4 +184,48 @@ test('扫描器与 hook 自身_不含可被脱敏门禁命中的模式字面量'
       assert.equal(re.test(text), false, `${path.relative(REPO_ROOT, file)} 自身命中「${name}」`)
     }
   }
+})
+
+// ---------------- 规则分级：个人标识类跳过仓库根 tests/，凭据类全路径生效 ----------------
+//
+// 分级的动机：锁定文件 tests/acceptance/dsh-0.2-adapt/D1-D2-release-gates.test.mjs
+// 的职责就是逐字定义这些检测模式，它必然命中自己，而它不能改。所以放行的是
+// 「个人绝对路径/邮箱」两类规则在仓库根 tests/ 下的命中，不是给某个文件开白名单。
+
+test('规则分级_仓库根 tests/ 下的个人绝对路径与邮箱被跳过', () => {
+  const dir = tempGitRepo({
+    'tests/gate.test.mjs': `const re = /${LIT.userPath}[A-Za-z]+/\nconst contact = "${LIT.email}"\n`,
+  })
+  const { status, stdout } = runScanner([], dir)
+  assert.equal(status, 0, `仓库根 tests/ 下的个人路径/邮箱应放行，实为 ${status}；输出：${stdout}`)
+  assert.match(stdout, /通过/)
+})
+
+test('规则分级_tests/ 之外的同一内容仍被拦下并报出文件', () => {
+  const dir = tempGitRepo({ 'src/app.mjs': `const home = "${LIT.userPath}someone/project"\n` })
+  const { status, stderr } = runScanner([], dir)
+  assert.equal(status, 1, 'src/ 下的个人绝对路径必须仍被拦下')
+  assert.match(stderr, /个人绝对路径/)
+  assert.match(stderr, /src\/app\.mjs:1/, `应报出 文件:行号，实际：${stderr}`)
+})
+
+test('规则分级_只放行仓库根 tests/，packages 内的 tests 目录不豁免', () => {
+  const dir = tempGitRepo({ 'packages/p/tests/e2e.spec.mjs': `const home = "${LIT.userPath}someone"\n` })
+  const { status, stderr } = runScanner([], dir)
+  assert.equal(status, 1, 'packages/<name>/tests/ 不在豁免范围内，必须仍被拦下')
+  assert.match(stderr, /个人绝对路径/)
+})
+
+test('规则分级_仓库根 tests/ 下的密钥仍被拦下（凭据类不看路径）', () => {
+  const dir = tempGitRepo({ 'tests/gate.test.mjs': `const key = "${LIT.openai}"\n` })
+  const { status, stderr } = runScanner([], dir)
+  assert.equal(status, 1, 'tests/ 下的密钥同样是事故，必须拦下')
+  assert.match(stderr, /OpenAI/)
+})
+
+test('规则分级_仓库根 tests/ 下的私钥块仍被拦下（凭据类不看路径）', () => {
+  const dir = tempGitRepo({ 'tests/fixtures/key.pem': `${LIT.pem}\n` })
+  const { status, stderr } = runScanner([], dir)
+  assert.equal(status, 1, 'tests/ 下的私钥块必须拦下')
+  assert.match(stderr, /私钥/)
 })

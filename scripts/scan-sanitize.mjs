@@ -2,7 +2,8 @@
 /**
  * 推送前脱敏闸门 scan-sanitize.mjs
  *
- * 扫「即将推送的内容」，命中个人绝对路径 / 邮箱 / 密钥 / 私钥即拦下（exit 1）。
+ * 扫「即将推送的内容」：密钥/私钥在**任何路径**命中即拦；个人绝对路径/邮箱在
+ * **仓库根 tests/ 之外**命中即拦（exit 1）。为什么这么分级见下面「规则分级」。
  * 只依赖 node 内置模块，不读网络、不改任何文件。
  *
  * 用法（在仓库根跑）：
@@ -29,10 +30,14 @@
  *      源码里不出现任何可直接匹配的完整模式；
  *   2. 判定一律走「纯子串查找 + 允许字符集计数」，不用正则转义（转义写错会
  *      静默变成永不命中，是最危险的失败模式）；
- *   3. **启动先跑 runSelfTest()**：用合成样本验证每条规则真的会命中、真的
- *      不误报。一旦有人将来改坏了规则，闸门会在第一次运行时就大声报错退出，
- *      而不是安静地放行所有内容。
+ *   3. **启动先跑 runSelfTest() + runScopeSelfTest()**：用合成样本验证每条规则
+ *      真的会命中、真的不误报，并验证「哪些规则能在 tests/ 下放行」的分级没被
+ *      悄悄放宽。一旦有人将来改坏了规则或降级了口子，闸门会在第一次运行时就
+ *      大声报错退出，而不是安静地放行所有内容。
  * 改动本文件时请保持这三条约束。
+ *
+ * 规则分级的理由（凭据类对全路径生效、个人路径/邮箱类跳过仓库根的 tests/）
+ * 见下面「规则分级」一节——那是按**规则性质**分的，不是给文件开白名单。
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -155,17 +160,67 @@ function hasPrivateKey(text) {
   return false
 }
 
+/* ── 规则分级：按规则性质决定生效范围，不按文件开白名单 ─────────────────
+ *
+ * 为什么是分级而不是白名单：白名单豁免的是**整个文件**——一旦新增一个测试文件
+ * 就得回来改名单，而且会把密钥规则一起豁免掉；凭据出现在测试里同样是事故。
+ * 分级豁免的是**某类规则在某个路径范围**：放行与否由「漏报的代价」决定，
+ * 与文件放在哪儿无关。
+ *
+ *   1. 凭据类（OpenAI 风格密钥 / GitHub PAT / GitHub 细粒度 PAT / GitHub OAuth /
+ *      AWS access key id / PEM 私钥块）→ 所有路径生效，一处命中就拦。
+ *      私钥与 token 在任何文件里都是真事故，没有「写在测试里属正常」这回事。
+ *   2. 个人标识类（个人绝对路径 / 邮箱）→ 跳过仓库根 tests/ 下的文件。
+ *      这两类在测试里正是**检测模式本身**：验收测试 D1
+ *      （tests/acceptance/dsh-0.2-adapt/D1-D2-release-gates.test.mjs）的职责就是
+ *      逐字定义这些模式，它必然命中自己。该文件已锁定不能改，且它只随仓库走、
+ *      不进 npm 包（D1 自己守的是 packages/<name>/src 与各包顶层文件），
+ *      所以对这两类规则放行，而不是去改测试。其余路径照旧生效。
+ *
+ * 只在**仓库根**的 tests/ 放行：packages/<name>/tests/ 不豁免——那里写死本机
+ * 绝对路径仍是真实的个人信息泄漏，且它不在 D1 的扫描范围内，没有第二道门兜底。
+ * 若将来要改成「任意层级的 tests 目录」，只改 isTestPath() 一处即可。
+ * ------------------------------------------------------------------------ */
+
+/** 规则的生效范围。 */
+const SCOPE = {
+  all: 'all', // 所有路径生效（凭据/私钥类）
+  outsideTests: 'outside-tests', // 跳过仓库根 tests/（个人绝对路径/邮箱类）
+}
+
+/**
+ * 允许跳过 tests/ 的规则清单：只有这里逐条列出的规则才允许被降级，
+ * 其余规则（尤其凭据类）一律全路径生效。runScopeSelfTest() 据此把口子钉死。
+ */
+const PERSONAL_IDENTITY_RULES = ['个人绝对路径（POSIX 家目录）', '个人绝对路径（Windows 用户目录）', '邮箱地址']
+
+/**
+ * 该文件路径是否落在仓库根的 tests/ 下。
+ * 兼容 diff 里去掉 b/ 前缀后的相对路径、`--files` 传来的绝对路径、Windows 反斜杠。
+ */
+function isTestPath(file) {
+  if (typeof file !== 'string' || file === '') return false
+  let p = file.replace(/\\/g, '/')
+  // `--files` 可能传绝对路径：能落到仓库内就先转成仓库相对路径，判定口径才一致。
+  const rel = path.relative(REPO, path.resolve(REPO, p)).replace(/\\/g, '/')
+  if (rel !== '' && !rel.startsWith('../') && !path.isAbsolute(rel)) p = rel
+  p = p.replace(/^\.\//, '')
+  return p === 'tests' || p.startsWith('tests/')
+}
+
 /* ── 规则表 ───────────────────────────────────────────────────────────── */
 const RULES = [
-  { name: '个人绝对路径（POSIX 家目录）', hit: (s) => s.includes(LIT.userPath) || s.includes(LIT.homePath) },
-  { name: '个人绝对路径（Windows 用户目录）', hit: (s) => s.includes(LIT.winUserPath) },
-  { name: '邮箱地址', hit: hasEmail },
-  { name: 'OpenAI 风格密钥', hit: (s) => hasToken(s, LIT.openai, 'alnumDashUnderscore', 20) },
-  { name: 'GitHub PAT', hit: (s) => hasToken(s, LIT.githubPat, 'alnum', 30) },
-  { name: 'GitHub 细粒度 PAT', hit: (s) => hasToken(s, LIT.githubFinePat, 'alnumUnderscore', 20) },
-  { name: 'GitHub OAuth 令牌', hit: (s) => hasToken(s, LIT.githubOauth, 'alnum', 30) },
-  { name: 'AWS access key id', hit: (s) => hasToken(s, LIT.awsKeyId, 'upperAlnum', 16) },
-  { name: 'PEM 私钥块', hit: hasPrivateKey },
+  // 个人标识类：能被 tests/ 豁免（理由见上「规则分级」，改动前先读那段）。
+  { name: '个人绝对路径（POSIX 家目录）', scope: SCOPE.outsideTests, hit: (s) => s.includes(LIT.userPath) || s.includes(LIT.homePath) },
+  { name: '个人绝对路径（Windows 用户目录）', scope: SCOPE.outsideTests, hit: (s) => s.includes(LIT.winUserPath) },
+  { name: '邮箱地址', scope: SCOPE.outsideTests, hit: hasEmail },
+  // 凭据类：任何路径命中即拦，不参与 tests/ 豁免。
+  { name: 'OpenAI 风格密钥', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.openai, 'alnumDashUnderscore', 20) },
+  { name: 'GitHub PAT', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubPat, 'alnum', 30) },
+  { name: 'GitHub 细粒度 PAT', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubFinePat, 'alnumUnderscore', 20) },
+  { name: 'GitHub OAuth 令牌', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubOauth, 'alnum', 30) },
+  { name: 'AWS access key id', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.awsKeyId, 'upperAlnum', 16) },
+  { name: 'PEM 私钥块', scope: SCOPE.all, hit: hasPrivateKey },
 ]
 
 /* ── 规则自检：改坏规则就在第一次运行时大声失败 ───────────────────────── */
@@ -202,6 +257,35 @@ function runSelfTest() {
   const broken = []
   for (const [name, sample] of mustHit) if (!ruleOf(name).hit(sample)) broken.push(`漏报（本应命中）: ${name}`)
   for (const [name, sample] of mustMiss) if (ruleOf(name).hit(sample)) broken.push(`误报（本应放行）: ${name}`)
+  return broken
+}
+
+/**
+ * 分级自检：把「哪些规则能在 tests/ 下放行」钉死。
+ * 关键不变量——只有 PERSONAL_IDENTITY_RULES 里逐条列出的规则允许 outsideTests，
+ * 其余规则（尤其凭据类）一律 all。将来有人往规则表里加一条凭据规则却顺手写成
+ * outsideTests，或者把已有的凭据规则降级，都会在这里直接炸掉，而不是静默漏检。
+ */
+function runScopeSelfTest() {
+  const broken = []
+  const scopes = new Set(Object.values(SCOPE))
+
+  for (const rule of RULES) {
+    if (!scopes.has(rule.scope)) broken.push(`规则未声明合法分级: ${rule.name}`)
+    const allowedToSkipTests = PERSONAL_IDENTITY_RULES.includes(rule.name)
+    if (allowedToSkipTests && rule.scope !== SCOPE.outsideTests) broken.push(`个人标识类规则未按分级放行 tests/: ${rule.name}`)
+    if (!allowedToSkipTests && rule.scope !== SCOPE.all) broken.push(`非个人标识类规则被降级为可跳过 tests/，禁止: ${rule.name}`)
+  }
+  for (const name of PERSONAL_IDENTITY_RULES) {
+    if (!RULES.some((r) => r.name === name)) broken.push(`分级自检引用了不存在的规则：${name}`)
+  }
+
+  // isTestPath 的边界：只放行仓库根的 tests/，不放行任意层级的 tests 目录。
+  const mustBeTest = ['tests/a.mjs', 'tests/acceptance/x/y.test.mjs', './tests/a.mjs']
+  const mustNotBeTest = ['src/a.mjs', 'scripts/scan-sanitize.mjs', 'packages/p/tests/e2e.spec.mjs', 'tests.md', '(unknown)']
+  for (const p of mustBeTest) if (!isTestPath(p)) broken.push(`分级判定漏判（本应视为测试路径）: ${p}`)
+  for (const p of mustNotBeTest) if (isTestPath(p)) broken.push(`分级判定误判（本应照常检查）: ${p}`)
+
   return broken
 }
 
@@ -318,7 +402,7 @@ function collectSources(argv) {
 
 function main() {
   // 规则自检先行：规则被改坏时，宁可这里报错，也不要静默放行一切。
-  const broken = runSelfTest()
+  const broken = [...runSelfTest(), ...runScopeSelfTest()]
   if (broken.length > 0) {
     console.error('[scan-sanitize] 规则自检失败，闸门不可信，已中止：')
     for (const b of broken) console.error(`  ${b}`)
@@ -326,24 +410,34 @@ function main() {
     return 2
   }
   if (process.argv.includes('--self-test')) {
-    console.log(`[scan-sanitize] 规则自检通过（${RULES.length} 条规则）。`)
+    console.log(`[scan-sanitize] 规则自检通过（${RULES.length} 条规则；分级：凭据类全路径 / 个人标识类跳过仓库根 tests/）。`)
     return 0
   }
 
   const { label, lines } = collectSources(process.argv)
   const hits = []
+  let skipped = 0
   for (const { file, line, text } of lines) {
-    for (const { name, hit } of RULES) {
-      if (hit(text)) hits.push({ name, file, line, snippet: text.trim().slice(0, 160) })
+    const testPath = isTestPath(file)
+    for (const rule of RULES) {
+      // 分级：只有个人标识类规则能在仓库根 tests/ 下放行；凭据类不看路径。
+      if (testPath && rule.scope !== SCOPE.all) {
+        skipped += 1
+        continue
+      }
+      if (rule.hit(text)) hits.push({ name: rule.name, file, line, snippet: text.trim().slice(0, 160) })
     }
   }
+  // 跳过多少、为什么跳过要说出来：静默放行会变成最难发现的假绿。
+  const skipNote =
+    skipped > 0 ? `按规则分级跳过 ${skipped} 条检查项（仓库根 tests/ 下的个人绝对路径/邮箱；凭据类不看路径）。` : ''
 
   if (hits.length === 0) {
-    console.log(`[scan-sanitize] 通过：${label}，扫 ${lines.length} 行，无命中。`)
+    console.log(`[scan-sanitize] 通过：${label}，扫 ${lines.length} 行，无命中。${skipNote}`)
     return 0
   }
 
-  console.error(`[scan-sanitize] 拦截：${label}，扫 ${lines.length} 行，命中 ${hits.length} 处。\n`)
+  console.error(`[scan-sanitize] 拦截：${label}，扫 ${lines.length} 行，命中 ${hits.length} 处。${skipNote}\n`)
   // 只回显截断片段，避免把整条密钥打进终端/日志。
   for (const h of hits) {
     console.error(`  ${h.file}:${h.line}  【${h.name}】`)
