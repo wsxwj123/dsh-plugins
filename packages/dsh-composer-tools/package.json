@@ -1,6 +1,6 @@
 {
   "name": "dsh-composer-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH web plugin: arrow-key input history (session-scoped, draft-preserving) + instructions viewer/editor (global & project AGENTS.md/CLAUDE.md) + prompt library (Cherry Studio agents-zh, AGPL-3.0, append-to-input).",
   "license": "MIT",
   "type": "module",

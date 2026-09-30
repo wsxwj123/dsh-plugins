@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1 — 2026-09-30
+
+适配 DSH 0.2 的工作分支版本。**尚未发布**：0.2 运行时仍有一个宿主侧问题待解决，
+详见下条。
+
+- Declared `webServer` in `inject` and dropped the dead third argument to
+  `rpc.handle` (`{authority:'loopback'}`): the options argument was never
+  accepted by 0.1.5 or 0.2 (silently ignored), and loopback-only isolation comes
+  from the host RPC channel boundary rather than a caller-supplied flag.
+- **Known blocker (not fixed here)**: on 0.2.0-rc.2 `connection.rpc.handle`
+  still throws `cannot get property "webServer" without inject` even with
+  `webServer` declared in `inject`, because the host implementation registers the
+  route through a cordis *shadow* context that no longer resolves `webServer`.
+  Declaring the service is necessary but not sufficient. Until that is resolved
+  the plugin does not activate on 0.2; it keeps working on 0.1.5.
+
 ## 0.2.0 — 2026-08-17
 
 - **Full turn index**: the rail now shows ALL turns of a session (loaded,
