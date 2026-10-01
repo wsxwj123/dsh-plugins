@@ -66,3 +66,14 @@
   - 用字符码拼正则源（`\\/`、`\\\\`）极易多转义一层，结果是**永不命中的静默假绿**。改成「纯子串查找 + 允许字符集计数」，并在启动时跑 `runSelfTest()`：规则漏报/误报就直接报错退出，不静默放行。
   - 自检样本本身也要用字符码拼，否则样本（如一条 `sk-` 开头的假密钥）又会命中扫描器自己。
 - **验证方式**：`node scripts/scan-sanitize.mjs --self-test`（规则自检）+ 对一个装了假密钥的临时仓库跑 `--range` 应 `exit 1`。
+
+## [LRN-20261001-A] 0.2 桌面端：这两个包的唯一适配点，改前先看已锁定的验收测试
+`dsh-composer-tools`：0.2 删除了 `sessions.list` 快照的 `current` 字段，会话 id 必须改读 session 作用域标准 prop（`props.sessionId ?? snapshot.current`），否则「指令 / 提示词」面板恒显示「无当前会话目录」（Host 侧发现逻辑本身是好的）。
+`dsh-appearance-gallery`：peer 写双区间 `^0.1.0-rc.6 || ^0.2.0-rc.1` 即可，代码零改动 —— 依据是宿主兼容性检查用 `includePrerelease: true`（`dsh-app-boot/lib/index.js:300`），用 node-semver **默认模式**会误判「双区间不满足 0.1.5」。
+两处都有静态断言守在 `tests/acceptance/dsh-0.2-adapt/`（已锁 LOCK），改前先跑一遍再动代码。
+
+## [LRN-20261001-B] 本仓脱敏闸门的启用方式与三个排查坑
+启用：`git config core.hooksPath .githooks`（每台机器一次）。三个坑：① 扫描器扫的是**已提交**的树，改完不 commit 就复扫会误判「仍命中」；② 新建远端分支时若把范围算成整条历史会误拦（已修为 merge-base，见 `.githooks/pre-push`）；③ 文档里描述模式必须用正则转义写法（`\/Users\/`），否则闸门自己拦自己。
+
+## [LRN-20261001-C] profile 装插件统一用 `link:` 指主 clone，换工作区会断链
+本机 profile 的 `link:` 若指向临时工作区，工作区一删插件即断（pet-bridge 实爆一次：`~/Desktop/claude/dsh-plugins` 被删后 desktop profile 断链、启动跳过该插件）。约定：**本地开发用 `link:` 指主 clone `~/Desktop/app/dsh-plugins/packages/<pkg>`**；换指向后必须重启桌面版；改完核对 `readlink` 目标存在。
