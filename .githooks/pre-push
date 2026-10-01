@@ -1,0 +1,88 @@
+#!/bin/sh
+# pre-push 脱敏闸门 —— 由 git 在 push 前调用。
+#
+# 启用（每台机器/每个 clone 做一次，在仓库根执行）：
+#     git config core.hooksPath .githooks
+# 关闭：
+#     git config --unset core.hooksPath
+# 本次推送临时跳过：
+#     git push --no-verify
+#
+# git 通过 stdin 传来每个 ref 的四元组：
+#     <local ref> <local sha> <remote ref> <remote sha>
+# 远端 sha 全 0 表示新建分支。据此算出本次真正要推的提交范围。
+#
+# D1 排序说明（重要）：验收测试 D1「脱敏门禁」扫的是三个包里的手写源码与顶层
+# 文档，其中包括各包 README.md。**本 hook 及启用说明因此刻意不写进任何包的
+# README/CHANGELOG**，只写在仓库根的 README.md 与 LEARNINGS.md（不在 D1 扫描
+# 范围内）。这样门禁不会因为「文档里讲解密钥长什么样」而自己命中自己。
+set -eu
+
+ZERO=0000000000000000000000000000000000000000
+EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+RANGE=""
+STATUS=0
+
+# 新建远端分支时的扫描基线（为什么这么算见下面 if 分支里的注释）。
+# 从本仓默认分支依次退让：origin/HEAD 是 clone 时记下的默认分支引用，本地起家
+# 或没记下这个引用的仓库退到 origin/main、再退到 origin/master。返回 0 = 拿到
+# 基线并打印基线 sha；返回 1 = 一个都没有（下面据此退回扫整条历史）。
+resolve_base() {
+  for ref in origin/HEAD origin/main origin/master; do
+    # 引用不存在时 merge-base 会非 0 退出并往 stderr 吐错，这里要的是静默退让，
+    # 所以整段在子 shell 里跑并 || true 收尾：拿不到基线就输出空字符串。
+    base=$(git merge-base "$1" "$ref" 2>/dev/null || true)
+    if [ -n "$base" ]; then
+      printf '%s\n' "$base"
+      return 0
+    fi
+  done
+  return 1
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # 只扫分支推送；删分支（local sha 全 0）无需扫内容。
+  [ "$local_sha" = "$ZERO" ] && continue
+  case "$local_ref" in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # 新建远端分支：远端还没有这个分支，本次推送新增的内容 = 本仓默认分支之后
+    # 的提交，所以扫「与默认分支的 merge-base .. local_sha」。
+    #
+    # 为什么不能扫整条历史（EMPTY_TREE..local_sha）：范围一旦是整条历史，早就
+    # 在默认分支上、早就公开出去的旧文档也会被当成这次的新增内容，闸门就会自
+    # 己拦住自己的第一次推送（旧文档里的个人路径命中，与本次推送无关）。
+    # 而 merge-base 之前的提交在默认分支上是同一个对象、同一个 blob，把它们排
+    # 除在外不会漏掉「本次真正新引入的内容」——本次新增的内容只可能出现在这之
+    # 后的提交里。
+    #
+    # 拿不到基线（没有 origin/HEAD、origin/main、origin/master，或它们与本
+    # 地历史无共同祖先）时退回整条历史：这种仓库没法断定哪些提交已经公开，宁可
+    # 多扫不可漏扫——多扫只多花时间，漏扫会真的把个人路径/密钥推出去。
+    if BASE=$(resolve_base "$local_sha"); then
+      RANGE="${BASE}..${local_sha}"
+    else
+      RANGE="${EMPTY_TREE}..${local_sha}"
+    fi
+  else
+    # 已有远端分支：远端 sha 就是基线，不受上面的退让逻辑影响。
+    RANGE="${remote_sha}..${local_sha}"
+  fi
+
+  echo "[pre-push] 脱敏扫描 ${RANGE}"
+  if ! node scripts/scan-sanitize.mjs --range "$RANGE"; then
+    STATUS=1
+  fi
+done
+
+if [ "$STATUS" -ne 0 ]; then
+  echo ""
+  echo "[pre-push] 已拦下推送：上面的内容含个人路径/邮箱/密钥/私钥。" >&2
+  echo "[pre-push] 改完再推；确认误报可加 --no-verify 显式跳过。" >&2
+  exit 1
+fi
+
+exit 0

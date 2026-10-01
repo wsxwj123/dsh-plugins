@@ -49,3 +49,54 @@
 - 本机 profile 已按新路径重装（dsh-appearance-gallery link 有效，@deepseek-ai 副本 0）
 - 遗留待办：① awesome-dsh-plugin 需提 PR（旧 theme/skin 两条→dsh-appearance-gallery 一条 + pet-bridge/turn-scrubber 改链接）② 另两个本地副本需 pull 对齐 e770f20 ③ pnpm-lock.yaml importers 仍是旧路径（需授权重生成）④ 截图 PR（可选，4 个包无图）⑤ tests/unit/skin-harness.mjs 的 loadSkinWithA11y 坏但零调用方
 - 并行事项：dsh-session-manager 盲审完成（报告 packages/dsh-session-manager/.devflow/REVIEW-BLIND-20260817.md，在 claude 副本）——3 致命 4 高 5 中 6 低；**用户拍板：18 条全修（3致命+4高+5中+6低）**（dev-flow 修 bug 模式，工作基线=claude 副本 main 对齐 70c230d 后开 fix 分支，与合并任务物理隔离并行）@2026-08-17
+
+---
+
+## 2026-09-30 · 桌面端 DSH 0.2 适配（新任务）
+
+**目标**：三个自研插件适配 DeepSeek Harness 桌面版 0.2.0-rc.2，完成后推 GitHub。
+
+| 插件 | 类型 | 现象 |
+|---|---|---|
+| dsh-turn-scrubber | 修 bug | 启动即挂：`cannot get property "webServer" without inject`（lib/index.js:216 调 `ctx.connection.rpc.handle`，inject 缺 webServer） |
+| dsh-composer-tools | 修 bug | 「指令/提示词」面板显示「无当前会话目录」：`snapshot.byId[sessionId]?.cwd` 在 0.2 取不到（0.1.5 正常） |
+| dsh-appearance-gallery | 适配 | 能加载，但 3 个 `@deepseek-ai/dsh-client-ui-*` peer 写死 `^0.1.0-rc.6`，靠 profile 版本豁免强装；需查清 API 是否真的兼容再改 peer |
+
+### 阶段进度
+
+- 任务分级：**标准任务**（多模块 + 发布 + 外部网络）@2026-09-30，主会话判定，用户未反对
+- 接手已有项目扫描 @2026-09-30：继承根 `.devflow/`（PLAN/INTERFACE/TEST-PLAN/LOCK）+ 各包 `.devflow/` + `LEARNINGS.md`；**主 clone = `app/dsh-plugins`**（origin=GitHub，与 origin/main 同步于 aea84ea），另两个副本待 pull 对齐
+- 卡点0 用户拍板 @2026-09-30：① 开 **git worktree** 隔离（不碰主 clone 里 composer-tools 的 3 个已改 .devflow 文件 + 1 个未跟踪文件，属另一条未完的线）② **一个分支一个 PR** ③ 卡点③验收标准 = **真机 UI 实测**（不是只看启动无告警）④ 脱敏 = 排查既有版本
+- 脱敏排查完成 @2026-09-30：305 个 commit 全历史无明文密钥/硬编码凭据；**但个人家目录绝对路径在 6 个既有文件里**（最重：`packages/dsh-composer-tools/tests/e2e/composer.e2e.spec.mjs`、`.devflow/RESEARCH-input-injection.md`），且提交者身份用的是个人邮箱（见 `git log --format='%ae'`，295 个 commit）——两者都已在公开历史里。清历史需 filter-repo + 强推（用户红线，未授权）→ 本次只保证新增内容干净 + 顺手清理上述文件的硬编码路径
+- 工作区：`git worktree add ~/Desktop/app/dsh-plugins-wt-0.2 -b fix/dsh-0.2-adapt main`（基线 aea84ea）@2026-09-30
+- 02 Step 1 调研派发 @2026-09-30：3 个独立调研代理（`deepseek-v4-pro`，workflow 工具并行，互不知情），产出 `.devflow/RESEARCH-ct-cwd-0.2.md`、`RESEARCH-turn-scrubber-inject-0.2.md`、`RESEARCH-appearance-gallery-0.2.md`
+- 02 Step 2-3 方案 + 盲审 @2026-09-30：方案代理产出 `PLAN-dsh-0.2-adapt.md`(148 行) + `INTERFACE-dsh-0.2-adapt.md`(211 行)；盲审代理（只给 BRIEF+PLAN，白名单禁令）结论 **0 致命 / 4 重要 / 6 建议**
+- 02 Step 4 修订 @2026-09-30：I1（两症状同一根因，证据 `InstructionsTab.tsx:80-84`，已补 BRIEF §6）、I2（INTERFACE 写全错误码表）、I3（新增 A7 运行时断言：非 loopback 调用被拒）、I4（主会话实测 `app-boot:300` 用 `includePrerelease:true` → peer 写双区间 `^0.1.0-rc.6 || ^0.2.0-rc.1`，两版都满足，成功标准#4 不降级）全部处理；S5 用户改判为采纳（加自动脱敏闸门）
+- **卡点1已确认** @2026-09-30：方案定稿；用户补充决策 = ①三包各 bump 一个 patch ②脱敏固化为推送前自动闸门 ③turn-scrubber 死参数按方案删并补 A7
+- 03 测试设计 @2026-09-30：独立代理黑盒产出 `tests/acceptance/dsh-0.2-adapt/`（静态门禁 + 行为级激活审计 + 3 个 playwright spec）+ `TEST-PLAN-dsh-0.2-adapt.md`；守卫检查通过（断言均可追溯 INTERFACE 必验清单，无清单外实现细节）
+- 行为级补测 @2026-09-30（用户要求）：`A3-C2-activation-behavior.test.mjs` —— 造最小临时 profile（base+web-app+三个包 link，无版本豁免）真启动一次，断言输出无 `did not activate`/`without inject`/`skipping profile bundle`；单次约 38 秒，修复前实测红（三条标记全命中）
+- **卡点2已确认** @2026-09-30：清单锁定，`LOCK-dsh-0.2-adapt = 4ca47cd1cb3724b18710ed46b99ef39b2b454e60`（23 个自动用例：修复前 11 红 13 绿）；e2e 实跑放 05
+- 事故与修复 @2026-09-30：用户自行删除了两个冗余 clone（`Desktop/app/dsh-plugins-runtime`、`Desktop/claude/dsh-plugins`），导致 desktop profile 里 `dsh-pet-bridge` 的 link 断链 → 已用 `dsh plugin --profile desktop add dsh-pet-bridge@link:.../app/dsh-plugins/packages/dsh-pet-bridge` 重指并核实目标存在。两个 clone 的未跟踪文件（`RESEARCH-module-api-rc2.md`、session-manager 的 package-lock）随之丢失，已提交内容可从 GitHub 重新 clone
+- 04 开发派发 @2026-09-30：单开发代理（用户选 `deepseek-flash` 高性价比档），一个包一个 commit；不拆并行 worktree（三处改动各 1-3 行，拆并行收益低于合并成本）。任务含三包适配 + 版本 bump + 推送前脱敏闸门（用户卡点1 决策）
+- 04 开发结果 @2026-09-30：6 个 commit。composer-tools ✅（静态断言全绿）、appearance-gallery ✅（行为级审计里 `skipping profile bundle` 消失，免豁免即可加载）、版本 bump ✅、脱敏闸门 ✅（9 条规则自检 + 对分支 diff 实跑通过）。**turn-scrubber ❌：方案 §1.1 的 `inject` 修法在 0.2 真机上不成立**——开发代理按流程停下上报，未自行偏离
+- turn-scrubber 机制调研 @2026-09-30（高推理代理，`RESEARCH-turn-scrubber-0.2-rpc.md`）：根因是**宿主回归缺陷**——0.2 把 `(this.webCtx ?? owner).webServer` 改成 `owner.webServer`，而 `owner` 是 cordis 影子上下文（inject 仅 `credentials`），故必抛；顶层 inject 永远救不了（影子 fiber 重定向）；`rpc.handle` 在 0.2 **官方零调用**，只有第三方插件踩。插件侧有个**已真机验证通过**的绕法（`ctx.webServer.register` 手写同形路由 + `requestRejection` fence，客户端契约不动），代价 ~40 行复刻宿主信封。报告里另含可直接贴的上游 issue 草稿
+- **范围变更** @2026-09-30（用户决定）：turn-scrubber 是「Codex 风格回合刻度簇」（会话右缘细横线，每用户回合一根，含未加载/已压缩回合；悬停鱼眼、点击平滑跳转），用户判定优先级低 → **本次不修**。处置：回退其适配改动（`git revert`，版本退回 0.2.0、CHANGELOG 条目撤下），验收集收窄到 composer-tools + appearance-gallery 并重新锁定。以后要做时直接照上面那份调研改即可
+- 脱敏闸门误报修复 @2026-09-30：闸门扫 diff 时命中已锁定测试 `D1-D2-release-gates.test.mjs` 里的规则字面量（它自身职责就是持有这些模式）。按规则性质分级修：密钥类对全部路径生效，个人路径/邮箱类跳过 `tests/**`（并注明为何不是文件白名单）
+- 范围变更执行完成 @2026-09-30：`aa301c9` 回退 turn-scrubber（自查 `git diff aea84ea -- packages/dsh-turn-scrubber` 为空）、`15b694f` 闸门规则分级（含 `runScopeSelfTest` 护栏 + 5 条分级单测）、`3254990`+`389ff6c` 验收集收窄并重锁、`f048c5a`/`bb5cae4`/`b499807` 新增文档脱敏（个人路径缩写成 `~`；模式示例改用正则转义写法 `\/Users\/`，因为闸门匹配的是字面子串 `\/Users\/`）。最终 **LOCK = b499807518de5066f76777bfeeb93d25b6bd0cfa**
+- 阶段性验证 @2026-09-30：闸门 `EXIT=0`（扫 3305 行无命中，分级跳过 2274 项）；验收测试 **21/21 绿、0 红、0 skip**；`tests/acceptance/` 相对冻结点 3254990 未被改动（git diff 为空）
+- 遗留（非本次引入）：根 `tests/acceptance` 旧套里 `skin-custom` / `theme-custom` 引用已删除的 `packages/skin-gallery`、`theme-gallery`，import 抛 `ERR_MODULE_NOT_FOUND`（467 绿 / 2 红 / 9 skip）——属上一次重构遗留，未登记在本次范围
+- 环境异常 @2026-09-30：`~/.dsh/AGENTS.md`（用户全局指令）本次会话内**被删除 4 次**，每次由主会话从 `~/.dsh-next/AGENTS.md` 恢复；同时间段还有两个 clone 目录被用户自行删除。用户确认 AGENTS.md **不是自己删的** → 已挂后台取证监控（`/tmp/agentsmd-watch/watch.sh`：消失即记录当时进程与 `~/.dsh` 改动现场，并自动恢复）
+- 05 验收 @2026-09-30：Step 1 冻结核查通过（`tests/acceptance/` 相对 LOCK 零改动、测试配置零改动）；Step 2 实跑：验收 **21/21**、单测 25+147+57 全绿、闸门 EXIT=0，输出落 `.devflow/test-output-dsh-0.2-adapt.txt`
+- 05 裁判盲判 @2026-09-30（`ACCEPT-REPORT-dsh-0.2-adapt.md`）：**不合格**（非测试挂，0 红）——8 项无实跑证据（B2/B3/B4/B5/C3/C4 真机 + B6/C5 的 0.1.5 e2e），另 D2 断言偏弱（"lib 非空"≠"与 src 一致"）、turn-scrubber 范围口径需澄清、缺"修复前红"记录。补齐即复评
+- e2e 首次真跑 @2026-09-30：两条 spec 均因**首次引导遮罩挡点击**超时；但日志反证插件在 0.1.5 下**正常注入**（`title="指令 / 提示词"` 按钮存在于 DOM）。根因：桌面迁移把 `$DSH_HOME/settings.yaml` 改名 `.imported`，0.1.5 读它就当新用户 → 弹引导。已派测试代理把夹具自包含化（自带临时 DSH_HOME + 预置引导已看过状态）并实跑通过 + 重锁
+- **额外回归（非本次引入，待办）**：同上的 `settings.yaml` 改名导致用户 0.1.5 网页版**设置丢失并重新弹引导**。用户选择先不动全局文件（避免覆盖桌面版较新设置），此条登记为待办
+- 真机验收清单已交付 @2026-09-30：`.devflow/MANUAL-CHECK-dsh-0.2-adapt.md`（B5 首验 + B2/B3/B4/C3/C4）；desktop profile 的两个 link 已重指到工作区（`dsh-composer-tools` / `dsh-appearance-gallery` → `app/dsh-plugins-wt-0.2/packages/...`），待用户重开桌面版实测 → 卡点3
+- e2e 夹具修复完成 @2026-09-30（`16423d7`+`8d6e6b7`，LOCK = 16423d77ed97b93e408373a3758832ac8cce9609）：两条 0.1.5 spec **实跑通过（2 passed / 21.0s）**，输出存 `.devflow/e2e-0.1.5-output.txt`；遮罩真身 = 两个首启步骤（`ui-onboarding.welcomeNoticeVersion` + 凭据缺失的 “Add an API key”）+ composer 按钮需先选中 workspace；夹具改为自包含临时 DSH_HOME，**未动用户全局 settings.yaml**；断言零删改
+- D2 补证 @2026-09-30：三包重建后与已提交产物比对——composer-tools / appearance-gallery 逐字节一致；turn-scrubber 仅 `lib/client.js` 的 CSS 哈希为随机噪声（源码未变），已还原不提交
+- **卡点3 用户决定跳过真机** @2026-09-30：B2/B3/B4/B5/C3/C4 六项**未验证**（用户明确决定不跑，直接推进发布）。验收报告与 PR 描述**必须如实标注未验证**，不得写成通过。裁判“不合格”的 4 条待补中：e2e ✅、D2 ✅、范围口径 ✅（写入 PR 描述）、真机 ❌（用户豁免）
+- **新增任务（用户决定）** @2026-09-30：`dsh-appearance-gallery` **删除皮肤（skin）功能、只保留配色（theme）系统**。属独立变更，按“一个分支一个 PR”**另开分支与 PR**，走 dev-flow 轻量档（方案+测试设计各一轮、卡点①②合并、有发布意图需到发布前确认）。影响面预估：皮肤面板工厂、`skins/` 资源、皮肤相关单测与根 `tests/acceptance/appearance-gallery/` 大量用例、README；顺带可清掉两个既有烂用例（引用已删除的 skin-gallery/theme-gallery）
+- 05.5 安全审计 @2026-09-30：`origin/HEAD` 基线已建（aea84ea）；已派独立审计代理盲审（外部攻击面 + 内部数据安全 + 新闸门自身安全性），产出 `.devflow/SECURITY-REPORT-dsh-0.2-adapt.md`
+- 安全审计结论 **可发布**（0 致命 / 0 重要 / 6 建议）；主会话交叉复核（`security-review` 技能本机不存在，改为对 diff 做针对性复核：新增行零出网、无 innerHTML/eval）。按建议 1 派开发代理修掉「闸门命中回显可能打出完整短密钥」（`3da2ca0`，并一并堵住异常栈与绝对路径两个泄漏面）
+- **闸门首次真用即拦下自己的推送** @2026-10-01（这是闸门该干的事）：新建远端分支时它扫 `EMPTY_TREE..HEAD`（整条历史），把**早已在 `main` 上、已公开**的旧文档个人路径算成新增 → 误拦。派开发代理修为「与本仓默认分支的 merge-base 之后」（`86b7748`），无基线时仍退回全扫；验证：本分支 4294 行 0 命中 / 临时仓放假 PAT 仍 EXIT=1 / 单测 18 全绿 / 验收 21/21
+- **卡点4已确认 + 已发布 PR** @2026-10-01：`fix/dsh-0.2-adapt` 已推（远端 sha = 本地 HEAD = 86b7748，`ls-remote` 核实），PR = **https://github.com/wsxwj123/dsh-plugins/pull/11**（含改动、测试、**未验证项如实声明**、安全结论、回滚方式）。本仓无 CI，创建 CI 属配置红线需用户单独授权
+- 待办（本 PR 之外）：① 用户合并 PR → 07 收尾（部署实测 + 终审）② 皮肤删除任务另开分支/PR ③ `~/.dsh/settings.yaml` 改名导致 0.1.5 网页版设置丢失（用户选择暂不处理）④ `~/.dsh/AGENTS.md` 反复消失（已挂常驻监控 `/tmp/agentsmd-watch/daemon.sh`，日志 `/tmp/agentsmd-watch/events.log`；查明前每次消失由主会话恢复）

@@ -1,0 +1,406 @@
+######## 注：日志内模式示例统一写成正则转义形式（\/Users\/），避免闸门自命中；测试实际名称含未转义写法。
+######## Step 1 冻结核查 2026-09-30 18:32:31
+---- git diff LOCK..HEAD -- tests/acceptance/ （必须为空）----
+(以上为空即通过)
+---- 测试环境是否被做手脚（锁定后对测试配置的改动）----
+(空 = 无改动)
+
+######## Step 2 验收测试（单独进程）2026-09-30 18:32:31
+✔ B1 静态_EntryProps 含 sessionId?: string (1.69525ms)
+✔ B1 静态_当前会话 id 取值 = props.sessionId ?? snapshot.current (0.633125ms)
+✔ B1 静态_SessionListSnapshot.current 改为可选 current? (0.502041ms)
+✔ B1 静态_SessionSummary.cwd 为可选 string (0.560292ms)
+✔ C1 静态_peer @deepseek-ai/dsh-client-ui-theme = ^0.1.0-rc.6 || ^0.2.0-rc.1 (0.7405ms)
+✔ C1 静态_peer @deepseek-ai/dsh-client-ui-settings = ^0.1.0-rc.6 || ^0.2.0-rc.1 (0.081125ms)
+✔ C1 静态_peer @deepseek-ai/dsh-client-ui-slots = ^0.1.0-rc.6 || ^0.2.0-rc.1 (0.065292ms)
+✔ C1 静态_cordis peer 保持 ^4.0.1 (0.067292ms)
+✔ C1 静态_react peer 保持 ^18.0.0 || ^19.0.0 (0.066792ms)
+✔ C1 静态_peerDependenciesMeta 五项全部 optional 不变 (0.07025ms)
+✔ C5 静态_双区间同时含 ^0.1.0-rc.6 与 ^0.2.0-rc.1 两条分支 (0.097709ms)
+✔ C2 0.2 行为级_双包临时 profile 启动无激活失败且服务器就绪 (37379.475333ms)
+✔ D1 脱敏_开发者手写内容不含「个人绝对路径 \/Users\/…」 (2.673291ms)
+✔ D1 脱敏_开发者手写内容不含「邮箱地址」 (4.883625ms)
+✔ D1 脱敏_开发者手写内容不含「OpenAI 密钥 sk-…」 (1.368541ms)
+✔ D1 脱敏_开发者手写内容不含「GitHub PAT ghp_…」 (1.1045ms)
+✔ D1 脱敏_开发者手写内容不含「GitHub 细粒度 PAT github_pat_…」 (1.523333ms)
+✔ D1 脱敏_开发者手写内容不含「私钥块 PRIVATE KEY」 (1.094625ms)
+✔ D2 构建完整性_三个包 build.mjs 均存在 (0.183375ms)
+✔ D2 构建完整性_turn-scrubber 与 appearance-gallery 的 lib 产物非空（源码改动后需重建） (0.193459ms)
+✔ D2 构建完整性_composer-tools 的 lib 按约定为构建期生成（.gitignore 含 lib/） (0.172292ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37481.495666
+验收 EXIT=0
+
+######## 单测 2026-09-30 18:33:15
+---- dsh-turn-scrubber tests/unit ----
+✔ already loaded → 已加载 without touching loadOlder (0.696667ms)
+✔ target on second page → 达成, loads exactly the pages until it appears (2.078292ms)
+[dsh-turn-scrubber] unloaded turn not reachable: hasMore=false
+[dsh-turn-scrubber] loadOlder skipped: session not open
+✔ hasMore=false (host) before target appears → 到最老, stops cleanly (3.075875ms)
+✔ openState !== open → 到最老 without any loadOlder call (0.169875ms)
+[dsh-turn-scrubber] load loop stopped after 40 pages
+✔ page cap → 超限 after exactly MAX_LOAD_PAGES calls (no infinite loop) (45.169833ms)
+✔ single-flight: same request joins the running loop (no double loading) (0.416375ms)
+✔ different target while a loop runs → old loop cancelled (会话切换), new target served (2.619125ms)
+✔ cancelTurnLoads(session) stops the loop with 会话切换 (0.129166ms)
+✔ after cancel, isTurnLoadActive is false and a new request works (1.498083ms)
+✔ session switch: new token starts a fresh loop, old responses discarded (1.581167ms)
+✔ empty feed → total 0, turns [], asOfSeq -1 (0.735625ms)
+✔ single turn with one user message (0.629ms)
+✔ preview truncates to PREVIEW_LEN (120) (0.059542ms)
+✔ preview uses LAST user/message of the turn (first ones are injections) (0.047334ms)
+✔ content blocks are concatenated; empty when no text block (0.079167ms)
+✔ multiple turns: segmentation by turn/start, preview per turn, 1-based preserved (0.092792ms)
+✔ compaction/summary shadows turn whose FIRST user seq is in shadowedSeqs (0.075209ms)
+✔ compaction/prune shadowedSeqs also marks the turn compacted (merged, harmless) (0.06425ms)
+✔ unshadowed turn stays compacted=false even after compaction events (0.057375ms)
+✔ matching compaction selects the LAST summary shadowing the turn (later dominates) (0.080625ms)
+✔ compaction summary preview is truncated to PREVIEW_LEN (0.051916ms)
+✔ summary may be a plain string (defensive) rather than content blocks (0.038375ms)
+✔ turn/start without user/message → empty preview, not compacted (0.046958ms)
+✔ events without seq do not break asOfSeq (last numeric seq wins) (0.031791ms)
+✔ asOfSeq is the last event seq in append order (0.026166ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 197.515167
+  dsh-turn-scrubber unit EXIT=0
+---- dsh-composer-tools tests/unit ----
+▶ append.unit
+  ✔ 空输入直接放 prompt（即使 prompt 为空串） (0.88475ms)
+  ✔ current 以 \n\n 结尾：不重复补，直接追加（含多空行） (0.082125ms)
+  ✔ current 恰好就是 \n\n → 直接追加（命中规则 2） (0.052375ms)
+  ✔ current 以单个 \n 结尾：补一个 \n (0.046125ms)
+  ✔ current 恰好就是单个 \n → 补一个 \n 成空行 (0.222333ms)
+  ✔ 不以 \n 结尾：补空行 \n\n 再追加 (0.155ms)
+  ✔ prompt 本身含 \n 与尾随换行都原样保留 (0.08075ms)
+  ✔ prompt 为空串：各分支下只产生连接符 (0.046916ms)
+  ✔ 永不覆盖强断言：原 draft 必须在结果最前且原样保留 (0.100375ms)
+✔ append.unit (2.607875ms)
+▶ gate.unit
+  ▶ 空/单行文本
+    ✔ 空文本：↑ → older（空文本也算单行） (0.492959ms)
+    ✔ 空文本：↓ → newer (0.056917ms)
+    ✔ 单行文本按 ↑ 无论光标列 → older (0.05075ms)
+  ✔ 空/单行文本 (0.929291ms)
+  ▶ 多行：首行/中间/末行边界
+    ✔ 首行行首（cursor=0）↑ → older (0.0925ms)
+    ✔ 首行末尾（光标在第一个 \n 前）↑ → older (0.042917ms)
+    ✔ 中间行任意位置 ↑/↓ → null (0.052917ms)
+    ✔ 末行行首（光标恰在倒数第二个 \n 之后）/行中/末尾 ↑ → null (0.053625ms)
+    ✔ 末行行中/末尾 ↓ → newer (0.05825ms)
+    ✔ 光标恰在末行末尾（=text.length）按 ↓ → newer (0.055792ms)
+  ✔ 多行：首行/中间/末行边界 (0.493791ms)
+  ▶ 光标落点恰在 \n
+    ✔ cursor 恰在首行结尾的 \n 位置（index 1）→ 属第一行，↑ → older (0.101375ms)
+    ✔ cursor 恰在第二行行首（index 2，紧跟 \n）→ 属第二行，↑ → null (0.042ms)
+    ✔ cursor 恰在第二行行首按 ↓ → newer (0.035708ms)
+  ✔ 光标落点恰在 \n (0.234292ms)
+  ▶ 纯空白文本（多字符但无换行 → 仍单行）
+    ✔ 空白文本 ↑ → older（无 \n → 单行判定） (0.046041ms)
+  ✔ 纯空白文本（多字符但无换行 → 仍单行） (0.072375ms)
+  ▶ menuOpen + 单行组合
+    ✔ menuOpen=true 时即使单行也放行 null（方向键归菜单） (0.046375ms)
+    ✔ menuOpen 优先级高于多行末行判定 (0.038792ms)
+  ✔ menuOpen + 单行组合 (0.117083ms)
+✔ gate.unit (2.279333ms)
+▶ handler.unit
+  ▶ readRequestBody（白盒 mock 流）
+    ✔ 合法 body：多 Buffer chunk 拼接为 utf8 (2.5615ms)
+    ✔ 合法 body：string chunk 也被接受并转 Buffer (0.375ms)
+    ✔ 空 body（无 chunk）→ ok:true 空串 (0.452167ms)
+    ✔ content-length 预声明超限 → too-large，不读流 (0.155208ms)
+    ✔ 流累计字节超 limit（content-length 未预声明）→ too-large (0.375917ms)
+    ✔ 累计恰好到 limit 不超 → ok (0.413291ms)
+    ✔ 多字节 utf8 按原始字节累计：一个 3 字节字符越过 limit → too-large (0.202209ms)
+    ✔ mid-stream 抛错 → read-failed（不 propagate） (0.184791ms)
+    ✔ 默认 limit 即 MAX_BODY_BYTES=2097152 (0.237917ms)
+  ✔ readRequestBody（白盒 mock 流） (5.821125ms)
+  ▶ createCtHandler 内部判定分支（真实 HTTP）
+    ✔ URL 含 query/hash 仍命中方法名（/ct/instructions.list?x=1） (12.553042ms)
+    ✔ doList：relative cwd 内部判定 400 invalid-cwd（不经 HTTP 契约层也一致） (3.086875ms)
+    ✔ doRead 判定顺序：cwd 非法先于 path 非法（白盒分支序） (1.356875ms)
+    ✔ doSave 判定顺序：content 非法先于 expectedMtimeMs 非法 (0.888417ms)
+    ✔ doRead：文件读成功后 mtimeMs 取自 lstat 原值、truncated=false、内容原样 (4.584667ms)
+    ✔ doRead 截断：>1MB 文件 longestValidUtf8Prefix 不劈多字节字符（白盒边界） (14.162667ms)
+    ✔ 外部写入后 content 是空串、expectedMtime 匹配 → 落盘为空串仍 ok:true (3.723708ms)
+    ✔ createCtHandler 异常路径不 reject：非法 URL 段在 trust+POST+read+parse 后未命中 endpoints → 404 {error} (0.724667ms)
+    ✔ 上下文无独立 dshHome 时 opts.dshHome 为空 → 发现用默认 env 解析（white-box：不崩） (0.81725ms)
+  ✔ createCtHandler 内部判定分支（真实 HTTP） (42.163167ms)
+✔ handler.unit (48.387667ms)
+▶ history-core.unit
+  ▶ createHistory
+    ✔ 缺省 entries 为 []，cursor=-1 stash=null pending=null (1.039041ms)
+    ✔ 传入数组被浅拷贝：改入参数组不影响返回 state.entries (0.060875ms)
+    ✔ createHistory 返回独立对象（字段不被共享引用） (0.058625ms)
+  ✔ createHistory (1.480875ms)
+  ▶ capturePending
+    ✔ trim 后非空 → pending=trim 后原文，entries 不动 (0.077041ms)
+    ✔ trim 后为空（含 
+	 混合）→ 原样返回同一引用 (0.044375ms)
+  ✔ capturePending (0.178666ms)
+  ▶ commitPending
+    ✔ 去重时保留既有同值条目的最靠前位置（保持剩余相对顺序） (0.093083ms)
+    ✔ pending 已存在于 entries 时置顶且不产生重复 (0.05725ms)
+    ✔ 裁剪 100 条：保留最新侧，丢最旧 (0.11275ms)
+    ✔ commitPending 不改 cursor/stash (0.064708ms)
+  ✔ commitPending (0.425416ms)
+  ▶ dropPending
+    ✔ pending 置 null，entries/stash/cursor 不动 (0.098667ms)
+    ✔ stash 不被 dropPending 清掉 (0.046791ms)
+  ✔ dropPending (0.193292ms)
+  ▶ recallOlder 边界
+    ✔ 1 元素历史首次 ↑：stash=draft，cursor=0，返回 entry (0.051333ms)
+    ✔ 1 元素历史已到最旧再 ↑：仍返回最旧，cursor 不变，stash 保持 (0.052375ms)
+    ✔ cursor 已非 -1 时再次 ↑，currentDraft 被忽略（不覆写 stash） (0.053625ms)
+    ✔ recallOlder 不修改 pending (0.037625ms)
+  ✔ recallOlder 边界 (0.256583ms)
+  ▶ recallNewer 边界
+    ✔ cursor>0 → 下移一档返回条目，stash 保留 (0.056583ms)
+    ✔ cursor===0 → 恢复草稿并清 stash；无 stash → 空串 (0.033084ms)
+    ✔ cursor 已 -1 → null（不拦截 ↓） (0.022084ms)
+  ✔ recallNewer 边界 (0.143542ms)
+  ▶ resetCursor
+    ✔ 重置时 entries/pending 不动，只清 cursor/stash (0.045667ms)
+    ✔ 已在基线（cursor=-1 stash=null）→ 返回原引用 (0.021416ms)
+  ✔ resetCursor (0.094667ms)
+  ▶ 纯函数深度不变性
+    ✔ 入参 state 对象与嵌套 entries 数组不被任何函数修改 (0.053458ms)
+  ✔ 纯函数深度不变性 (0.075458ms)
+  ✔ HISTORY_LIMIT = 100 (0.023042ms)
+✔ history-core.unit (3.410334ms)
+▶ history-storage.unit
+  ▶ historyStorageKey
+    ✔ 空 sessionId 也合法（key 恰为前缀本身） (1.499042ms)
+    ✔ 含特殊字符的 sessionId 不被转义，原样拼接 (0.1425ms)
+  ✔ historyStorageKey (2.078958ms)
+  ▶ loadHistory 白盒边界
+    ✔ getItem 返回空串（不是 null）→ JSON.parse('') 抛错 → [] (0.895458ms)
+    ✔ 数组内混入 undefined（JSON.stringify 后为 null）→ 过滤后只留 string (0.121833ms)
+    ✔ 数组含对象/数组/null 全被过滤，string 保序 (0.064334ms)
+    ✔ 非字符串数值数组 → 全过滤为空数组 (0.062834ms)
+    ✔ 超 100 条裁剪保留前 100 (0.107834ms)
+  ✔ loadHistory 白盒边界 (1.407ms)
+  ▶ saveHistory 白盒
+    ✔ 写入内容恰为 JSON.stringify(前 100 条)＋可 loadHistory 读回 (0.100333ms)
+    ✔ 数组含 undefined：undefined 项在 JSON 中变 null，可写回后再 load 过滤 (0.09325ms)
+    ✔ 超过 100 条只写前 100 (0.099458ms)
+    ✔ setItem 抛错 → 返回 false 且不抛 (0.057458ms)
+    ✔ removeItem 存在但本实现不调用（保存不删 key） (0.053792ms)
+  ✔ saveHistory 白盒 (0.50775ms)
+✔ history-storage.unit (4.449125ms)
+▶ instructionViewReducer（§2.6）
+  ✔ 完整主流程：list → start-create(global) → create-pending → create-succeeded → mark-dirty → saved → list (1.425584ms)
+  ✔ open-edit → mark-dirty → cancel-edit 回 list（丢弃草稿） (0.1065ms)
+  ✔ start-create 同 scope 防重复点击：原样返回同一引用；换 scope 生成新 create 态 (0.063375ms)
+  ✔ start-create 从 edit 态也可发起（覆盖 edit 态） (0.064083ms)
+  ✔ create-pending：非 create 态原样返回；create 态保持并置 pending:true (0.061667ms)
+  ✔ create-succeeded 只在 create 态生效；list/edit 态原样返回 (0.0445ms)
+  ✔ create-failed：任何状态回 list (0.045792ms)
+  ✔ mark-dirty：list 与未成功的 create（pending:true / 无 path）不置位 (0.059792ms)
+  ✔ saved：path 匹配当前编辑目标回 list；不匹配保持原状（edit 与 create 两态） (0.078041ms)
+  ✔ open-list：任何状态都回 list (0.209791ms)
+  ✔ cancel-edit：任何状态都回 list（未保存确认由调用层先做） (0.10475ms)
+  ✔ 未知事件类型：原样返回同一引用 (0.059084ms)
+  ✔ 纯函数：不改入参、返回新对象 (0.083ms)
+✔ instructionViewReducer（§2.6） (3.270083ms)
+▶ instructions.unit
+  ▶ resolveDshHomeLocal
+    ✔ 零参调用回退默认 ~/.dsh 并 path.resolve (0.487125ms)
+    ✔ configured 与 env 同时空白 → 回退默认 (0.061584ms)
+    ✔ configured 优先于 env；相对路径被 resolve 为绝对 (0.057084ms)
+  ✔ resolveDshHomeLocal (0.943083ms)
+  ▶ findProjectRootSync
+    ✔ cwd 与项目根重合、.git 是目录 (2.187334ms)
+    ✔ 向上越过 .git 标记子目录：深层 cwd 冒泡到最近含 .git 祖先 (1.243625ms)
+    ✔ .git 是一个指向别处的符号链接也算命中（lstat 存在即算） (1.593625ms)
+    ✔ 从文件系统根开始冒泡不越界：cwd=/ 返回 /（不死循环） (1.665167ms)
+    ✔ 路径含尾斜杠仍正确 resolve (1.114958ms)
+  ✔ findProjectRootSync (8.033625ms)
+  ▶ ancestorChain
+    ✔ root 恰为 cwd 的祖父之上：含两端且由宽到窄 (1.968792ms)
+    ✔ cwd 不在 root 之下：从 cwd 冒到文件系统根且不含 root，由宽到窄 (1.44075ms)
+    ✔ root 与 cwd 相同 → 单元素链 (0.068333ms)
+    ✔ cwd 为不存在路径仍返回 resolve 后的链（不抛） (0.090334ms)
+  ✔ ancestorChain (3.772042ms)
+  ▶ discoverInstructions
+    ✔ 默认 dshHome（~/.dsh）时全局文件 displayPath 为 ~/.dsh/AGENTS.md (2.139625ms)
+    ✔ 非默认 home displayPath 为 $DSH_HOME/AGENTS.md (1.610208ms)
+    ✔ 项目内 displayPath 是相对 projectRoot 的路径（含子目录） (2.040959ms)
+    ✔ 同名文件以不同 spell 传入 cwd 去重（resolve 归一） (1.645792ms)
+    ✔ 候选名是目录（非符号链接）也被收录：lstat 通过，size 为目录大小 (1.2ms)
+    ✔ .local.md 为符号链接同样拒收（local 候选也要拒 symlink） (1.42075ms)
+    ✔ 同一目录下常规候选先于 local 候选 (1.569583ms)
+    ✔ dshHome 不存在时全局候选 stat 失败被跳过不抛 (1.202833ms)
+  ✔ discoverInstructions (13.02725ms)
+  ▶ discoverInstructions 增补字段 projectRootFound / canCreateRootAgents
+    ✔ 有项目根（.git 标记）且根无 AGENTS.md → projectRootFound=true, canCreateRootAgents=true (1.04ms)
+    ✔ 有项目根但根 AGENTS.md 已存在 → projectRootFound=true, canCreateRootAgents=false (1.380167ms)
+    ✔ 有项目根但根 AGENTS.md 被 symlink 占用 → projectRootFound=true, canCreateRootAgents=false (1.457166ms)
+    ✔ 无项目根（祖先链无 .git）→ projectRootFound=false, canCreateRootAgents=false (2.02125ms)
+  ✔ discoverInstructions 增补字段 projectRootFound / canCreateRootAgents (5.979084ms)
+  ▶ createProjectAgentsTemplate
+    ✔ 返回 INTERFACE §1.5 定死的 2 行中文模板全文 (0.065625ms)
+  ✔ createProjectAgentsTemplate (0.0995ms)
+  ▶ canCreateProjectRootAgents
+    ✔ 真项目根且无 AGENTS.md → true (0.916333ms)
+    ✔ 真项目根但 AGENTS.md 已存在 → false (1.024541ms)
+    ✔ 真实物理根（realpath 后）有 .git 但词法路径经 symlink 也命中 → true (0.968458ms)
+    ✔ 非项目根（目录存在但无 .git 标记）→ false (1.133417ms)
+    ✔ 目录不存在（realpath 失败）→ false (0.908209ms)
+  ✔ canCreateProjectRootAgents (5.032417ms)
+  ▶ projectRootAgentsTarget
+    ✔ 词法 projectRoot → 目标 = realpath(projectRoot)/AGENTS.md (1.20525ms)
+    ✔ projectRoot 经 symlink 目录抵达 → 目标落在真实物理目录内 (1.510667ms)
+  ✔ projectRootAgentsTarget (2.794459ms)
+  ▶ 增量 2：createGlobalAgentsTemplate / canCreateGlobalAgents / dshHomeAgentsTarget
+    ✔ createGlobalAgentsTemplate 返回 INTERFACE §1.5 定死的全局 2 行模板全文 (0.168ms)
+    ✔ 全局模板与项目模板不同源（R-E7：按 scope 各自单一来源） (0.056334ms)
+    ✔ canCreateGlobalAgents：dshHome 无 AGENTS.md → true；已存在 → false (1.16925ms)
+    ✔ canCreateGlobalAgents：symlink/目录占用视为已存在 → false (1.2805ms)
+    ✔ canCreateGlobalAgents：dshHome 不存在（realpath 失败）→ false；与 .git 无关 (1.253334ms)
+    ✔ canCreateGlobalAgents：dshHome 经 symlink 抵达时按真实物理目录判定 (1.807292ms)
+    ✔ dshHomeAgentsTarget：目标 = realpath(dshHome)/AGENTS.md (1.77ms)
+    ✔ discoverInstructions 增补 canCreateGlobalAgents 字段（§1.1 additive） (2.608542ms)
+  ✔ 增量 2：createGlobalAgentsTemplate / canCreateGlobalAgents / dshHomeAgentsTarget (10.311041ms)
+  ▶ isDiscoveredPath
+    ✔ 相对 inputPath 经由 resolve 规约后仍命中绝对集合 (1.386667ms)
+    ✔ 带 .. 的 inputPath 规约后命中；越界仍 false (1.65ms)
+    ✔ 非符号链接 + 已发现的本地文件命中；符号链接对应路径不命中 (1.202ms)
+  ✔ isDiscoveredPath (4.312917ms)
+  ▶ 契约常量
+    ✔ 候选组与上限与契约一致 (0.056166ms)
+  ✔ 契约常量 (0.078792ms)
+✔ instructions.unit (55.101375ms)
+✔ lib/ 不入库时必须声明 prepare 构建脚本 (0.745541ms)
+✔ npm 包 files 必须包含 lib/ (0.061ms)
+▶ prompts-store.unit
+  ▶ 真实磁盘数据
+    ✔ 读取真实 prompt-templates.json：恰 780 条 (13.300667ms)
+    ✔ source 恰好三字段：name/url/license，无多余 (12.659875ms)
+    ✔ 每项的 id/name/description/prompt/emoji/group 字段齐全、无 version 字段 (4.741875ms)
+    ✔ 真实数据中的 \r\n 已归一为 \n，且无 \r 残留 (6.304917ms)
+    ✔ 真实数据含非空 prompt（不是全空库） (3.817625ms)
+  ✔ 真实磁盘数据 (41.389667ms)
+  ▶ overrideItems 归一
+    ✔ \r\n → \n：prompt 与 description 都归一 (0.131292ms)
+    ✔ overrideItems 时仍带 source 三字段 (0.0635ms)
+  ✔ overrideItems 归一 (0.26875ms)
+  ▶ overrideError 失败形态
+    ✔ overrideError 注入 → {ok:false, system-error, message 以 prompt library unavailable 开头} (0.073209ms)
+    ✔ overrideError 优先于 overrideItems（同时传入走错误分支） (0.059791ms)
+  ✔ overrideError 失败形态 (0.181ms)
+  ▶ 缓存语义
+    ✔ 默认真实读取后缓存：连续两次返回同一 items 引用语义一致 (5.470666ms)
+    ✔ resetPromptsCache 清空缓存后重读仍成功 (9.223625ms)
+    ✔ PROMPTS_DATA_URL 指向可读的 data/prompt-templates.json (0.865334ms)
+  ✔ 缓存语义 (15.690709ms)
+✔ prompts-store.unit (57.961666ms)
+ℹ tests 147
+ℹ suites 41
+ℹ pass 147
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 175.960583
+  dsh-composer-tools unit EXIT=0
+---- dsh-appearance-gallery tests/unit ----
+▶ F4 — NOTICE/LICENSE/作者/上游一致性
+  ✔ NOTICE.md 含 9 款皮肤 author 与上游仓库引用 (0.553792ms)
+  ✔ 每个 skins/<id>/LICENSE 为 BSD-3 且含版权行 (3.169584ms)
+  ✔ getSkins（manifest）逐项与皮肤资产作者/license 一致 (0.89125ms)
+  ✔ manifest 与 NOTICE 中 author 逐项对齐 (0.261333ms)
+✔ F4 — NOTICE/LICENSE/作者/上游一致性 (5.574958ms)
+✔ 九套皮肤_bodyAttr 在 skin.json 与 client.js 与 CSS 三处一致 (13.759208ms)
+▶ 皮肤可访问性修正达标（9 款 × 亮暗）
+  ✔ 9 款皮肤清单与目录一致 (5.363541ms)
+  ✔ qq98：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (3.749083ms)
+  ✔ ths：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (1.121291ms)
+  ✔ xp：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (1.166792ms)
+  ✔ blue-fantasy：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (1.088166ms)
+  ✔ dragon-heir：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.93225ms)
+  ✔ minecraft：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.557292ms)
+  ✔ whale-song：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.705834ms)
+  ✔ trading：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (1.488291ms)
+  ✔ miku：代码块 / 行内码 / 主按钮在亮暗两态对比 ≥ 4.5 (0.624125ms)
+✔ 皮肤可访问性修正达标（9 款 × 亮暗） (18.512458ms)
+✔ 关面板清掉主题面板的搜索词/导入文本/错误文案 (2.154ms)
+✔ 关面板清掉皮肤面板的搜索词/三件套文本/勾选删除/二次确认 (1.197292ms)
+✔ reset 不换 state 对象引用（外部持有者不失效） (0.153ms)
+✔ 关面板不写任何 storage 键（§3.3 E3） (0.123917ms)
+✔ 主题侧_连续10次读registry只解析1次 (0.836166ms)
+✔ 主题侧_写入后下一次读恰好重新解析1次 (0.246542ms)
+✔ 皮肤侧_连续10次读registry只解析1次 (0.193792ms)
+✔ 皮肤侧_写入后下一次读恰好重新解析1次 (0.110542ms)
+✔ 记忆化不返回被调用方改脏的数组 (0.717125ms)
+✔ 新宿主_优先取 cordis service ctx.modules (1.518834ms)
+✔ 新宿主_service 存在时不看旧全局 (0.095334ms)
+✔ 旧宿主回落_无 service 时取 window.__DSH_MODULES__ (0.057625ms)
+✔ 两者皆无_返回 null 走皮肤区降级占位 (0.046709ms)
+✔ service 为 null 时也回落到旧全局_?? 对 null 与 undefined 同等对待 (0.05275ms)
+✔ 不把 modules 写进 inject_产物 inject 仍只有 slots (2.819333ms)
+✔ 壳前三行逐字符匹配 (0.699584ms)
+✔ 壳尾串存在 (0.212791ms)
+✔ 导出 apply 与 inject (0.208416ms)
+✔ 槽位只注册一处且不带 priority (0.738458ms)
+✔ 皮肤三张表与 9 个 id 都已内联 (0.498875ms)
+✔ lib 下只有 client.js 与 index.js (0.926667ms)
+✔ 产物体积不超过兜底上限 900KB (0.166ms)
+✔ 挑出根层三件套并忽略无关文件 (0.83275ms)
+✔ 文件名大小写不敏感 (0.067208ms)
+✔ 子目录里的同名文件不被误取 (0.060416ms)
+✔ 子目录里凑齐三件套也不算数（缺件报错） (0.232ms)
+✔ a11y.css 缺失合法 (0.063791ms)
+✔ 缺 client.js 报 ERR_SKIN_MISSING_FILE 且点名缺的那个 (0.074333ms)
+✔ 空选择 / 非法入参报缺件而不是崩 (0.069084ms)
+✔ skin.json + client.js 原始字节超 256KB 直接拒（不读内容） (0.061292ms)
+✔ 刚好压线的包不拒（真门禁留给导入管道） (0.071625ms)
+✔ a11y.css 超 65536 字节直接拒 (0.1125ms)
+✔ webkitRelativePath 为空的环境按根层文件处理 (0.065583ms)
+✔ 切轨_恢复默认主题必须卸掉正在生效的皮肤 (8.192083ms)
+✔ 切轨_应用内置主题必须卸掉正在生效的皮肤 (0.817042ms)
+✔ 切轨_应用自定义主题必须卸掉正在生效的皮肤 (0.829916ms)
+✔ 切轨_试穿主题时同样卸掉皮肤_且撤销试穿后皮肤回来 (0.781292ms)
+✔ 切轨_切到主题轨后刷新不许把皮肤拉回来 (0.743167ms)
+✔ 切轨_删除非应用中的自定义主题不得卸掉皮肤 (0.562625ms)
+✔ 切轨_导入自定义主题不得卸掉皮肤 (0.620083ms)
+✔ 切轨_应用皮肤后主题override保留为底层且主题键不动 (0.578083ms)
+✔ 卸载皮肤_不得删掉激活前就存在的同名data-plugin样式 (1.123375ms)
+ℹ tests 57
+ℹ suites 2
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 149.0805
+  dsh-appearance-gallery unit EXIT=0
+
+######## 环境缺口（非测试失败）2026-09-30 18:33:25
+- 4 条 0.1.5 e2e（B6/C5 及 composer-tools/appearance-gallery 的 spec）未跑：worktree 未安装 @playwright/test，且需先起一个 0.1.5 实例（npm 全局 dsh 0.1.5-rc.1 在，profile 需另建临时副本，不动用户 web profile）。
+- 6 条桌面真机 UI 项（B2/B3/B4/B5、C3/C4）需人工在桌面 0.2 上点：宿主由 App 管理，无 web 端口可自动化。
+
+######## D2 补证：重建产物与 src 一致性 2026-09-30 19:25:44
+---- dsh-turn-scrubber: node build.mjs 后与已提交产物比对 ----
+build EXIT=0
+ packages/dsh-turn-scrubber/lib/client.js | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+  (以上为空 = 重建结果与提交产物逐字节一致)
+---- dsh-composer-tools: node build.mjs 后与已提交产物比对 ----
+build EXIT=0
+  (以上为空 = 重建结果与提交产物逐字节一致)
+---- dsh-appearance-gallery: node build.mjs 后与已提交产物比对 ----
+build EXIT=0
+  (以上为空 = 重建结果与提交产物逐字节一致)

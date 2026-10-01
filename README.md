@@ -138,6 +138,29 @@ pnpm check
 
 `dsh-appearance-gallery` 的 `lib/client.js` 由 `build.mjs` 生成，**不可手工编辑**：DSH 要求 bundle 执行后自行调用 `window.__ModuleLoader__.load(...)` 注册，这层注册壳只存在于构建产物中。`node build.mjs --check` 会校验产物的注册壳、体积上限与皮肤资源完整性，是只读检查，可放进 CI。
 
+## 推送前脱敏闸门
+
+推送前自动拦住个人绝对路径、邮箱、密钥与私钥，不靠人记得手动检查。
+
+**启用（每个 clone 做一次，在仓库根执行）**：
+
+```bash
+git config core.hooksPath .githooks
+```
+
+启用后每次 `git push` 都会先扫本次要推的提交范围（`remote_sha..local_sha`），命中即拦下并列出文件、行号与片段。关闭用 `git config --unset core.hooksPath`；某次确认是误报可以 `git push --no-verify` 显式跳过。
+
+也可以手动跑：
+
+```bash
+node scripts/scan-sanitize.mjs              # 自动判定范围（暂存 → origin/HEAD → HEAD~1 → 全工作区）
+node scripts/scan-sanitize.mjs --staged     # 只看暂存内容
+node scripts/scan-sanitize.mjs --range A..B # 只看某个提交范围
+node scripts/scan-sanitize.mjs --self-test  # 只跑规则自检
+```
+
+只扫新增内容（diff 的 `+` 行）与文件全文；删掉敏感信息不会被拦。脚本启动时先跑规则自检，规则被改坏会直接报错退出，而不是静默放行。
+
 ## 外观画廊
 
 ### 主题

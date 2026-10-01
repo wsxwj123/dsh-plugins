@@ -67,7 +67,11 @@ pnpm add "link:/绝对路径/packages/dsh-composer-tools"
 
 或直接 `dsh plugin --profile web add "link:$PWD/packages/dsh-composer-tools"`。
 
-**兼容版本**：`@deepseek-ai/dsh@0.1.0-rc.6`。
+**兼容版本**：`@deepseek-ai/dsh` 0.1.5 与 0.2.0-rc.2（两版都免豁免可装）。
+
+> 0.2 适配说明：0.2 从 `sessions.list` 快照删掉了 `current` 字段，本插件改为读
+> 会话作用域的标准 `sessionId` prop 来定位当前会话目录（`snapshot.current` 仅作
+> 0.1.5 兜底）。0.2 桌面真机实测待补。
 
 ---
 
