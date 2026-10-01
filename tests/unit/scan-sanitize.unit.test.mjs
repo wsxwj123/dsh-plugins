@@ -9,6 +9,8 @@
 //      出家目录路径样例、私钥头等，本文件自己就会命中本仓库验收 D1 的脱敏门禁
 //      （也正因为如此，连这句说明都不能举具体例子）。
 //   2. 每个场景在系统临时目录建独立夹具，跑完即删；绝不往仓库里写东西。
+//   3. 断言失败信息也过一遍 sansKey()：否则「回显没脱敏」这条断言失败时，报错
+//      信息自己就把样本密钥印进了 CI 日志。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -81,6 +83,9 @@ function runScanner(args, cwd = REPO_ROOT) {
   }
 }
 
+/** 断言失败信息里也不带明文密钥：把已知的样本字面量换成占位符再打印。 */
+const sansKey = (text, ...keys) => keys.reduce((acc, k) => (k ? acc.split(k).join('[样本密钥]') : acc), String(text))
+
 test.after(() => {
   for (const dir of tempDirs) {
     try {
@@ -140,15 +145,47 @@ test('短前缀不算密钥_不该误报（边界）', () => {
   assert.equal(status, 0, `短前缀不应被拦，实为 ${status}；输出：${stdout}`)
 })
 
-test('拦截信息_不回显完整密钥（只给截断片段）', () => {
-  const long = LIT.openai
-  const file = fixture([`const key = "${long}"`])
+test('拦截信息_只给位置与规则名，不原样回显命中片段', () => {
+  const file = fixture([`const key = "${LIT.openai}"`])
   const { status, stderr } = runScanner(['--files', file])
   assert.equal(status, 1)
-  // 命中行整体仍会出现（要让人知道改哪儿），但必须是截断后的片段。
-  const snippetLine = stderr.split('\n').find((l) => l.includes(t(115, 107, 45)))
-  assert.ok(snippetLine, '应报出命中行片段')
-  assert.ok(snippetLine.trim().length <= 160, `片段应截断到 <=160 字符，实为 ${snippetLine.trim().length}`)
+  // 仍要能定位：文件:行号 + 规则名 + 遮罩位数。
+  assert.match(stderr, /sample\.txt:1/, `应报出 文件:行号，实际：${sansKey(stderr, LIT.openai)}`)
+  assert.match(stderr, /OpenAI 风格密钥/)
+  assert.match(stderr, /第 \d+ 列命中/)
+  assert.match(stderr, /已遮罩 \d+ 位/, `应报出遮罩了几位，实际：${sansKey(stderr, LIT.openai)}`)
+  // 但命中字面量不能出现：整条不行，前缀之后的主体也不行（旧实现按长度阈值截断，
+  // 短密钥会被整条打出去，这条就是钉住那个回归）。
+  assert.equal(stderr.includes(LIT.openai), false, '回显里出现了完整密钥字面量')
+  assert.equal(stderr.includes(LIT.openai.slice(3)), false, '回显里出现了密钥主体')
+})
+
+test('短密钥_命中时输出里不得含完整字面量（且仍 exit 1）', () => {
+  // 真实密钥普遍不到 80 字符，比旧的「截断到 160 字符」阈值短得多：只报位置、
+  // 规则名与遮罩后的片段，密钥一个字符都不许进终端/CI 日志。
+  const short = t(115, 107, 45) + 'A'.repeat(20) // 前缀 + 刚够 20 位 = 最短的命中
+  const file = fixture([`const k = "${short}"`])
+  const { status, stdout, stderr } = runScanner(['--files', file])
+  assert.equal(status, 1, '短密钥命中仍必须 exit 1（退出码语义不变）')
+  const output = `${stdout}${stderr}`
+  assert.equal(output.includes(short), false, '输出里出现了完整密钥字面量')
+  assert.equal(output.includes('A'.repeat(20)), false, '输出里出现了密钥主体')
+  assert.match(output, /已遮罩 23 位/, `应报出遮罩位数，实际：${sansKey(output, short)}`)
+  assert.match(stderr, /sample\.txt:1/, '仍要能定位到 文件:行号')
+  assert.match(stderr, /OpenAI 风格密钥/, '仍要报出规则名')
+})
+
+test('一行两条密钥_上下文里也不会带出另一条', () => {
+  // 命中片段两侧留的上下文若照抄原文，紧挨着的第二条密钥就会被上下文带出来。
+  const keyA = t(115, 107, 45) + 'A'.repeat(20)
+  const keyB = t(115, 107, 45) + 'B'.repeat(20)
+  const file = fixture([`const a = "${keyA}"; const b = "${keyB}"`])
+  const { status, stderr } = runScanner(['--files', file])
+  assert.equal(status, 1)
+  for (const key of [keyA, keyB]) {
+    assert.equal(stderr.includes(key), false, '上下文回显里出现了完整密钥')
+    assert.equal(stderr.includes(key.slice(3)), false, '上下文回显里出现了密钥主体')
+  }
 })
 
 test('pre-push hook_语法合法且可执行', () => {

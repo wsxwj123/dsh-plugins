@@ -31,10 +31,12 @@
  *   2. 判定一律走「纯子串查找 + 允许字符集计数」，不用正则转义（转义写错会
  *      静默变成永不命中，是最危险的失败模式）；
  *   3. **启动先跑 runSelfTest() + runScopeSelfTest()**：用合成样本验证每条规则
- *      真的会命中、真的不误报，并验证「哪些规则能在 tests/ 下放行」的分级没被
- *      悄悄放宽。一旦有人将来改坏了规则或降级了口子，闸门会在第一次运行时就
- *      大声报错退出，而不是安静地放行所有内容。
- * 改动本文件时请保持这三条约束。
+ *      真的会命中、真的不误报、命中片段真的被遮住，并验证「哪些规则能在 tests/
+ *      下放行」的分级没被悄悄放宽。一旦有人将来改坏了规则或降级了口子，闸门会
+ *      在第一次运行时就大声报错退出，而不是安静地放行所有内容。
+ *   4. **回显只给位置 + 规则名 + 遮罩后的片段**（见下面「回显契约」一节）：
+ *      命中字面量一个字符都不许进终端/CI 日志。
+ * 改动本文件时请保持这四条约束。
  *
  * 规则分级的理由（凭据类对全路径生效、个人路径/邮箱类跳过仓库根的 tests/）
  * 见下面「规则分级」一节——那是按**规则性质**分的，不是给文件开白名单。
@@ -88,6 +90,9 @@ const isKeyChar = (ch, kind) => {
   }
 }
 
+/** 路径字符（用于把家目录前缀后面的整条路径都算进命中区间）。 */
+const isPathChar = (ch) => isKeyChar(ch, 'alnum') || ch === '.' || ch === '_' || ch === '-' || ch === '/' || ch === '\\'
+
 /** 从 pos 起连续满足字符集的字符个数。 */
 function runLength(text, pos, kind) {
   let n = 0
@@ -95,20 +100,41 @@ function runLength(text, pos, kind) {
   return n
 }
 
-/** 文本里是否出现「前缀 + 至少 min 个该类字符」的密钥形态。 */
-const hasToken = (text, prefix, kind, min) => {
+/**
+ * 「前缀 + 至少 min 个该类字符」的密钥形态在文本里的所有命中区间。
+ * 命中判定与位置是同一次扫描的产物：要报命中就必须知道命中在哪儿，
+ * 不存在「报了命中却定位不到、只好把整行打出来」的退路。
+ */
+const findTokenSpans = (text, prefix, kind, min) => {
+  const spans = []
   let i = -1
   while ((i = text.indexOf(prefix, i + 1)) >= 0) {
-    if (runLength(text, i + prefix.length, kind) >= min) return true
+    const n = runLength(text, i + prefix.length, kind)
+    if (n >= min) spans.push({ start: i, end: i + prefix.length + n })
   }
-  return false
+  return spans
+}
+
+/** 家目录前缀及其后整条路径的命中区间（只遮前缀等于把用户名/项目名照印出来）。 */
+const findPathSpans = (text, prefixes) => {
+  const spans = []
+  for (const prefix of prefixes) {
+    let i = -1
+    while ((i = text.indexOf(prefix, i + 1)) >= 0) {
+      let end = i + prefix.length
+      while (end < text.length && isPathChar(text[end])) end += 1
+      spans.push({ start: i, end })
+    }
+  }
+  return spans
 }
 
 /**
- * 是否出现邮箱形态：分隔符左边有非空本地部分，右边域名含点、末段为纯字母且 ≥2 位。
+ * 邮箱形态的命中区间：分隔符左边有非空本地部分，右边域名含点、末段为纯字母且 ≥2 位。
  * （本行说明刻意不写示例地址，否则本文件会被自己的邮箱规则命中。）
  */
-function hasEmail(text) {
+function findEmailSpans(text) {
+  const spans = []
   let i = -1
   while ((i = text.indexOf(LIT.emailAt, i + 1)) >= 0) {
     if (i === 0) continue
@@ -138,13 +164,14 @@ function hasEmail(text) {
     if (!tldOk || domain.length - dot - 1 < 2) continue
     let hostOk = true
     for (const ch of domain.slice(0, dot)) if (!(isKeyChar(ch, 'alnum') || ch === '.' || ch === '-')) hostOk = false
-    if (hostOk) return true
+    if (hostOk) spans.push({ start: localStart, end: domainEnd })
   }
-  return false
+  return spans
 }
 
-/** 是否出现 PEM 私钥头（允许 "RSA "/"EC "/"OPENSSH " 等算法名）。 */
-function hasPrivateKey(text) {
+/** PEM 私钥头（允许 "RSA "/"EC "/"OPENSSH " 等算法名）的命中区间。 */
+function findPrivateKeySpans(text) {
+  const spans = []
   let i = -1
   while ((i = text.indexOf(LIT.pemBegin, i + 1)) >= 0) {
     const j = text.indexOf(LIT.pemKey, i + LIT.pemBegin.length)
@@ -155,9 +182,9 @@ function hasPrivateKey(text) {
       const upper = c >= 65 && c <= 90
       if (!upper && ch !== ' ') ok = false
     }
-    if (ok) return true
+    if (ok) spans.push({ start: i, end: j + LIT.pemKey.length })
   }
-  return false
+  return spans
 }
 
 /* ── 规则分级：按规则性质决定生效范围，不按文件开白名单 ─────────────────
@@ -208,20 +235,98 @@ function isTestPath(file) {
   return p === 'tests' || p.startsWith('tests/')
 }
 
-/* ── 规则表 ───────────────────────────────────────────────────────────── */
+/* ── 规则表：每条规则只提供 find(text) → 命中区间[] ──────────────────────
+ * 「是否命中」= find() 是否非空，判定与定位同源，不给「命中却定位不到」留后路。
+ */
 const RULES = [
   // 个人标识类：能被 tests/ 豁免（理由见上「规则分级」，改动前先读那段）。
-  { name: '个人绝对路径（POSIX 家目录）', scope: SCOPE.outsideTests, hit: (s) => s.includes(LIT.userPath) || s.includes(LIT.homePath) },
-  { name: '个人绝对路径（Windows 用户目录）', scope: SCOPE.outsideTests, hit: (s) => s.includes(LIT.winUserPath) },
-  { name: '邮箱地址', scope: SCOPE.outsideTests, hit: hasEmail },
+  { name: '个人绝对路径（POSIX 家目录）', scope: SCOPE.outsideTests, find: (s) => findPathSpans(s, [LIT.userPath, LIT.homePath]) },
+  { name: '个人绝对路径（Windows 用户目录）', scope: SCOPE.outsideTests, find: (s) => findPathSpans(s, [LIT.winUserPath]) },
+  { name: '邮箱地址', scope: SCOPE.outsideTests, find: findEmailSpans },
   // 凭据类：任何路径命中即拦，不参与 tests/ 豁免。
-  { name: 'OpenAI 风格密钥', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.openai, 'alnumDashUnderscore', 20) },
-  { name: 'GitHub PAT', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubPat, 'alnum', 30) },
-  { name: 'GitHub 细粒度 PAT', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubFinePat, 'alnumUnderscore', 20) },
-  { name: 'GitHub OAuth 令牌', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.githubOauth, 'alnum', 30) },
-  { name: 'AWS access key id', scope: SCOPE.all, hit: (s) => hasToken(s, LIT.awsKeyId, 'upperAlnum', 16) },
-  { name: 'PEM 私钥块', scope: SCOPE.all, hit: hasPrivateKey },
+  { name: 'OpenAI 风格密钥', scope: SCOPE.all, find: (s) => findTokenSpans(s, LIT.openai, 'alnumDashUnderscore', 20) },
+  { name: 'GitHub PAT', scope: SCOPE.all, find: (s) => findTokenSpans(s, LIT.githubPat, 'alnum', 30) },
+  { name: 'GitHub 细粒度 PAT', scope: SCOPE.all, find: (s) => findTokenSpans(s, LIT.githubFinePat, 'alnumUnderscore', 20) },
+  { name: 'GitHub OAuth 令牌', scope: SCOPE.all, find: (s) => findTokenSpans(s, LIT.githubOauth, 'alnum', 30) },
+  { name: 'AWS access key id', scope: SCOPE.all, find: (s) => findTokenSpans(s, LIT.awsKeyId, 'upperAlnum', 16) },
+  { name: 'PEM 私钥块', scope: SCOPE.all, find: findPrivateKeySpans },
 ]
+
+/* ── 回显契约：命中片段整体遮罩，绝不把命中字面量打进终端/CI 日志 ─────────
+ *
+ * 改动这里的输出格式前先读这段。契约四条：
+ *   1. 只回显「文件:行号 + 列号 + 规则名 + 脱敏后的片段」，不打印整行原文；
+ *   2. 被规则命中的**整段字面量**（不是只遮前缀）全部换成遮罩标记，标记里只报
+ *      「遮罩了几位」，不带命中内容的任何一个字符；
+ *   3. 两侧各留 CONTEXT 个上下文；落在这一行上**其它**命中区间里的字符同样一律
+ *      遮掉——否则上下文会把紧挨着的第二条密钥/邮箱带出来；
+ *   4. 遮罩只依赖 find() 给出的区间，不依赖「截断到 N 个字符」这类长度阈值：
+ *      真实密钥普遍不到 80 字符，长度阈值只会把短密钥整条放出去（本注释刻意不
+ *      写出密钥前缀，见文件开头第 1 条约束）。
+ * 为什么连前缀都不留：本闸门同时拦邮箱与个人路径，留前缀等于把「是谁」印出来；
+ * 对密钥而言几个前缀字符也足以在日志里被人认领归属，收益远小于风险。
+ */
+/** 命中片段两侧保留的上下文字符数。 */
+const CONTEXT = 16
+/** 遮罩标记：只报位数，不含命中内容的任何字符。 */
+const maskLabel = (n) => `[已遮罩 ${n} 位]`
+
+/** 该行上所有规则的命中区间（重叠合并），用于把上下文里别的命中也一并遮掉。 */
+function mergedSpans(text) {
+  const raw = []
+  for (const rule of RULES) for (const span of rule.find(text)) raw.push({ start: span.start, end: span.end })
+  raw.sort((a, b) => a.start - b.start || a.end - b.end)
+  const out = []
+  for (const span of raw) {
+    const last = out[out.length - 1]
+    if (last && span.start <= last.end) last.end = Math.max(last.end, span.end)
+    else out.push({ ...span })
+  }
+  return out
+}
+
+/** 下标 i 是否落在某个命中区间里。 */
+const inSpans = (spans, i) => spans.some((s) => i >= s.start && i < s.end)
+
+/**
+ * 脱敏后的片段：命中区间整体换成遮罩标记，两侧各留 CONTEXT 个字符，
+ * 上下文里落在任一命中区间的字符也遮成 *。返回的字符串不含任何命中字符。
+ */
+function maskedView(text, span, spans) {
+  const chars = []
+  for (let i = Math.max(0, span.start - CONTEXT); i < span.start; i += 1) chars.push(inSpans(spans, i) ? '*' : text[i])
+  chars.push(maskLabel(span.end - span.start))
+  for (let i = span.end; i < Math.min(text.length, span.end + CONTEXT); i += 1) chars.push(inSpans(spans, i) ? '*' : text[i])
+  const head = span.start > CONTEXT ? '…' : '' // 前文被截断时补省略号
+  const tail = span.end + CONTEXT < text.length ? '…' : ''
+  return `${head}${chars.join('')}${tail}`
+}
+
+/**
+ * 把家目录形态的绝对路径折叠成 ~/…（Windows 折成 ~\…）：路径本身也是
+ * 个人绝对路径，回显命中位置时不能把它原样打进终端/CI 日志。
+ * 只用字符码拼出的前缀 + 纯字符扫描，不引入正则转义风险。
+ */
+function foldHomePaths(text) {
+  let out = String(text)
+  for (const prefix of [LIT.userPath, LIT.homePath]) {
+    let i = 0
+    while ((i = out.indexOf(prefix, i)) >= 0) {
+      let end = i + prefix.length
+      while (end < out.length && out[end] !== '/') end += 1 // 吃掉用户名那一级
+      out = `${out.slice(0, i)}${t(126, 47)}${out.slice(end + 1)}`
+      i += 2
+    }
+  }
+  let j = 0
+  while ((j = out.indexOf(LIT.winUserPath, j)) >= 0) {
+    let end = j + LIT.winUserPath.length
+    while (end < out.length && out[end] !== '\\') end += 1
+    out = `${out.slice(0, j)}${t(126, 92)}${out.slice(end + 1)}`
+    j += 2
+  }
+  return out
+}
 
 /* ── 规则自检：改坏规则就在第一次运行时大声失败 ───────────────────────── */
 function runSelfTest() {
@@ -255,8 +360,26 @@ function runSelfTest() {
     return r
   }
   const broken = []
-  for (const [name, sample] of mustHit) if (!ruleOf(name).hit(sample)) broken.push(`漏报（本应命中）: ${name}`)
-  for (const [name, sample] of mustMiss) if (ruleOf(name).hit(sample)) broken.push(`误报（本应放行）: ${name}`)
+  for (const [name, sample] of mustHit) if (ruleOf(name).find(sample).length === 0) broken.push(`漏报（本应命中）: ${name}`)
+  for (const [name, sample] of mustMiss) if (ruleOf(name).find(sample).length > 0) broken.push(`误报（本应放行）: ${name}`)
+
+  // 回显自检：命中片段必须整段被遮罩——命中原文一个字符都不许出现在回显里。
+  // 这条不变量专门守「命中就把密钥原样打出去」那类回归（短密钥尤其容易漏）。
+  for (const [name, sample] of mustHit) {
+    for (const span of ruleOf(name).find(sample)) {
+      const literal = sample.slice(span.start, span.end)
+      if (literal.length === 0) broken.push(`命中区间为空: ${name}`)
+      else if (maskedView(sample, span, mergedSpans(sample)).includes(literal)) broken.push(`回显未遮罩命中片段: ${name}`)
+    }
+  }
+
+  // 个人路径的区间必须盖住整条路径：只遮家目录前缀等于把用户名与项目名照印出来。
+  const pathSample = t(112, 61, 34, 47, 85, 115, 101, 114, 115, 47) + 'someone/project/src' + t(34)
+  const pathSpans = ruleOf('个人绝对路径（POSIX 家目录）').find(pathSample)
+  const pathLiteral = t(47, 85, 115, 101, 114, 115, 47) + 'someone/project/src'
+  if (pathSpans.length !== 1 || pathSample.slice(pathSpans[0].start, pathSpans[0].end) !== pathLiteral) {
+    broken.push('个人路径命中区间未覆盖整条路径')
+  }
   return broken
 }
 
@@ -417,17 +540,30 @@ function main() {
   const { label, lines } = collectSources(process.argv)
   const hits = []
   let skipped = 0
-  for (const { file, line, text } of lines) {
+  for (const { file, line, text: raw } of lines) {
     const testPath = isTestPath(file)
+    const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw // CRLF 的行尾不进回显
+    // 上下文遮罩口径：这一行上**任何**规则命中过的区间都算，含被分级跳过的规则。
+    const spans = mergedSpans(text)
     for (const rule of RULES) {
       // 分级：只有个人标识类规则能在仓库根 tests/ 下放行；凭据类不看路径。
       if (testPath && rule.scope !== SCOPE.all) {
         skipped += 1
         continue
       }
-      if (rule.hit(text)) hits.push({ name: rule.name, file, line, snippet: text.trim().slice(0, 160) })
+      // 一处命中区间算一处：同一行两条密钥报两处，各自带自己的列号与上下文。
+      for (const span of rule.find(text)) {
+        hits.push({
+          name: rule.name,
+          file: foldHomePaths(file),
+          line,
+          col: span.start + 1,
+          view: maskedView(text, span, spans),
+        })
+      }
     }
   }
+  hits.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file < b.file ? -1 : 1))
   // 跳过多少、为什么跳过要说出来：静默放行会变成最难发现的假绿。
   const skipNote =
     skipped > 0 ? `按规则分级跳过 ${skipped} 条检查项（仓库根 tests/ 下的个人绝对路径/邮箱；凭据类不看路径）。` : ''
@@ -438,10 +574,10 @@ function main() {
   }
 
   console.error(`[scan-sanitize] 拦截：${label}，扫 ${lines.length} 行，命中 ${hits.length} 处。${skipNote}\n`)
-  // 只回显截断片段，避免把整条密钥打进终端/日志。
+  // 只回显「位置 + 规则名 + 遮罩后的片段」：命中字面量整段被遮，一个字符都不进终端/日志。
   for (const h of hits) {
     console.error(`  ${h.file}:${h.line}  【${h.name}】`)
-    console.error(`      ${h.snippet}`)
+    console.error(`      第 ${h.col} 列命中：${h.view}`)
   }
   console.error(
     `\n处置：把上面的个人路径/邮箱改成占位符（路径写成家目录缩写，邮箱用 ` +
@@ -451,4 +587,21 @@ function main() {
   return 1
 }
 
-process.exit(main())
+/*
+ * 运行外壳：本文件所有回显都在 main() 里，异常也不能例外——Node 默认会把未捕获
+ * 异常的调用栈整条打出来，而栈里带着本机绝对路径（可能含家目录）。这里兜住，
+ * 统一把家目录折成 ~。退出码：1 = 有命中（语义不变），2 = 闸门自己没跑完（与
+ * 上面的「自检失败」同义），两者都不放行，但自动化能区分「抓到东西」和「工具坏了」。
+ */
+try {
+  process.exit(main())
+} catch (error) {
+  const message = error && error.message ? error.message : String(error)
+  console.error('[scan-sanitize] 运行失败：闸门没能完成扫描，不能视为通过。')
+  console.error(`  ${foldHomePaths(message)}`)
+  if (error && error.stack) {
+    console.error('  调用栈（已把家目录折叠成 ~）：')
+    for (const frame of String(error.stack).split('\n').slice(1, 7)) console.error(`    ${foldHomePaths(frame.trim())}`)
+  }
+  process.exit(2)
+}
