@@ -91,3 +91,8 @@
 - e2e 首次真跑 @2026-09-30：两条 spec 均因**首次引导遮罩挡点击**超时；但日志反证插件在 0.1.5 下**正常注入**（`title="指令 / 提示词"` 按钮存在于 DOM）。根因：桌面迁移把 `$DSH_HOME/settings.yaml` 改名 `.imported`，0.1.5 读它就当新用户 → 弹引导。已派测试代理把夹具自包含化（自带临时 DSH_HOME + 预置引导已看过状态）并实跑通过 + 重锁
 - **额外回归（非本次引入，待办）**：同上的 `settings.yaml` 改名导致用户 0.1.5 网页版**设置丢失并重新弹引导**。用户选择先不动全局文件（避免覆盖桌面版较新设置），此条登记为待办
 - 真机验收清单已交付 @2026-09-30：`.devflow/MANUAL-CHECK-dsh-0.2-adapt.md`（B5 首验 + B2/B3/B4/C3/C4）；desktop profile 的两个 link 已重指到工作区（`dsh-composer-tools` / `dsh-appearance-gallery` → `app/dsh-plugins-wt-0.2/packages/...`），待用户重开桌面版实测 → 卡点3
+- e2e 夹具修复完成 @2026-09-30（`16423d7`+`8d6e6b7`，LOCK = 16423d77ed97b93e408373a3758832ac8cce9609）：两条 0.1.5 spec **实跑通过（2 passed / 21.0s）**，输出存 `.devflow/e2e-0.1.5-output.txt`；遮罩真身 = 两个首启步骤（`ui-onboarding.welcomeNoticeVersion` + 凭据缺失的 “Add an API key”）+ composer 按钮需先选中 workspace；夹具改为自包含临时 DSH_HOME，**未动用户全局 settings.yaml**；断言零删改
+- D2 补证 @2026-09-30：三包重建后与已提交产物比对——composer-tools / appearance-gallery 逐字节一致；turn-scrubber 仅 `lib/client.js` 的 CSS 哈希为随机噪声（源码未变），已还原不提交
+- **卡点3 用户决定跳过真机** @2026-09-30：B2/B3/B4/B5/C3/C4 六项**未验证**（用户明确决定不跑，直接推进发布）。验收报告与 PR 描述**必须如实标注未验证**，不得写成通过。裁判“不合格”的 4 条待补中：e2e ✅、D2 ✅、范围口径 ✅（写入 PR 描述）、真机 ❌（用户豁免）
+- **新增任务（用户决定）** @2026-09-30：`dsh-appearance-gallery` **删除皮肤（skin）功能、只保留配色（theme）系统**。属独立变更，按“一个分支一个 PR”**另开分支与 PR**，走 dev-flow 轻量档（方案+测试设计各一轮、卡点①②合并、有发布意图需到发布前确认）。影响面预估：皮肤面板工厂、`skins/` 资源、皮肤相关单测与根 `tests/acceptance/appearance-gallery/` 大量用例、README；顺带可清掉两个既有烂用例（引用已删除的 skin-gallery/theme-gallery）
+- 05.5 安全审计 @2026-09-30：`origin/HEAD` 基线已建（aea84ea）；已派独立审计代理盲审（外部攻击面 + 内部数据安全 + 新闸门自身安全性），产出 `.devflow/SECURITY-REPORT-dsh-0.2-adapt.md`
