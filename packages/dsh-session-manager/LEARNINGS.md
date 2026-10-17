@@ -30,3 +30,19 @@
   插件 id**，重命名包名时构建产物身份必须自动跟随。`data-plugin`/`data-plugin-css`
   标签 id 也由它派生，与 genui 的全名约定一致。
 - 完整取证见 `.devflow/DIAGNOSIS-20260912.md`。
+
+## DSH 0.2.1 会话行新增 归档/置顶 行内按钮，按按钮数量识别 ⋮ 已失效（2026-10-18）
+- 现象：桌面版升到 0.2.1-rc.2 后，所有会话行悬停都不再出现垃圾桶按钮；host 半边
+  （/sm/*）和归档入口都正常，说明插件已加载、只有客户端注入失效。
+- 根因：0.2.1 把 `sidebar.workspaces.session.row.action` 悬停操作条渲染进每个会话行
+  （「归档会话」「置顶会话」，en "Archive"/"Pin"），于是行内有 3 个
+  `button[aria-label]`，而 `rowLabel()` 旧判据是「行内恰好 1 个带 aria-label 的按钮」，
+  恒不成立 → 所有行都解不出 label、一律不注入。
+- 现行规则：识别 ⋮ 必须走 **aria 模板**，不能数按钮个数。
+  `sessionRowMatch.isSessionActionsLabel()` 由 `ARIA_TEMPLATES`
+  （`会话“{name}”的操作` / `Session actions for {name}`）生成正则判断，`rowLabel()`
+  先排除 `[data-dsh-sm-delete]` 再用它过滤，恰好 1 个才返回（保留"歧义就不注入"）。
+  项目行只有 workspace/new-session 标签、空白行没有标签，仍自然返回 null。
+- 上游若再增删行内操作按钮，本判据不受影响；但若改了 `actions.session.aria` 模板，
+  必须同步 `ARIA_TEMPLATES`，否则失败模式是"没有删除按钮"（不会删错会话）。
+- 单测见 `tests/unit/sessionRowMatch.unit.test.js` 的 `isSessionActionsLabel` 三例。

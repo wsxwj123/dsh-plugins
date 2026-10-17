@@ -57,6 +57,36 @@ function ariaLabelsFor(title: string): string[] {
   return ARIA_TEMPLATES.map((tpl) => tpl.replace('{name}', title))
 }
 
+/** Regex-escape a literal template fragment (the templates carry “ ” quotes). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Matchers for the ⋮-menu aria-label, derived from ARIA_TEMPLATES so a template
+ * change upstream is a one-line edit here too. `[\s\S]` (not `.`) keeps titles
+ * that contain a newline matchable.
+ */
+const ARIA_MATCHERS = ARIA_TEMPLATES.map((tpl) => {
+  const [head, tail] = tpl.split('{name}')
+  return new RegExp(`^${escapeRegExp(head)}[\\s\\S]+${escapeRegExp(tail)}$`)
+})
+
+/**
+ * Is `label` the session ⋮-menu label — i.e. one of ARIA_TEMPLATES with a
+ * non-empty name interpolated?
+ *
+ * Needed because DSH 0.2.1 added `sidebar.workspaces.session.row.action` hover
+ * buttons to every session row (归档/置顶; zh labels 「归档会话」/「置顶会话」),
+ * so a session row now carries THREE `button[aria-label]`s. The old discriminator
+ * — "the row has exactly one labelled button" — matched none of them and killed
+ * injection on every row. Identify by template, never by button count: upstream
+ * may add or drop row actions again without breaking binding.
+ */
+export function isSessionActionsLabel(label: string): boolean {
+  return ARIA_MATCHERS.some((re) => re.test(label))
+}
+
 /** A title usable as a match key (non-empty, within the shared length bound). */
 function isUsableTitle(t: string | undefined): t is string {
   return typeof t === 'string' && t.length > 0 && t.length <= MAX_TITLE_LEN

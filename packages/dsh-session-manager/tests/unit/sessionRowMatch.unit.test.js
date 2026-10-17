@@ -9,7 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { matchSessionFromLabel, resolveRows } = await import(path.join(root, 'lib', 'session-row-match.js'))
+const { isSessionActionsLabel, matchSessionFromLabel, resolveRows } = await import(path.join(root, 'lib', 'session-row-match.js'))
 
 /** byId fixtures mixing raw-title / displayTitle-only / blank / running shapes. */
 const byId = {
@@ -100,4 +100,28 @@ test('I-6: blank sessions never bind in resolveRows', () => {
   const byId = { blank1: { displayTitle: 'New Session', cwd: '/d', blank: true } }
   const got = resolveRows(['New Session'], byId, ['blank1'])
   assert.strictEqual(got[0], null)
+})
+
+// ---- DSH 0.2.1: session rows gained inline archive/pin buttons ----
+// 0.2.1 renders `sidebar.workspaces.session.row.action` hover buttons into every
+// session row (labels 「归档会话」/「置顶会话」, en "Archive"/"Pin"), so the row now
+// carries 3 `button[aria-label]`s instead of 1. Identify the ⋮ menu by its aria
+// TEMPLATE (actions.session.aria), not by "the row's only labelled button".
+test('isSessionActionsLabel accepts the session actions template (zh + en)', () => {
+  assert.strictEqual(isSessionActionsLabel('会话“X”的操作'), true)
+  assert.strictEqual(isSessionActionsLabel('Session actions for X'), true)
+})
+
+test('isSessionActionsLabel rejects row-action / workspace / new-session labels', () => {
+  for (const label of ['归档会话', '置顶会话', '工作区“X”的操作', '在“X”中新建会话']) {
+    assert.strictEqual(isSessionActionsLabel(label), false, `should reject: ${label}`)
+  }
+})
+
+test('resolveRows does not bind non-session row-action labels', () => {
+  const byIdNonSession = { a: { title: 'A', displayTitle: 'A', cwd: '/a', blank: false } }
+  const got = resolveRows(['归档会话', '置顶会话', '工作区“A”的操作'], byIdNonSession, ['a'])
+  assert.strictEqual(got[0], null)
+  assert.strictEqual(got[1], null)
+  assert.strictEqual(got[2], null)
 })

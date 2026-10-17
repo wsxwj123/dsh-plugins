@@ -19,6 +19,9 @@
  *     localized TEMPLATE with the session title interpolated (Chinese
  *     「会话“X”的操作」/ English "Session actions for X"). sessionRowMatch
  *     rebuilds that label from each candidate title and requires an exact match.
+ *     In 0.2.1 the row also hosts hover action buttons (归档/置顶) whose labels
+ *     are NOT this template — the ⋮ button is picked out by the template
+ *     (`isSessionActionsLabel`), never by "the row's only labelled button".
  *
  * Row→id binding is resolved per CONTAINER, not per row (F2): the candidate set
  * is filtered by the official visibility rule (no archived / subagent / blank
@@ -36,7 +39,7 @@
  * selector to piggyback on reliably across versions).
  */
 import type { Context } from './context-types.ts'
-import { resolveRows, type MatchedSession } from './sessionRowMatch.ts'
+import { isSessionActionsLabel, resolveRows, type MatchedSession } from './sessionRowMatch.ts'
 import { TRASH_SVG } from './icons.ts'
 import css from './rail.module.css'
 
@@ -53,16 +56,26 @@ const HOVER_CSS = `[role="treeitem"]:hover > [data-dsh-sm-delete] { display: inl
 const DELETE_BTN_SEL = '[data-dsh-sm-delete]'
 
 /**
- * The row's official ⋮-menu aria-label: the ONE labelled button that is NOT
- * our injected delete control. Project rows carry TWO other labelled buttons
- * (workspace menu + new-session) and blank (New Session) rows carry none, so
- * both return null and are skipped — a locale-independent discriminator that
- * also keeps us off the hashed class names. Excluding `[data-dsh-sm-delete]`
- * keeps re-syncs (React node reuse) resolvable.
+ * The row's official ⋮-menu aria-label.
+ *
+ * On 0.2.0 a session row had exactly ONE labelled button (the ⋮ menu), so the
+ * discriminator was "the single `button[aria-label]` that is not ours". DSH
+ * 0.2.1 renders the `sidebar.workspaces.session.row.action` hover strip into
+ * every session row as well — 归档/置顶 buttons labelled 「归档会话」/「置顶会话」
+ * (and their en/archived variants) — so that count is now 3 and the old rule
+ * matched nothing, which silently disabled injection on every row.
+ *
+ * Identify the ⋮ button by its aria TEMPLATE instead (`isSessionActionsLabel`),
+ * not by button count: project rows carry only workspace/new-session labels and
+ * blank (New Session) rows carry none, so both still yield no label and are
+ * skipped. Excluding `[data-dsh-sm-delete]` keeps re-syncs (React node reuse)
+ * resolvable, and requiring EXACTLY ONE template hit preserves the "ambiguous →
+ * inject nothing" safety rule.
  */
 function rowLabel(row: HTMLElement): string | null {
   const buttons = Array.from(row.querySelectorAll<HTMLElement>('button[aria-label]'))
     .filter((b) => !b.hasAttribute('data-dsh-sm-delete'))
+    .filter((b) => isSessionActionsLabel(b.getAttribute('aria-label') ?? ''))
   if (buttons.length !== 1) return null
   const label = buttons[0].getAttribute('aria-label')
   return label && label.trim().length > 0 ? label : null
@@ -131,7 +144,7 @@ export function createDeleteController(
       e.stopPropagation()
       // The id bound at injection time is authoritative: a per-row re-resolve
       // at click time could not see the container tie-context that produced it
-      // (and our own aria-labelled button would break the "exactly one" rule).
+      // (and our own aria-labelled button would have to be excluded again).
       // Only the volatile metadata (running/cwd) is refreshed from the LIVE
       // snapshot for the SAME id, so a rename/start between injection and
       // click still yields current state while the binding stays correct.
@@ -163,10 +176,11 @@ export function createDeleteController(
         const action = actions[i]
         if (!action) {
           // Diagnostic for the "ungrouped not deletable" report: a row that IS
-          // a session row (single non-ours labelled button) but failed title
-          // resolution. S-13 / SECURITY S4: only the row index and the byId
-          // count are logged — never the aria-label (it embeds the session
-          // title) nor the title list, which could carry sensitive wording.
+          // a session row (one button matching the session-actions template)
+          // but failed title resolution. S-13 / SECURITY S4: only the row index
+          // and the byId count are logged — never the aria-label (it embeds the
+          // session title) nor the title list, which could carry sensitive
+          // wording.
           if (labels[i] !== null) {
             console.debug('[dsh-session-manager] session row not resolvable:', { rowIndex: i, byIdCount: Object.keys(byId).length })
           }
