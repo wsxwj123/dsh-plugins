@@ -68,3 +68,12 @@
 - ✅ pnpm-lock.yaml 入库；lib 移出 git（装前 build）
 - ✅ awesome-dsh-plugin PR #370（Sessions & Messages 分类）→ 已合并 🎉；条目链接带 owner 前缀 `wsxwj123/dsh-plugins#dsh-session-manager`（列表已有 Semidia/dsh-session-manager，不带前缀会混淆）
 - 测试基线：单测 131 + 验收 65 + 桥接 69 全绿
+
+## DSH 0.2.1 适配修复 @2026-10-18
+
+- 现象：桌面版升级 0.2.1-rc.2 后，会话行悬停的删除按钮消失（插件 host 半边与「归档」入口仍正常）。
+- 根因①（客户端，8a035d6）：0.2.1 把「归档会话/置顶会话」行内悬停按钮渲染进每个会话行，行内 `button[aria-label]` 从 1 个变 3 个；`DeleteButton.rowLabel()` 的「行内恰好一个 aria-label 按钮」判据恒不成立 → 所有行都不注入删除按钮。改为按 `actions.session.aria` 模板（zh/en）识别 ⋮ 按钮，仍保留「歧义不注入」。
+- 根因②（host，2e9dbcb，独立验收时发现）：`SESSION_MARKERS` 死名单只到 V3，0.2.1 写出 `session.v4.jsonl.zstd` → `/sm/delete` 返回 `not-a-session`，「按钮回来了却删不掉」。改为「已知标记快路径 + 目录条目正则 `^session(\.v\d+)?\.jsonl(\.zstd)?$` 兜底」；真实 394 个会话目录中 82 个 v4-only 目录由误判转为可删。
+- 独立验收（黑盒，隔离实例 `DSH_HOME=/tmp/verify-home`，回收站隔离）：按钮注入 20/20 断言 PASS；v4 删除复验 18/18 断言 PASS（v4 UI+POST 删除进隔离回收站、v3/v0 回归、撤销路径、真实 `~/.dsh` 零改动）。
+- 生效条件：host 半边无 HMR，需重启桌面版 DeepSeek Harness 一次；客户端 bundle 已由 client-hmr 热更新（rev 由 b67ccd1 → 51d3822）。
+- 测试基线：单测 135 全绿 + tsc 双配置通过；main 已本地 fast-forward 到 2e9dbcb（未 push）。
