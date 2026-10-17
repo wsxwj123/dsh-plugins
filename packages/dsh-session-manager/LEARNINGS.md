@@ -46,3 +46,20 @@
 - 上游若再增删行内操作按钮，本判据不受影响；但若改了 `actions.session.aria` 模板，
   必须同步 `ARIA_TEMPLATES`，否则失败模式是"没有删除按钮"（不会删错会话）。
 - 单测见 `tests/unit/sessionRowMatch.unit.test.js` 的 `isSessionActionsLabel` 三例。
+
+## host 会话格式版本一升，目录标记闸门就会误判：检测必须正则兜底，不能维护死名单（2026-10-18）
+- 现象：客户端修好、按钮回来了，但删最新会话时 /sm/delete 返回 `{"ok":false,"code":"not-a-session"}`，
+  UI 显示「删除失败，已恢复」；老会话能删。本机 394 个真实会话目录里旧闸门只认 312 个，
+  82 个 v4-only 目录全被误判（同一天验收真机发现）。
+- 根因：`src/trash.ts` 的 `SESSION_MARKERS` 是手写死名单，只到 V3；DSH 0.2.1 写的是
+  `session.v4.jsonl.zstd`。历史上 V3 升级（commit 897d0a7）已经犯过同一次错——
+  每次格式版本升级，死名单就漏掉新一代会话，删除按钮"看得见却删不掉"。
+- 现行规则：`hasSessionMarker(dir)` = 已知 marker 快路径（`existsSync`，照顾常见情况）
+  + **目录条目正则兜底** `^session(\.v\d+)?\.jsonl(\.zstd)?$`（锚定完整文件名）。
+  正则覆盖任意 `v\d+` 与压缩/明文两轴，同时拒绝 `session.jsonl.bak` /
+  `xsession.jsonl` / `session.v4.jsonl.zstd.part` 这类近似名。下个版本 v5/v6 无需改代码。
+- `SESSION_MARKERS` 保留导出（handler 的 not-a-session 报错文案在用）并补上 v4 两项，
+  但它只是快路径，**不要再把它当闸门本体**；新格式必须靠正则。
+- 校验方式（只读）：对 ~/.dsh/sessions 下真实目录调 `hasSessionMarker` 应全为 true，
+  且对项目目录等非会话目录返回 false。单测见 `tests/unit/trash.unit.test.js` 的
+  hasSessionMarker 五例（v4 快路径 / v5 兜底 / 近似名反例 / 空与缺失目录 / SESSION_MARKERS 含 v4）。

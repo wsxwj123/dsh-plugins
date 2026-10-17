@@ -28,9 +28,9 @@ import { assertValidId, isStableSegment } from './paths.js'
 export const SESSION_MARKER = 'session.jsonl.zstd'
 
 /**
- * Every filename that marks a directory as a DSH session directory.
+ * Every KNOWN session-log filename — the fast path only, NOT the gate itself.
  *
- * Two independent axes produce the names:
+ * Three independent axes produce the names:
  *  - compression: zstd writes `session.jsonl.zstd`, `compression:'none'` writes
  *    the plaintext `session.jsonl`. Only accepting the compressed name made
  *    every delete on a plaintext deployment fail with `not-a-session` (M3).
@@ -42,19 +42,58 @@ export const SESSION_MARKER = 'session.jsonl.zstd'
  *    list deleted normally. That asymmetry is the reported "列表里删的不进回收站"
  *    bug — a session silently stopped being deletable the moment it was
  *    resumed under 0.1.5.
+ *  - the same story AGAIN at V4: DSH 0.2.1 writes `session.v4.jsonl.zstd`, and
+ *    the v3-only list refused every 0.2.1 session (92 of them on this machine)
+ *    with `not-a-session` — the delete button reappeared but nothing deleted.
  *
- * Order = most common first.
+ * That is why `hasSessionMarker` does not trust this list alone: it falls back
+ * to the anchored SESSION_LOG_RE below, so the NEXT format bump (v5, v6, …)
+ * cannot silently re-break deletion. The list stays because it is the cheap
+ * fast path and because handler.ts uses it in the `not-a-session` error copy.
+ * Order: current format first, then the version-less V2 names, then V3.
  */
 export const SESSION_MARKERS: readonly string[] = [
+  'session.v4.jsonl.zstd',
+  'session.v4.jsonl',
   SESSION_MARKER,
   'session.jsonl',
   'session.v3.jsonl.zstd',
   'session.v3.jsonl',
 ]
 
-/** True when `dir` carries a session log under any supported marker name. */
+/**
+ * Anchored session-log filename shape, the version-agnostic fallback marker.
+ *
+ * Covers `session.jsonl` (V0-ish), `session.v1.jsonl`, `session.v3.jsonl.zstd`,
+ * `session.v4.jsonl.zstd`, and a future `session.v5.jsonl.zstd` — every format
+ * version, compressed or plaintext — while rejecting near-misses:
+ * `session.jsonl.bak`, `xsession.jsonl`, `session.v4.jsonl.zstd.part`.
+ * The anchors plus the optional groups are what make that discrimination work;
+ * do not relax them into a `includes`/`startsWith` check.
+ */
+const SESSION_LOG_RE = /^session(\.v\d+)?\.jsonl(\.zstd)?$/
+
+/**
+ * True when `dir` carries a session log under any supported marker name.
+ *
+ * Contract: SYNCHRONOUS — handler.ts gates /sm/delete on it synchronously.
+ * Two stages:
+ *  1. fast path: `existsSync` on every known SESSION_MARKERS name (the common
+ *     case; a handful of syscalls, no directory scan);
+ *  2. fallback: read the directory and accept any entry matching
+ *     SESSION_LOG_RE, so a format-version bump cannot silently make every new
+ *     session undeletable again (the V4 regression was exactly that).
+ * A missing/unreadable dir carries no session → false.
+ */
 export function hasSessionMarker(dir: string): boolean {
-  return SESSION_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))
+  if (SESSION_MARKERS.some((name) => fs.existsSync(path.join(dir, name)))) return true
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(dir)
+  } catch {
+    return false
+  }
+  return entries.some((name) => SESSION_LOG_RE.test(name))
 }
 
 /** The metadata sub-directory inside the trash root. */

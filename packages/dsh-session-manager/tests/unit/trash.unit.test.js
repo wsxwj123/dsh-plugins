@@ -8,7 +8,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { TrashStore, SESSION_MARKER, METADATA_DIR } = await import(path.join(ROOT, 'lib', 'trash.js'))
+const { TrashStore, SESSION_MARKER, SESSION_MARKERS, METADATA_DIR, hasSessionMarker } = await import(
+  path.join(ROOT, 'lib', 'trash.js'),
+)
 
 let seq = 0
 function tmpdir() {
@@ -225,4 +227,51 @@ test('restoreItem: record-removal failure degrades — restore still succeeds, n
   assert.doesNotThrow(() => store.restoreItem(rec))
   assert.ok(fs.existsSync(path.join(session, SESSION_MARKER)), 'item restored despite record-cleanup failure')
   fs.rmSync(base, { recursive: true, force: true })
+})
+
+// ---- hasSessionMarker: format-version drift must not re-break the delete gate ----
+// DSH 0.2.1 writes `session.v4.jsonl.zstd`; the old v3-only SESSION_MARKERS list
+// refused every one of those sessions with `not-a-session` (button visible, delete
+// failed). hasSessionMarker now falls back to an anchored regex over the dir
+// entries, so the next format bump (v5) keeps working without a new dead entry.
+function dirWith(name) {
+  const dir = tmpdir()
+  if (name !== null) fs.writeFileSync(path.join(dir, name), 'x')
+  return dir
+}
+
+test('hasSessionMarker: V4 names are sessions (known-marker fast path)', () => {
+  for (const name of ['session.v4.jsonl.zstd', 'session.v4.jsonl']) {
+    const dir = dirWith(name)
+    assert.strictEqual(hasSessionMarker(dir), true, name)
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('hasSessionMarker: a future V5 name matches via the regex fallback', () => {
+  const dir = dirWith('session.v5.jsonl.zstd')
+  assert.strictEqual(hasSessionMarker(dir), true, 'unknown version, known shape')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('hasSessionMarker: near-miss names and unrelated files are NOT sessions', () => {
+  for (const name of ['session.jsonl.bak', 'foo.jsonl', 'session.v4.jsonl.zstd.part', 'notes.txt']) {
+    const dir = dirWith(name)
+    assert.strictEqual(hasSessionMarker(dir), false, name)
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('hasSessionMarker: empty dir and missing dir are NOT sessions', () => {
+  const empty = dirWith(null)
+  assert.strictEqual(hasSessionMarker(empty), false, 'empty dir')
+  assert.strictEqual(hasSessionMarker(path.join(empty, 'does-not-exist')), false, 'missing dir')
+  fs.rmSync(empty, { recursive: true, force: true })
+})
+
+test('SESSION_MARKERS keeps the handler error copy and names V4', () => {
+  assert.ok(Array.isArray(SESSION_MARKERS) && SESSION_MARKERS.length > 0)
+  for (const name of ['session.v4.jsonl.zstd', 'session.v4.jsonl']) {
+    assert.ok(SESSION_MARKERS.includes(name), `missing ${name}`)
+  }
 })
