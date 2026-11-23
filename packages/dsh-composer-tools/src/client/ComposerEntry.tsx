@@ -31,6 +31,9 @@ import { Panel } from './Panel.tsx'
 import { createSnapshotCapture } from './session-history.ts'
 import './panel.css'
 
+/** compositionend 后等 Lexical 完成最终文本 reconciliation 的收尾窗口（毫秒）。 */
+const COMPOSITION_SETTLE_MS = 120
+
 interface EntryProps {
   ctx: Context
   /**
@@ -102,24 +105,90 @@ export function ComposerEntry(props: EntryProps): ReactNode {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [nav])
 
-  // ---- 手动编辑检测：input（textarea/0.2.1）+ beforeinput（Lexical 0.2.2 主路径） ----
-  // 0.2.2 真机实测：Lexical 在 beforeinput 上 preventDefault 后自己改 DOM，浏览器
-  // 原生 input 事件可能不派发，只监听 input 会漏掉手动编辑 → 游标不重置。
+  // ---- 手动编辑检测：input/beforeinput（textarea/0.2.1）+ MutationObserver（Lexical 0.2.2） ----
+  // 0.2.2 真机取证：
+  //   · Lexical 对打字会 preventDefault beforeinput 自己改 DOM，原生 input 可能不派发；
+  //   · Lexical 对 Backspace/Delete/选区删除/剪切只发 keydown + DOM mutation，
+  //     不派发 beforeinput/input；
+  //   · IME 取消合成时浏览器会先发一个 isComposing=false 的
+  //     `input deleteContentBackward`（此时 DOM 还残留合成占位零宽字符），
+  //     若立即比对会把"取消合成"误判成手动编辑。
+  // 因此三路合一：DOM mutation 兜底删除类编辑；input/beforeinput 走旧路径；
+  // 合成期整体跳过，compositionend 后给一个短收尾窗口，等 Lexical 的最终
+  // reconciliation 完成再读全文比对（取消合成 → 文本恢复原值 → 不 reset；
+  // 提交合成 → 文本不同 → reset）。纯光标移动不产生 mutation。
   useEffect(() => {
+    let composing = false
+    let settleDeadline = 0
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+
+    /** 当前聚焦 composer 的全文（contenteditable 或 textarea；无则 null）。 */
+    const currentComposerText = (): string | null => {
+      const composer = resolveComposerAdapter(document.activeElement)
+      return composer === null ? null : composer.getText()
+    }
+    /** 与 lastProgrammaticText 比对：不同 → resetCursor（nav.onInput 内部判定）。 */
+    const applyCheck = (): void => {
+      const text = currentComposerText()
+      if (text !== null) nav.onInput(text)
+    }
+    /** 非合成、非收尾窗口才立即判定；否则等 compositionend 的收尾定时器统一判。 */
+    const requestCheck = (): void => {
+      if (composing) return
+      if (Date.now() < settleDeadline) return
+      applyCheck()
+    }
     const onInput = (e: Event): void => {
+      const inputEvent = e as InputEvent
+      if (composing || inputEvent.isComposing === true) return
       const composer = resolveComposerAdapter(e.target)
       if (composer === null) return
-      nav.onInput(composer.getText())
+      requestCheck()
     }
     const onBeforeInput = (e: Event): void => {
+      const inputEvent = e as InputEvent
+      if (composing || inputEvent.isComposing === true) return
+      if (typeof inputEvent.inputType === 'string' && inputEvent.inputType.startsWith('insertComposition')) return
+      if (Date.now() < settleDeadline) return
       if (resolveComposerAdapter(e.target) === null) return
       nav.onManualEdit()
     }
+    const finishSettling = (): void => {
+      settleTimer = null
+      settleDeadline = 0
+      applyCheck()
+    }
+    const onCompositionStart = (): void => {
+      composing = true
+      if (settleTimer !== null) {
+        clearTimeout(settleTimer)
+        settleTimer = null
+      }
+      settleDeadline = 0
+    }
+    const onCompositionEnd = (): void => {
+      composing = false
+      settleDeadline = Date.now() + COMPOSITION_SETTLE_MS
+      if (settleTimer !== null) clearTimeout(settleTimer)
+      settleTimer = setTimeout(finishSettling, COMPOSITION_SETTLE_MS)
+    }
+
+    let observer: MutationObserver | null = null
+    if (typeof MutationObserver === 'function') {
+      observer = new MutationObserver(requestCheck)
+      observer.observe(document.body, { characterData: true, childList: true, subtree: true })
+    }
     document.addEventListener('input', onInput, true)
     document.addEventListener('beforeinput', onBeforeInput, true)
+    document.addEventListener('compositionstart', onCompositionStart, true)
+    document.addEventListener('compositionend', onCompositionEnd, true)
     return () => {
+      observer?.disconnect()
       document.removeEventListener('input', onInput, true)
       document.removeEventListener('beforeinput', onBeforeInput, true)
+      document.removeEventListener('compositionstart', onCompositionStart, true)
+      document.removeEventListener('compositionend', onCompositionEnd, true)
+      if (settleTimer !== null) clearTimeout(settleTimer)
     }
   }, [nav])
 

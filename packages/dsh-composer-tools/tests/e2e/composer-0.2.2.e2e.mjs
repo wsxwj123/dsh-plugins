@@ -74,6 +74,7 @@ if (await exists(pkgPath)) {
 let serverLog = ''
 let child = null
 let browser = null
+let context = null
 let baseUrl = ''
 const results = []
 const pluginErrors = []
@@ -111,7 +112,7 @@ async function injectAdapter(page) {
 
 /** 新开一页并等插件加载完。 */
 async function openPage() {
-  const page = await browser.newPage()
+  const page = await context.newPage()
   page.on('pageerror', (error) => {
     const text = String(error)
     pluginErrors.push(text)
@@ -155,6 +156,18 @@ async function seedHistoryAndReload(page, sessionId, entries) {
 async function focusComposer(page) {
   await page.evaluate(() => document.querySelector('[contenteditable="true"][data-phase]')?.focus())
   await page.waitForTimeout(120)
+}
+
+/**
+ * 清空草稿。DSH 会把未发送草稿持久化到会话（换页/刷新会恢复），用例之间必须显式清空，
+ * 否则上一个用例残留的草稿会和本用例输入拼在一起。
+ */
+async function clearDraft(page) {
+  await focusComposer(page)
+  await page.keyboard.press('Meta+a')
+  await page.keyboard.press('Backspace')
+  await page.waitForTimeout(250)
+  assert.equal(await draftText(page), '', 'clearDraft: 草稿应为空')
 }
 
 /** 读当前草稿全文（真实 DOM → 与运行时同一个适配层）。 */
@@ -237,6 +250,8 @@ try {
   console.log(`isolated dsh: ${baseUrl.replace(tokenMatch[2], '<token>')}`)
   await new Promise((resolve) => setTimeout(resolve, 1500))
   browser = await chromium.launch()
+  // 剪切（Meta+X）要剪贴板权限；IME 用 CDP 合成。
+  context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
 
   // ---- 1. 单行历史：↑ 最新 / ↑ 更旧 / ↓ 较新 / ↓ 恢复原草稿 ----
   await checkCase('history: 单行 ↑↑↓↓ 往返 + 恢复草稿', async () => {
@@ -244,7 +259,7 @@ try {
     const currentSession = await currentSessionId(page)
     assert.ok(currentSession, 'current session id')
     await seedHistoryAndReload(page, currentSession, ['最新一条', '更旧一条'])
-    await focusComposer(page)
+    await clearDraft(page)
     await page.keyboard.type('我的草稿')
     await page.waitForTimeout(250)
     assert.equal(await draftText(page), '我的草稿', 'seed 草稿')
@@ -264,7 +279,7 @@ try {
     const page = await openPage()
     const sessionId = await currentSessionId(page)
     await seedHistoryAndReload(page, sessionId, ['历史A\n历史B\n历史C'])
-    await focusComposer(page)
+    await clearDraft(page)
     // 真实键入两行（Shift+Enter 行内换行）
     await page.keyboard.type('第一行草稿')
     await page.keyboard.down('Shift')
@@ -298,7 +313,7 @@ try {
   // ---- 3. 命令菜单打开时 ↑↓ 归菜单 ----
   await checkCase('menu: 命令菜单打开时 ↑↓ 不劫持历史', async () => {
     const page = await openPage()
-    await focusComposer(page)
+    await clearDraft(page)
     await page.keyboard.type('/')
     await page.waitForTimeout(900)
     const menuState = await page.evaluate(() => ({
@@ -328,7 +343,7 @@ try {
     const page = await openPage()
     const sessionId = await currentSessionId(page)
     await seedHistoryAndReload(page, sessionId, ['条目A', '条目B'])
-    await focusComposer(page)
+    await clearDraft(page)
     await press(page, 'ArrowUp')
     assert.equal(await draftText(page), '条目A', '先回填最新')
     await page.keyboard.type('X')
@@ -339,12 +354,115 @@ try {
     await page.close()
   })
 
+  // ---- 4b. 删除类手动编辑（Backspace/Delete/全选删除/剪切）都要重置游标 ----
+  // Lexical 对删除只发 keydown 并自己改 DOM，不派发 beforeinput/input；
+  // 这一组用例防止"回填后删除再按 ↑ 继续翻更旧"回归。
+  await checkCase('edit: Backspace/Delete/全选删/剪切 都重置游标', async () => {
+    const variants = [
+      { name: 'Backspace', apply: async (page) => { await press(page, 'Backspace') } },
+      { name: 'Delete', apply: async (page) => { await press(page, 'Home'); await press(page, 'Delete') } },
+      { name: '全选删除', apply: async (page) => { await press(page, 'Meta+a'); await press(page, 'Backspace') } },
+      { name: '剪切', apply: async (page) => { await press(page, 'Meta+a'); await press(page, 'Meta+x') } },
+    ]
+    const evidence = []
+    for (const variant of variants) {
+      const page = await openPage()
+      const sessionId = await currentSessionId(page)
+      await seedHistoryAndReload(page, sessionId, ['条目A', '条目B'])
+      await clearDraft(page)
+      await press(page, 'ArrowUp')
+      const recalled = await draftText(page)
+      assert.equal(recalled, '条目A', `${variant.name}: ↑ 先回填最新`)
+      await variant.apply(page)
+      await page.waitForTimeout(150)
+      const edited = await draftText(page)
+      assert.notEqual(edited, '条目A', `${variant.name}: 删除后草稿应变化`)
+      await press(page, 'ArrowUp')
+      const afterUp = await draftText(page)
+      assert.equal(afterUp, '条目A', `${variant.name}: 删除算手动编辑 → ↑ 从最新重新开始`)
+      evidence.push(`${variant.name}: 回填「条目A」→ 删除后「${edited}」→ ↑「${afterUp}」`)
+      await page.close()
+    }
+    console.log(`   ${evidence.join('；')}`)
+  })
+
+  // ---- 4c. 纯光标移动不应被当成手动编辑 ----
+  await checkCase('edit: 纯光标移动（←/→/Home/End）不重置游标', async () => {
+    const page = await openPage()
+    const sessionId = await currentSessionId(page)
+    await seedHistoryAndReload(page, sessionId, ['条目A', '条目B'])
+    await clearDraft(page)
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), '条目A', '↑ 回填最新')
+    await press(page, 'ArrowLeft')
+    await press(page, 'ArrowLeft')
+    await press(page, 'Home')
+    await press(page, 'End')
+    await press(page, 'ArrowLeft')
+    await press(page, 'ArrowRight')
+    assert.equal(await draftText(page), '条目A', '光标移动不改草稿')
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), '条目B', '光标移动不算编辑 → ↑ 继续翻更旧')
+    await page.close()
+  })
+
+  // ---- 4d. IME：合成期放行、取消合成不误重置、提交合成算手动编辑 ----
+  await checkCase('ime: 合成期 ↑ 放行、取消合成不重置、提交合成算编辑', async () => {
+    const page = await openPage()
+    const sessionId = await currentSessionId(page)
+    const cdp = await page.context().newCDPSession(page)
+
+    // (1) 取消合成：不应重置历史游标
+    await seedHistoryAndReload(page, sessionId, ['条目A', '条目B'])
+    await clearDraft(page)
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), '条目A', '回填最新')
+    await page.evaluate(() => {
+      window.__imeComposeStates = []
+      document.addEventListener('keydown', (event) => window.__imeComposeStates.push(event.isComposing), true)
+    })
+    await cdp.send('Input.imeSetComposition', { text: 'n', selectionStart: 1, selectionEnd: 1 })
+    await page.waitForTimeout(400)
+    const composingDraft = await draftText(page)
+    assert.notEqual(composingDraft, '条目A', '合成文本已进入 DOM')
+    await press(page, 'ArrowUp') // 合成期 ↑ 必须放行（isComposing）
+    assert.equal(await draftText(page), composingDraft, '合成期 ↑ 不劫持、不翻历史')
+    const composingStates = await page.evaluate(() => window.__imeComposeStates)
+    assert.equal(composingStates.at(-1), true, '合成期 keydown.isComposing === true')
+    await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+    await page.waitForTimeout(600)
+    assert.equal(await draftText(page), '条目A', '取消合成后文本恢复')
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), '条目B', '取消合成不算手动编辑 → ↑ 继续翻更旧')
+
+    // (2) 提交合成：算手动编辑 → 游标重置
+    await seedHistoryAndReload(page, sessionId, ['条目A', '条目B'])
+    await clearDraft(page)
+    await press(page, 'ArrowUp')
+    await cdp.send('Input.imeSetComposition', { text: 'ni', selectionStart: 2, selectionEnd: 2 })
+    await page.waitForTimeout(400)
+    await cdp.send('Input.insertText', { text: '你' })
+    await page.waitForTimeout(700)
+    const committed = await draftText(page)
+    assert.equal(committed, '条目A你', '合成提交后草稿含新字')
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), '条目A', '提交合成算手动编辑 → ↑ 从最新重新开始')
+    console.log(`   IME 取消合成：回填「条目A」→ 合成「${composingDraft}」→ ↑ 放行 → 取消 → ↑「条目B」；提交合成：「${committed}」→ ↑「条目A」`)
+    await page.close()
+  })
+
   // ---- 5. 会话隔离：真实开新会话并发消息后，历史互不串台 ----
   await checkCase('isolation: 新会话不继承上一会话历史', async () => {
     const page = await openPage()
     const firstSession = await currentSessionId(page)
     assert.ok(firstSession, 'first session id')
-    await focusComposer(page)
+    // 前面的用例在同一个会话上 seed 过历史，先清掉并刷新让插件重读（否则断言会混入旧条目）。
+    await page.evaluate((id) => localStorage.removeItem(`dsh-composer-tools:history:${id}`), firstSession)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(4200)
+    await dismissDialogs(page)
+    await injectAdapter(page)
+    await clearDraft(page)
     // 先把当前（blank）会话发成 active —— 0.2.2 里"New session"只有在当前会话
     // 已 stage 时才会真的新建会话 id。
     const firstText = `会话A-${Date.now()}`
@@ -363,7 +481,7 @@ try {
       const id = await currentSessionId(page)
       return id !== null && id !== firstSession ? id : null
     }, { timeoutMs: 15000, label: 'new session id' })
-    await focusComposer(page)
+    await clearDraft(page)
     await press(page, 'ArrowUp')
     assert.equal(await draftText(page), '', '新会话不继承上一会话历史')
     // 新会话发一条：应只落自己的历史
@@ -389,7 +507,7 @@ try {
     const sessionId = await currentSessionId(page)
     const historyBefore = (await storedHistory(page, sessionId)) ?? []
     console.log(`   capture session: ${sessionId}（发送前历史 ${JSON.stringify(historyBefore)}）`)
-    await focusComposer(page)
+    await clearDraft(page)
     const text = `发送采集取证-${Date.now()}`
     await page.keyboard.type(text)
     await page.waitForTimeout(200)
@@ -416,6 +534,7 @@ try {
     assert.deepEqual(ourErrors, [], 'plugin errors')
   })
 } finally {
+  if (context !== null) await context.close().catch(() => {})
   if (browser !== null) await browser.close().catch(() => {})
   if (child !== null && child.exitCode === null) {
     child.kill('SIGTERM')

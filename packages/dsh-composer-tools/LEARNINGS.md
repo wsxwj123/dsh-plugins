@@ -119,3 +119,27 @@
 - `tests/e2e/composer-0.2.2.e2e.mjs`：自动拉起隔离 DSH 实例 + 真实按键，7 条覆盖
   ↑↑↓↓ 往返、多行行边界、菜单让路、手动编辑重置、会话隔离、真实发送采集、无插件报错。
 - 纯逻辑继续走 node --test（gate 未改，原有 214 条验收全绿；新增 test-17 覆盖事件流水位线与整链）。
+
+### 9. 删除类编辑检测：Lexical 不发 input，MutationObserver + IME 收尾窗口
+（task-6 验收发现的唯一 FAIL：回填历史后 Backspace/Delete/选区删除，再按 ↑ 仍翻更旧）
+- 根因：Lexical 对 Backspace/Delete/剪切只发 keydown（自己 preventDefault）并直接改 DOM，
+  **不派发 beforeinput/input**；只监听事件的手动编辑检测对删除路径完全收不到。
+  对照组：打字路径会派发 beforeinput，所以"打字后 ↑ 正常、删除后 ↑ 异常"。
+- 修法：在 document.body 上挂 `MutationObserver({characterData, childList, subtree})`，
+  DOM 一变就读当前 composer 全文喂 `nav.onInput(text)`——它内部与 lastProgrammaticText
+  比对：相等（程序化 setDraft 自身渲染）→ 忽略；不同 → resetCursor。纯光标移动不产生
+  mutation，所以不会被误判。textarea（0.2.1）继续走 input/beforeinput 事件。
+- IME 坑：取消合成时浏览器会先派发一个 **isComposing = false** 的
+  `input deleteContentBackward`，此时 DOM 还残留合成占位的零宽字符（U+200B，肉眼不可见，
+  JSON 里也是不可见字符）→ 立即比对会把"取消合成"误判成手动编辑，历史游标被重置。
+  修法：用自身 compositionstart/end 维护 composing 标志，input/beforeinput 在合成期一律跳过；
+  compositionend 后再给 120ms 收尾窗口，等 Lexical 的最终 reconciliation 完成才读全文
+  （取消 → 文本恢复原值 → 不 reset；提交 → 文本不同 → reset）。
+- 真机 e2e 证据（隔离实例）：回填「条目A」→ Backspace「条目」/ Delete「目A」/ 全选删「」/
+  剪切「」→ ↑ 全部回到「条目A」（不再「条目B」）；纯 ←/→/Home/End 后 ↑ 仍「条目B」；
+  合成期 ↑ 放行（keydown.isComposing=true）；取消合成后 ↑「条目B」；提交合成「条目A你」后 ↑「条目A」。
+- 测试工具：Playwright 用 `context.newCDPSession(page)` + `Input.imeSetComposition` 可模拟真实
+  IME（keydown.isComposing=true），`Input.insertText` 提交、`text:''` 取消；剪切用例需要
+  `newContext({permissions:['clipboard-read','clipboard-write']})`。
+- 用例隔离坑：DSH 会把未发送草稿持久化到会话，换页/刷新会恢复。e2e 用例之间必须显式
+  `Meta+A + Backspace` 清空（clearDraft），否则上一个用例的草稿会拼进下一个用例的输入。
