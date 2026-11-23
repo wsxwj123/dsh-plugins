@@ -61,3 +61,14 @@
 - 04 开发完成（4 commit：host create scope/delete/list 字段 + client reducer/双入口/删除/返回 + 拖拽修复）→ 05 裁判盲判：合格（184 验收+145 单测全绿，25ms 会合窗口专项判定接受）@待用户实测确认
 - 真实环境实测（playwright 3080）：面板打开✓ 提示词 tab 不塌陷✓ 拖拽后点 tab 不塌陷✓ 项目级显示+删除按钮✓ ——但发现运行中 web（12:25 启动）host 是旧版（增量1），delete 404 + 无 canCreateGlobalAgents → 需重启 web 生效
 - 卡点⑤待用户：重启 dsh web 后实测（删除可用/新建全局按钮/提示词不塌陷）
+
+## DSH 0.2.2 适配修复 @2026-11-23
+
+- 现象：桌面版升级 0.2.2-rc.5 后，方向键 ↑/↓ 翻输入历史失效；面板/指令/提示词正常。
+- 根因（82d007e）：0.2.2 把 composer 从 `<textarea data-phase>` 换成 Lexical `contenteditable` 编辑器；`isComposerTextarea()` 恒 false → 方向键 gate 永不命中；`HistoryNav` 依赖的 `HTMLTextAreaElement.value/.selectionStart/.setSelectionRange` 也不再存在。
+- 同根因连带断点（同 commit）：命令菜单判据（0.2.2 下 editable 的 data-phase 恒为 plain → 改用 `[data-trigger-menu]` + fail-safe）、发送采集（0.2.2 的 Session.buildSnapshot 删除 nodes → 改读 binding.eventSource 的 user/message，seq 水位线）、手动编辑检测（Lexical preventDefault 掉 beforeinput → 加 capture）。
+- 二次修复（148a31f，独立验收发现）：Lexical 删除类操作只发 keydown + DOM mutation、不派发 beforeinput/input → 回填历史后按 Backspace/Delete 再按 ↑ 会多翻一条。改为 MutationObserver(characterData+childList+subtree) 比对 lastProgrammaticText，并加 compositionend 后 120ms 收尾窗口防 IME 取消合成误判。
+- 修法落点：新增 `src/client/composer-target.ts`（textarea/contenteditable 统一读文本/选区/菜单/光标）、`src/client/event-capture.ts`；`ComposerEntry.tsx` / `HistoryNav.ts` / `context-types.ts` 适配；`gate.ts` 纯逻辑未改。
+- 独立验收：task-6 + task-8 全 PASS（单行往返、多行首/中/末行、菜单让路、IME 合成期/取消/提交、会话隔离、面板回归、Backspace/Delete/全选删/剪切后重置、纯光标不误重置）；真机 bundle rev 已热更新为 b73e1ce75600。
+- 测试基线：acceptance 226 + unit 147 + DOM 21 + 真机 e2e 10 全绿；tsc 双配置通过。
+- main 本地合并到 148a31f（未 push，领先 origin 5 个 commit）。
