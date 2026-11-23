@@ -33,5 +33,7 @@ export {
 // 接线层（非纯函数但无 DOM 依赖）：test-15 用它按真实 DSH 路径驱动"快照采集 →
 // 落盘 → ↑ 回填"整条链，避免测试里另写一份接线（Bug 3 漏检的根因）。
 export { createHistoryNav } from "../../../lib/history-nav.js"
+// 0.2.2 会话事件流采集（SessionSnapshot.nodes 消失后的发送采集主路径）。
+export { createEventFeedCapture, userTextFromEvent } from "../../../lib/event-capture.js"
 export { historyStorageKey, loadHistory, saveHistory } from "../../../lib/history-storage.js"
 export { appendPromptToDraft } from "../../../lib/append.js"

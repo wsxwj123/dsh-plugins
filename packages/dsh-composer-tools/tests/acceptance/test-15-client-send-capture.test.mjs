@@ -75,21 +75,42 @@ function mountCapture(nav, session) {
   return session.subscribe(pump)
 }
 
+/**
+ * composer 适配器替身（0.2.2 起 HistoryNav 注入 ComposerHandle，不再直接吃
+ * HTMLTextAreaElement；这里用内存对象驱动同一套 getText/getSelection/
+ * setCaretToEnd 面）。
+ */
+function fakeComposer() {
+  const state = { value: '', selectionStart: 0, selectionEnd: 0 }
+  return {
+    state,
+    adapter: {
+      getText: () => state.value,
+      getSelection: () => ({ start: state.selectionStart, end: state.selectionEnd }),
+      setCaretToEnd: () => {
+        state.selectionStart = state.value.length
+        state.selectionEnd = state.value.length
+        return true
+      },
+    },
+  }
+}
+
 /** 装一个 nav + 会话订阅，返回驱动句柄。 */
 function mount(sessionId, session, storage = memStorage()) {
   const drafts = []
-  const textarea = { value: '', selectionStart: 0, selectionEnd: 0, setSelectionRange() {} }
+  const composer = fakeComposer()
   const nav = createHistoryNav({
     storage,
     setDraft: (text) => {
       drafts.push(text)
-      textarea.value = text
+      composer.state.value = text
     },
-    focusTextarea: () => textarea,
+    composer: () => composer.adapter,
   })
   nav.switchSession(sessionId)
   const off = mountCapture(nav, session)
-  return { nav, storage, drafts, textarea, off }
+  return { nav, storage, drafts, composer, off }
 }
 
 /** 存盘的历史条目（最新在前）。 */

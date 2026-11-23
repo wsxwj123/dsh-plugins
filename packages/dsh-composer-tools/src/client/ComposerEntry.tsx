@@ -1,27 +1,32 @@
 /**
- * ComposerEntry — slot entry 组件（conversation.input.right，id: dsh-composer-tools）。
+ * ComposerEntry — slot entry 组件（conversation.input.left，id: dsh-composer-tools）。
  *
  * 职责（PLAN §1.3 / INTERFACE §3 / T8）：
  *   1. 按钮：点击开关面板，标题「指令/提示词」带图标。面板在本组件内渲染（composer
  *      内 position fixed），不另开 createRoot overlay。
  *   2. 方向键历史：useEffect 挂 `document.addEventListener('keydown', fn, true)`
- *      capture 监听。isComposerTarget 判定（e.target 是本 composer textarea，DOM
- *      锚点：textarea 带 data-phase，容器有 data-input-scroll/backdrop/mirror）；
- *      menuOpen 判定（data-phase 存在且 !== 'plain'；属性读不到 → menuOpen=true
- *      fail-safe，SPIKE-T0 ③）。命中 gate → preventDefault + stopPropagation +
- *      HistoryNav 回填。cleanup 摘监听。
- *   3. 发送采集（主路径）：订阅当前会话的快照，新落地的 user 消息文本即历史条目
- *      （session-history.ts 水位线 diff）。普通消息 phase 恒为 plain、发送按钮
- *      点击没有 keydown，只有快照覆盖得全。
+ *      capture 监听。isComposerTarget / menuOpen 判定全部交给 composer 适配层
+ *      （composer-target.ts）：0.2.1 textarea（`textarea[data-phase]`）与 0.2.2
+ *      Lexical contenteditable（`[contenteditable="true"][data-phase]`）同一判据；
+ *      菜单以 `[data-trigger-menu]` DOM 为准（0.2.2 菜单打开时 data-phase 仍是
+ *      plain，实测）。命中 gate → preventDefault + stopPropagation + HistoryNav
+ *      回填。cleanup 摘监听。
+ *   3. 发送采集（主路径）：会话确认受理 user 消息 → 历史条目。
+ *      · 0.1.5–0.2.0：`session.getSnapshot().nodes` 水位线 diff（session-history.ts）。
+ *      · 0.2.2+：SessionSnapshot 不再有 nodes，改读 `binding.eventSource` 事件流的
+ *        `user/message`（source.kind === 'user'）append 事件（event-capture.ts）。
  *   4. 发送采集（斜杠命令路径，保留）：useInput 的 phase 进 submitting/
  *      adjudicating 时 draft 未清 → capturePending；draft 变 '' → commitPending；
  *      phase 回 plain 且 draft 恢复 pending 原文（发送失败）→ dropPending。
- *      claimed 不动。斜杠命令在快照里是 CommandNode，主路径采不到，故两条并存。
+ *      claimed 不动。斜杠命令在快照/事件流里是 CommandNode/command 事件，主路径
+ *      采不到，故两条并存。
  */
 import { createElement, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { Context, InputActions, InputPhase, InputSelection } from './context-types.ts'
 import { createHistoryNav, type HistoryNavController } from './HistoryNav.ts'
+import { resolveComposerAdapter, isComposerMenuOpen } from './composer-target.ts'
+import { createEventFeedCapture } from './event-capture.ts'
 import { Panel } from './Panel.tsx'
 import { createSnapshotCapture } from './session-history.ts'
 import './panel.css'
@@ -41,24 +46,6 @@ interface EntryProps {
   wide?: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
-}
-
-/** DOM 锚点：本 composer 的 textarea 带 data-phase 属性。 */
-function isComposerTextarea(el: EventTarget | null): el is HTMLTextAreaElement {
-  const ta = el as HTMLTextAreaElement | null
-  return !!ta && ta.tagName === 'TEXTAREA' && ta.hasAttribute('data-phase')
-}
-
-/**
- * menuOpen 判定（INTERFACE §3，SPIKE-T0 ③）：
- * 判定 = data-phase 存在且 !== 'plain'（含 'inert' 无会话态，均非 plain）。
- * 属性读不到（不存在/空串/元素取不到）→ 一律按 menuOpen=true（fail-safe，
- * 宁可历史失效不抢命令菜单的 ↑/↓）。
- */
-function readMenuOpen(ta: HTMLTextAreaElement): boolean {
-  const attr = ta.getAttribute('data-phase')
-  if (attr === null || attr === '') return true
-  return attr !== 'plain'
 }
 
 export function ComposerEntry(props: EntryProps): ReactNode {
@@ -87,10 +74,7 @@ export function ComposerEntry(props: EntryProps): ReactNode {
       setDraft: (text) => {
         inputActions.setDraft(text)
       },
-      focusTextarea: () => {
-        const ta = document.activeElement as HTMLTextAreaElement | null
-        return ta && isComposerTextarea(ta) ? ta : null
-      },
+      composer: () => resolveComposerAdapter(document.activeElement),
     })
   }
   const nav = histRef.current
@@ -103,12 +87,11 @@ export function ComposerEntry(props: EntryProps): ReactNode {
   // ---- document capture keydown：方向键历史 ----
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      const ta = document.activeElement as HTMLTextAreaElement | null
-      const isComposerTarget = isComposerTextarea(ta)
-      let menuOpen = false
-      if (isComposerTarget) {
-        menuOpen = readMenuOpen(ta as HTMLTextAreaElement)
-      }
+      // e.target 优先；focus 判定兜底用 activeElement（contenteditable 的
+      // keydown target 就是可编辑根，两者一致）。适配层不认目标 → 放行。
+      const element = resolveComposerAdapter(e.target) ?? resolveComposerAdapter(document.activeElement)
+      const isComposerTarget = element !== null
+      const menuOpen = element === null ? false : isComposerMenuOpen(element.element)
       const hit = nav.onKeydown(e, isComposerTarget, menuOpen)
       if (hit) {
         e.preventDefault()
@@ -119,35 +102,58 @@ export function ComposerEntry(props: EntryProps): ReactNode {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [nav])
 
-  // ---- 手动编辑检测：textarea 的 input 事件 ----
+  // ---- 手动编辑检测：input（textarea/0.2.1）+ beforeinput（Lexical 0.2.2 主路径） ----
+  // 0.2.2 真机实测：Lexical 在 beforeinput 上 preventDefault 后自己改 DOM，浏览器
+  // 原生 input 事件可能不派发，只监听 input 会漏掉手动编辑 → 游标不重置。
   useEffect(() => {
     const onInput = (e: Event): void => {
-      const ta = e.target as HTMLTextAreaElement | null
-      if (!isComposerTextarea(ta)) return
-      nav.onInput(ta.value)
+      const composer = resolveComposerAdapter(e.target)
+      if (composer === null) return
+      nav.onInput(composer.getText())
+    }
+    const onBeforeInput = (e: Event): void => {
+      if (resolveComposerAdapter(e.target) === null) return
+      nav.onManualEdit()
     }
     document.addEventListener('input', onInput, true)
-    return () => document.removeEventListener('input', onInput, true)
+    document.addEventListener('beforeinput', onBeforeInput, true)
+    return () => {
+      document.removeEventListener('input', onInput, true)
+      document.removeEventListener('beforeinput', onBeforeInput, true)
+    }
   }, [nav])
 
-  // ---- 发送采集主路径：订阅会话快照，新落地的 user 消息即历史条目 ----
+  // ---- 发送采集主路径：订阅会话（快照 nodes / 事件流），新落地的 user 消息即历史条目 ----
   // phase 机对普通消息永远不触发（onEnter 走 default-sink，phase 恒 plain），
-  // 且发送按钮点击根本没有 keydown —— 只有快照能覆盖全部已受理的发送。
+  // 且发送按钮点击根本没有 keydown —— 只有会话侧信号能覆盖全部已受理的发送。
   useEffect(() => {
     if (sessionId === undefined) return
-    const capture = createSnapshotCapture((text) => {
-      nav.record(text)
-    })
     let offSession: (() => void) | null = null
     const attach = (): void => {
       if (offSession !== null) return
-      const session = ctx.sessions.binding?.(sessionId)?.session
+      const binding = ctx.sessions.binding?.(sessionId)
+      const session = binding?.session
       if (session === undefined || session === null) return
-      const pump = (): void => {
-        capture.onSnapshot(session.getSnapshot()?.nodes)
+      const snapshotFace = session.getSnapshot()
+      if (snapshotFace !== undefined && Array.isArray(snapshotFace.nodes)) {
+        // 0.1.5–0.2.0：会话快照 nodes 路径（旧行为原样保留）。
+        const capture = createSnapshotCapture((text) => nav.record(text))
+        const pump = (): void => {
+          capture.onSnapshot(session.getSnapshot()?.nodes)
+        }
+        pump() // 首帧只初始化水位线（已在窗口里的旧消息不回补）
+        offSession = session.subscribe(pump)
+        return
       }
-      pump() // 首帧只初始化水位线（已在窗口里的旧消息不回补）
-      offSession = session.subscribe(pump)
+      const feed = binding?.eventSource
+      if (feed === undefined || feed === null) return
+      // 0.2.2+：SessionSnapshot 不再有 nodes，改读事件流 user/message append。
+      const capture = createEventFeedCapture((text) => nav.record(text))
+      const pump = (): void => {
+        capture.onSnapshot(feed)
+      }
+      pump() // 首帧只初始化 seq 水位线（窗口里已有的事件不回补）
+      offSession = feed.subscribe(pump)
     }
     attach()
     // binding 暂缺（会话未打开/未 staged）时不能只试一次就放弃：会话列表变化即补挂。

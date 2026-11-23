@@ -152,6 +152,11 @@ export default [
       // 调用）——一起建到 node ESM，验收测试才能驱动"快照采集 → 落盘 → ↑ 回填"
       // 整条链，而不是在测试里重写一遍接线（那正是 Bug 3 漏检的原因）。
       'history-nav': 'src/client/HistoryNav.ts',
+      // 0.2.2 Lexical contenteditable 适配层（纯 DOM，无 Node 依赖）：单独出
+      // ESM 供真实浏览器 DOM 测试（Playwright 页面内 import）。
+      'composer-target': 'src/client/composer-target.ts',
+      // 0.2.2 会话事件流采集（纯逻辑）：node 可直接测。
+      'event-capture': 'src/client/event-capture.ts',
       append: 'src/client/append.ts',
       'bridge-core': 'src/client/bridgeCore.ts',
       'instruction-view': 'src/client/instruction-view.ts',

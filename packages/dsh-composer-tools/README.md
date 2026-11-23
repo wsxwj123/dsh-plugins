@@ -17,6 +17,7 @@ DSH web 输入体验增强插件：**方向键输入历史** + **指令查看/�
 - **多行输入**：光标在**第一行**按 ↑ 才翻历史、光标在**最后一行**按 ↓ 才翻——光标在中间行时按键正常移动光标，不会误翻
 - **← → 永不触发**；中文输入法选字时不误触；命令菜单打开时方向键归菜单
 - 历史按会话隔离、刷新后仍在（localStorage），每会话最多 100 条
+- **0.2.2 兼容**：DSH 0.2.2 把输入框换成 Lexical 富文本 `contenteditable`，插件通过 composer 适配层（`src/client/composer-target.ts`）同时支持旧 `textarea` 与新编辑器——文本/光标口径、菜单判据、回填后光标复位都在适配层收敛
 
 ### 2. 指令查看 / 编辑面板
 
@@ -67,33 +68,47 @@ pnpm add "link:/绝对路径/packages/dsh-composer-tools"
 
 或直接 `dsh plugin --profile web add "link:$PWD/packages/dsh-composer-tools"`。
 
-**兼容版本**：`@deepseek-ai/dsh` 0.1.5 与 0.2.0-rc.2（两版都免豁免可装）。
+**兼容版本**：`@deepseek-ai/dsh` 0.1.5、0.2.0-rc.2，以及桌面版 0.2.2-rc.5（三档都真机验证可装可用）。
 
-> 0.2 适配说明：0.2 从 `sessions.list` 快照删掉了 `current` 字段，本插件改为读
-> 会话作用域的标准 `sessionId` prop 来定位当前会话目录（`snapshot.current` 仅作
-> 0.1.5 兜底）。0.2 桌面真机实测待补。
+> 0.2 适配说明：
+> - 0.2.0 从 `sessions.list` 快照删掉了 `current` 字段，本插件改为读会话作用域的
+>   标准 `sessionId` prop 来定位当前会话目录（`snapshot.current` 仅作 0.1.5 兜底）。
+> - 0.2.2 把输入框从 `<textarea data-phase>` 换成 Lexical `contenteditable`：
+>   方向键历史改走 composer 适配层（`contenteditable[data-phase]` 锚点 + 块级
+>   `'\n'` 文本口径 + Range 光标偏移 + `[data-trigger-menu]` 菜单判据）；发送采集
+>   因 `SessionSnapshot.nodes` 被删除，改读 `SessionBinding.eventSource` 的
+>   `user/message`（`source.kind === 'user'`）事件。详见 LEARNINGS。
 
 ---
 
 ## 工作原理（给维护者）
 
 - **host 半（node）**：挂 `/ct` 前缀 RPC（loopback 信任围栏 + POST-only）——指令发现（`.git` 找项目根 + 祖先链，`lstat` 拒符号链接）、读写（basename 白名单 × 精确发现成员资格双闸门防逃逸 + mtime 乐观锁 + 截断保护）、提示词库按需下发
-- **client 半（React）**：注册 `conversation.input.right` slot 注入入口按钮；方向键用 document capture keydown 拦截（先于 React），官方 `inputActions.setDraft` 回填；发送采集走 phase 状态机（发送失败自动剔除误录）
+- **client 半（React）**：注册输入框 slot 注入入口按钮；方向键用 document capture keydown 拦截（先于 React 与 Lexical 的 keymap），官方 `inputActions.setDraft` 回填 + rAF 把光标复位到末尾；composer 目标/文本/光标/菜单判定全部走 `composer-target.ts` 适配层（textarea ↔ contenteditable 同口径）；发送采集主路径为「会话快照 nodes（0.1.5–0.2.0）或会话事件流 user/message（0.2.2+）」，斜杠命令仍由 phase 机两段式兜底
 
 ## 边界与已知限制
 
 - 输入历史**按会话隔离**、明文存 localStorage（README 提示）
 - 指令面板只读列出 + 编辑**已发现的**文件，不创建新文件
 - 提示词库数据为 AGPL-3.0（Cherry Studio），随 MIT 插件分发，来源与许可证已在面板和本文件标注
-- 真实浏览器交互（方向键门槛、IME、菜单让路）由 playwright e2e 在独立 profile 自动化验证
+- 真实浏览器交互（方向键门槛、IME、菜单让路、0.2.2 Lexical 回填）由 playwright e2e 在隔离实例自动化验证
+- 0.2.2 的 Lexical 文档里如果含 chip/quote 等原子节点，DOM 文本与草稿投影在极端情况下可能有微小差异（插件只用它做行号判定与光标复位，回填文本始终来自历史条目本身）
 
 ## 测试
 
 ```bash
-pnpm test:acceptance   # 131 条契约验收（真实实现）
-node --test tests/unit/*.test.mjs   # 112 条白盒单测
-npx playwright test tests/e2e/      # 7 条真实 dsh web e2e（需先起 composer-e2e profile）
+npm run check                        # 双 tsconfig 类型检查
+npm run test:acceptance              # 契约验收（真实实现，含 0.2.2 事件流采集）
+node --test tests/unit/*.test.mjs    # 白盒单测
+node tests/e2e/composer-target.dom.test.mjs   # composer 适配层真实 Chromium DOM 测试
+node tests/e2e/composer-0.2.2.e2e.mjs         # 0.2.2 真机 e2e（自动拉起隔离 DSH 实例 + 真实按键）
+npx playwright test tests/e2e/       # 旧版 e2e（需先起 composer-e2e profile，端口 3099）
 ```
+
+`tests/e2e/composer-0.2.2.e2e.mjs` 默认用本机 desktop 安装（可用 `DSH_APP_BIN` /
+`DSH_ASAR_DIR` / `DSH_PROFILE_SRC` / `DSH_022_PORT` 覆盖），把 profile 复制到
+`mkdtemp` 出来的临时 `DSH_HOME`，不触碰真实 `~/.dsh` 数据；覆盖 ↑↑↓↓ 往返、
+多行行边界、菜单让路、手动编辑重置、会话隔离、真实发送后的事件流采集。
 
 ## 已知问题（本机 dsh 环境）
 

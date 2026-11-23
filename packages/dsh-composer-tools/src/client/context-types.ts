@@ -58,13 +58,48 @@ export interface SessionListFeed {
 }
 
 /**
- * The conversation snapshot subset this plugin reads: `nodes` is the kind-
- * discriminated `ConversationNode[]` (see dsh-client-runtime
- * types/client/sessions/conversation.d.ts). Nodes stay `unknown` here — the
- * `kind === 'user'` narrowing lives in session-history.ts.
+ * The conversation snapshot subset this plugin reads.
+ *
+ * 0.1.5–0.2.0: `SessionSnapshot.nodes` carries the kind-discriminated
+ * `ConversationNode[]`; `kind === 'user'` narrowing lives in
+ * session-history.ts.
+ *
+ * 0.2.2: `Session.buildSnapshot()` no longer carries `nodes` at all (only
+ * lifecycle fields), so this stays optional and the capture falls back to the
+ * session event feed (`SessionBinding.eventSource`), see event-capture.ts.
  */
 export interface ConversationSnapshotFace {
   nodes?: readonly unknown[]
+}
+
+/** One entry of the session event feed: `{ event, ... }`. */
+export interface SessionEventEntryLike {
+  event?: unknown
+}
+
+/**
+ * The `MutableSessionEventSource` change carried by one feed snapshot
+ * (`replace` / `prepend` / `append` / `settle-assistant`). Only `kind` and the
+ * changed `entries` are read here.
+ */
+export interface SessionEventFeedChangeLike {
+  kind?: unknown
+  entries?: readonly unknown[]
+}
+
+/** The session event feed snapshot subset this plugin reads. */
+export interface SessionEventFeedSnapshotLike {
+  entries?: readonly unknown[]
+  change?: SessionEventFeedChangeLike | null
+}
+
+/**
+ * `SessionBinding.eventSource` — 0.2.2's live session event window
+ * (`MutableSessionEventSource`), synchronously published.
+ */
+export interface SessionEventFeedLike {
+  getSnapshot(): SessionEventFeedSnapshotLike | undefined
+  subscribe(listener: () => void): () => void
 }
 
 /** `SessionBinding.session` — the ObservableSnapshot half is all this plugin needs. */
@@ -76,6 +111,11 @@ export interface SessionFaceLike {
 /** `SessionBinding` (types/client/sessions/service.d.ts), read-only subset. */
 export interface SessionBindingFace {
   session?: SessionFaceLike
+  /**
+   * 0.2.2+ live session event stream. Absent on older hosts; the component
+   * picks the capture path per binding at attach time.
+   */
+  eventSource?: SessionEventFeedLike
 }
 
 /** The client `sessions` service face. */
