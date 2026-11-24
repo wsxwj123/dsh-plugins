@@ -143,3 +143,27 @@
   `newContext({permissions:['clipboard-read','clipboard-write']})`。
 - 用例隔离坑：DSH 会把未发送草稿持久化到会话，换页/刷新会恢复。e2e 用例之间必须显式
   `Meta+A + Backspace` 清空（clearDraft），否则上一个用例的草稿会拼进下一个用例的输入。
+
+### 11. 【安全回归】测试绝不写/删真实 home：一次单测删掉了用户的全局 AGENTS.md
+- 事故：`tests/unit/instructions.unit.test.mjs` 的一个用例为了验证"默认 home=~/.dsh"分支，
+  直接 `writeFileSync(join(homedir(), '.dsh', 'AGENTS.md'), 'g')` 然后 `finally rmSync(...)`
+  ——任何人跑一次单测就把用户**真实**的 `~/.dsh/AGENTS.md` 覆盖成 'g' 再删掉。
+  本机已发生多次（用户反复反馈"agents md 又没了"），与跑测试的时间点完全吻合。
+- 修法：该用例把 `process.env.HOME` 临时指向夹具目录（Node 的 `os.homedir()` 在 POSIX 读
+  `$HOME`），在临时树里造 `<fake-home>/.dsh/AGENTS.md`，`finally` 恢复原 HOME；断言
+  displayPath 走"默认 home"分支 `~/.dsh/AGENTS.md`，同时断言实际文件路径在临时树内。
+  "默认解析 ~/.dsh"的语义另有纯函数测试（resolveDshHomeLocal，零文件系统操作）覆盖。
+- 护栏（防再次发生）：
+  1. `tests/acceptance/helpers/fixture.mjs` 的 `createTempDir()` 断言夹具根必须在
+     `os.tmpdir()` 下（`assertUnderTmpdir()`），退化即 throw。
+  2. 新增 `tests/unit/test-isolation-guards.unit.test.mjs`：
+     - 静态扫描 `tests/**/*.mjs`：写/删调用的**实参**里出现 `homedir()` /
+       `process.env.HOME` / `~/.dsh` 且未落到 `tmpdir()` 下 → 失败（含历史事故模式专测）；
+     - 运行时校验真实 `~/.dsh/AGENTS.md` 在该测试前后 md5 不变；
+     - 夹具根与 `assertUnderTmpdir` 的反向用例。
+- 教训：测试里出现"用户目录/配置/数据库"时，先问一句"这是不是真实用户数据"。需要真实 home
+  语义就用 HOME/DSH_HOME 临时重定向到夹具，永远不要拿真实路径做写/删；只读（如复制 profile）
+  可以保留。
+- 验证证据：修前跑单测会把真实文件改成 'g'；修后跑 `node --test tests/unit/*.test.mjs`
+  + acceptance + e2e 前后，真实 `~/.dsh/AGENTS.md` 的 md5 均为
+  `ada793b942577109a581b86251720190`（9523 bytes），全程未变。

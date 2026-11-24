@@ -5,7 +5,7 @@
 
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 let dirSeq = 0
@@ -18,12 +18,29 @@ let dirSeq = 0
  */
 export function createTempDir() {
   const root = join(tmpdir(), `ct-test-${process.pid}-${Date.now()}-${dirSeq++}-${randomBytes(4).toString('hex')}`)
+  // 安全护栏：所有测试夹具必须落在系统临时目录下。历史上有一个用例直接写/删了真实
+  // ~/.dsh/AGENTS.md（用户全局指令），这里从夹具入口兜住"根不在 tmpdir"的退化。
+  assertUnderTmpdir(root)
   mkdirSync(root, { recursive: true })
   return {
     root,
     path: (...seg) => join(root, ...seg),
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   }
+}
+
+/**
+ * 断言路径位于系统临时目录下（测试夹具/清理目标的硬护栏）。
+ * @param target - 待检查的绝对路径。
+ * @returns 该路径（便于链式使用）。
+ */
+export function assertUnderTmpdir(target) {
+  const root = resolve(tmpdir())
+  const abs = resolve(target)
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new Error(`test fixture path escapes os.tmpdir(): ${abs} (tmpdir=${root})`)
+  }
+  return target
 }
 
 /** mkdir -p 语义 */

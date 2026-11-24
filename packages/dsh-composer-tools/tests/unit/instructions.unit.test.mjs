@@ -127,18 +127,26 @@ test.describe('instructions.unit', () => {
 
   test.describe('discoverInstructions', () => {
     test('默认 dshHome（~/.dsh）时全局文件 displayPath 为 ~/.dsh/AGENTS.md', () => {
+      // 安全红线：这个用例必须验证"默认 home = ~/.dsh"分支，但**绝不能碰真实用户 home**。
+      // 做法：把 process.env.HOME 临时指向夹具目录（Node 的 os.homedir() 在 POSIX
+      // 读 $HOME），默认解析因此落在临时树里的 <fake-home>/.dsh；finally 恢复原值。
+      // （曾经这里直接 writeFileSync/rmSync 真实 ~/.dsh/AGENTS.md，会删掉用户的全局指令。）
       const tree = buildTree()
+      const fakeHome = tree.path('fake-home')
+      mkdirSync(join(fakeHome, '.dsh'), { recursive: true })
+      writeFileSync(join(fakeHome, '.dsh', 'AGENTS.md'), 'g', 'utf8')
+      const originalHome = process.env.HOME
       try {
-        writeFileSync(join(homedir(), '.dsh', 'AGENTS.md'), 'g', 'utf8')
+        process.env.HOME = fakeHome
+        assert.equal(resolveDshHomeLocal(), resolve(fakeHome, '.dsh'), '默认 home 应被隔离到临时树')
         const d = discoverInstructions({ cwd: tree.project }) // 不传 dshHome → 默认
         const g = d.files.find((f) => f.level === 'global')
-        try {
-          assert.ok(g, '默认 home 下有 ~/.dsh/AGENTS.md 时应发现全局文件')
-          assert.equal(g.displayPath, '~/.dsh/AGENTS.md')
-        } finally {
-          rmSync(join(homedir(), '.dsh', 'AGENTS.md'), { force: true })
-        }
+        assert.ok(g, '默认 home 下有 AGENTS.md 时应发现全局文件')
+        assert.equal(g.displayPath, '~/.dsh/AGENTS.md')
+        assert.equal(g.path, join(fakeHome, '.dsh', 'AGENTS.md'), '文件路径在临时树内，不碰真实 home')
       } finally {
+        if (originalHome === undefined) delete process.env.HOME
+        else process.env.HOME = originalHome
         tree.cleanup()
       }
     })
