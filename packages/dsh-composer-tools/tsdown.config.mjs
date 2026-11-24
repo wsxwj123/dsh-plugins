@@ -160,6 +160,8 @@ export default [
       append: 'src/client/append.ts',
       'bridge-core': 'src/client/bridgeCore.ts',
       'instruction-view': 'src/client/instruction-view.ts',
+      // 指令面板新建/编辑入口的纯决策层（task-10）：node 测试直接驱动。
+      'instruction-target': 'src/client/instruction-target.ts',
     },
     outDir: 'lib',
     format: 'esm',

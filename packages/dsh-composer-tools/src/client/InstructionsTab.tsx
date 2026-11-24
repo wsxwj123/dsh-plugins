@@ -6,8 +6,11 @@
  *   - 视图状态机（src/client/instruction-view.ts 纯 reducer，INTERFACE §2.6）：
  *     list（列表）/ create(scope)（新建→新文件编辑态）/ edit(path)（已有文件编辑态）。
  *     组件只负责「事件→reducer→渲染」，状态迁移正确性由 reducer 单测兜底。
- *   - 工具栏两个新建入口：项目级（canCreateRootAgents）/ 全局（canCreateGlobalAgents），
- *     显隐各自只读 list 响应字段（host 已用 realpath + lstat 算好，client 不重复推导）。
+ *   - 工具栏两个入口（task-10 起始终显示）：项目级 / 全局 AGENTS.md。
+ *     文案与点击语义按目标是否存在自适应——不存在→「新建…」走 create API（保留原子
+ *     创建/mtime 契约）；已存在→「编辑…」直接进该文件编辑态，不报 path-exists。
+ *     项目根找不到（projectRootFound=false）时项目级按钮禁用并说明原因。
+ *     决策逻辑在纯函数 instruction-target.ts；本组件只渲染与发请求。
  *     全局新建发起请求前 window.confirm（指令对所有会话生效）；项目级不确认。
  *   - 编辑态两个出口：「保存」（ctInstructionsSave，mtime 乐观锁冲突给重载/覆盖选择）
  *     与「返回列表」（未保存内容先 confirm 放弃）。保存成功 → saved → 回列表初始态。
@@ -28,6 +31,14 @@ import {
   type InstructionScope,
   type InstructionView,
 } from './instruction-view.ts'
+import {
+  describeInstructionTargets,
+  globalAgentsPath,
+  projectRootAgentsPath,
+  type InstructionListMeta,
+  type InstructionTargetModel,
+  type InstructionTargetScope,
+} from './instruction-target.ts'
 
 export interface InstructionFile {
   path: string
@@ -61,13 +72,14 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
   const [files, setFiles] = useState<InstructionFile[]>([])
   const [phase, setPhase] = useState<string>('loading')
   const [err, setErr] = useState<string>('')
-  // 新建入口显隐：只读 list 响应字段（§1.1 契约），不重复推导。
-  const [canCreateRootAgents, setCanCreateRootAgents] = useState(false)
-  const [canCreateGlobalAgents, setCanCreateGlobalAgents] = useState(false)
+  // list 响应的元数据（dshHome/projectRoot/projectRootFound/canCreate*/files）：
+  // 两个入口"新建/编辑"的文案与点击语义由 instruction-target 纯函数从这里推导。
+  const [meta, setMeta] = useState<InstructionListMeta | null>(null)
   // 视图状态机：list / create(scope) / edit(path)（§2.6 纯 reducer）
   const [view, dispatch] = useReducer(instructionViewReducer, { kind: 'list' } as InstructionView)
-  // 新建中（按钮禁用 + 「创建中…」）
-  const [creating, setCreating] = useState(false)
+  // 正在执行"新建/打开编辑"的入口 scope（按钮禁用 + 该按钮显示「处理中…」）
+  const [busyScope, setBusyScope] = useState<InstructionTargetScope | null>(null)
+  const creating = busyScope !== null
   // 编辑器种子（新建模板 / 冲突重载注入）
   const [seed, setSeed] = useState<EditorSeed | null>(null)
   // 当前编辑器草稿是否脏（Editor onDirtyChange 上报；返回确认用）
@@ -79,8 +91,7 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     setErr('')
     if (cwd === undefined) {
       setFiles([])
-      setCanCreateRootAgents(false)
-      setCanCreateGlobalAgents(false)
+      setMeta(null)
       setPhase('no-cwd')
       return
     }
@@ -90,9 +101,16 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
       setErr(`${res.code}: ${res.message}`)
       return
     }
-    setFiles((res.files as InstructionFile[]) ?? [])
-    setCanCreateRootAgents(res.canCreateRootAgents === true)
-    setCanCreateGlobalAgents(res.canCreateGlobalAgents === true)
+    const nextFiles = (res.files as InstructionFile[]) ?? []
+    setFiles(nextFiles)
+    setMeta({
+      dshHome: typeof res.dshHome === 'string' ? res.dshHome : undefined,
+      projectRoot: typeof res.projectRoot === 'string' ? res.projectRoot : undefined,
+      projectRootFound: res.projectRootFound === true,
+      canCreateRootAgents: res.canCreateRootAgents === true,
+      canCreateGlobalAgents: res.canCreateGlobalAgents === true,
+      files: nextFiles,
+    })
     setPhase('ready')
   }
 
@@ -104,16 +122,45 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
+  // —— 两个入口：始终显示，目标不存在→新建，已存在→直接进编辑态（task-10）——
+  // 目标路径/存在性/禁用原因由 instruction-target 纯函数推导；host 契约不变。
+  const targets = describeInstructionTargets(meta, { ready: phase === 'ready', cwd })
+
+  /** 打开一个已存在的目标文件（优先复用发现列表里的条目；未被列出则直接 read）。 */
+  const openExistingTarget = async (scope: InstructionTargetScope, targetPath: string): Promise<boolean> => {
+    if (cwd === undefined) return false
+    const listed = files.find((f) => f.path === targetPath)
+    if (listed !== undefined) {
+      openFile(listed)
+      return true
+    }
+    // 目标存在但 discovery 没列出（例如 symlink 被拒收）：直接 read 进编辑态，
+    // 复用 Editor 的 seed 机制，避免再读一次。
+    const rd = await ctInstructionsRead(cwd, targetPath)
+    if (!rd.ok) return false
+    dirtyRef.current = false
+    setSeed({
+      path: targetPath,
+      content: String(rd.content ?? ''),
+      mtimeMs: Number(rd.mtimeMs ?? 0),
+      truncated: rd.truncated === true,
+      nonce: Date.now(),
+    })
+    dispatch({ type: 'open-edit', path: targetPath })
+    return true
+  }
+
   // —— 新建（§1.5 client UI 契约）——
   // 全局新建先 window.confirm（指令对所有会话生效）；项目级不确认。
   // 成功 → create-succeeded：停留 create 态，编辑器直接注入 create 响应的模板
-  // （content/mtimeMs 即 save 基线），随后重载列表。path-exists → 重载列表回列表态，
-  // 不重复报错（文件届时已在列表，进入正常展开/编辑流）。
+  // （content/mtimeMs 即 save 基线），随后重载列表。
+  // path-exists（点按钮后到 host 执行前，文件被外部创建）→ 改为进入该文件编辑态，
+  // 不再把「已存在」当错误抛给用户。
   const startCreate = async (scope: InstructionScope): Promise<void> => {
     if (cwd === undefined || creating) return
     if (scope === 'global' && !window.confirm('将创建全局指令文件，该指令对所有会话生效。是否继续？')) return
     dispatch({ type: 'start-create', scope })
-    setCreating(true)
+    setBusyScope(scope)
     setErr('')
     try {
       const res = await ctInstructionsCreate(cwd, scope)
@@ -131,14 +178,27 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
         await loadList()
       } else if (res.code === 'path-exists') {
         await loadList()
+        const targetPath = scope === 'global' ? globalAgentsPath(meta?.dshHome) : projectRootAgentsPath(meta?.projectRoot)
+        if (targetPath !== undefined && await openExistingTarget(scope, targetPath)) return
+        await loadList()
         dispatch({ type: 'create-failed' })
       } else {
         setErr(`${res.code}: ${res.message}`)
         dispatch({ type: 'create-failed' })
       }
     } finally {
-      setCreating(false)
+      setBusyScope(null)
     }
+  }
+
+  /** 点击一个入口：禁用的不动作；已存在→编辑；不存在→新建。 */
+  const onTargetClick = (model: InstructionTargetModel): void => {
+    if (model.disabled || creating) return
+    if (model.action === 'edit' && model.targetPath !== undefined) {
+      void openExistingTarget(model.scope, model.targetPath)
+      return
+    }
+    void startCreate(model.scope)
   }
 
   // —— 打开已有文件 → 编辑态 ——
@@ -230,26 +290,23 @@ export function InstructionsTab({ cwd }: Props): JSX.Element {
           <button className="dsh-ct-icon-btn" onClick={() => void loadList()} title="重新加载">
             重新加载
           </button>
-          {phase === 'ready' && canCreateRootAgents === true && (
-            <button
-              className="dsh-ct-icon-btn"
-              onClick={() => void startCreate('project')}
-              disabled={creating}
-              title="新建项目级 AGENTS.md"
-            >
-              {creating ? '创建中…' : '新建项目级 AGENTS.md'}
-            </button>
-          )}
-          {phase === 'ready' && canCreateGlobalAgents === true && (
-            <button
-              className="dsh-ct-icon-btn"
-              onClick={() => void startCreate('global')}
-              disabled={creating}
-              title="新建全局 AGENTS.md（对所有会话生效）"
-            >
-              {creating ? '创建中…' : '新建全局 AGENTS.md'}
-            </button>
-          )}
+          {/* 两个入口始终显示：不存在→新建，已存在→编辑；项目根缺失时项目级禁用。 */}
+          <button
+            className="dsh-ct-icon-btn"
+            onClick={() => onTargetClick(targets.project)}
+            disabled={targets.project.disabled || creating}
+            title={targets.project.title}
+          >
+            {busyScope === 'project' ? '处理中…' : targets.project.label}
+          </button>
+          <button
+            className="dsh-ct-icon-btn"
+            onClick={() => onTargetClick(targets.global)}
+            disabled={targets.global.disabled || creating}
+            title={targets.global.title}
+          >
+            {busyScope === 'global' ? '处理中…' : targets.global.label}
+          </button>
         </div>
       )}
 

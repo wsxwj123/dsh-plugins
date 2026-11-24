@@ -43,3 +43,10 @@ export {
 } from "../../../lib/event-capture.js"
 export { historyStorageKey, loadHistory, saveHistory } from "../../../lib/history-storage.js"
 export { appendPromptToDraft } from "../../../lib/append.js"
+// 指令面板两个入口（新建/编辑）的纯决策层（task-10）。
+export {
+  describeInstructionTarget,
+  describeInstructionTargets,
+  globalAgentsPath,
+  projectRootAgentsPath,
+} from "../../../lib/instruction-target.js"

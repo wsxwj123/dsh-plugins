@@ -20,6 +20,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -600,6 +601,50 @@ try {
     await sendAndWaitHistory(page, sessionId, msg3)
     assert.deepEqual(await storedHistory(page, sessionId), [msg3, msg2, msg1], '新消息置顶且不重复旧条目')
     console.log(`   backfill session ${sessionId}: 清空 localStorage 历史 → 刷新回填 ${JSON.stringify(backfilled)}；↑/${msg2} ↑/${msg1}；再刷新无重复；新发后 ${JSON.stringify(await storedHistory(page, sessionId))}`)
+    await page.close()
+  })
+
+  // ---- 6c. 指令面板：两个"新建/编辑 AGENTS.md"入口始终显示（task-10，只读校验） ----
+  // 注意：/ct 指令面板 host 端默认 dshHome 是 os.homedir()/.dsh（不读 DSH_HOME env），
+  // 隔离实例里它指向**真实** ~/.dsh —— 这里只做只读断言（按钮可见/文案/禁用+tooltip，
+  // 打开编辑态只读文件不保存），不点"新建"、不做任何写操作。
+  // 新建/编辑决策矩阵由 acceptance test-19 覆盖；create/edit 写路径由 host 契约测试覆盖。
+  await checkCase('panel: 两个 AGENTS.md 入口始终显示 + 项目根缺失时禁用', async () => {
+    const page = await openPage()
+    await page.locator('.dsh-ct-entry-btn').first().click()
+    await waitFor(async () => page.evaluate(() => {
+      const texts = [...document.querySelectorAll('.dsh-ct-icon-btn')].map((b) => b.textContent ?? '')
+      return texts.some((t) => t.includes('项目级 AGENTS.md')) && texts.some((t) => t.includes('全局 AGENTS.md'))
+    }), { timeoutMs: 10000, label: 'instruction panel buttons' })
+
+    const projectBtn = page.getByRole('button', { name: /(新建|编辑)项目级 AGENTS\.md/ }).first()
+    const globalBtn = page.getByRole('button', { name: /(新建|编辑)全局 AGENTS\.md/ }).first()
+    assert.equal(await projectBtn.count(), 1, '项目级入口必须存在（始终显示）')
+    assert.equal(await globalBtn.count(), 1, '全局入口必须存在（始终显示）')
+    assert.equal(await projectBtn.isVisible(), true)
+    assert.equal(await globalBtn.isVisible(), true)
+
+    // 默认工作区无 .git → projectRootFound=false → 项目级显示但禁用 + 说明
+    assert.equal(await projectBtn.isDisabled(), true, '当前会话不在项目内时项目级入口禁用')
+    assert.match((await projectBtn.getAttribute('title')) ?? '', /当前会话不在项目内/)
+
+    // 全局入口可用，文案随目标是否存在自适应（真实 ~/.dsh 已存在 AGENTS.md → 编辑）
+    const globalLabel = (await globalBtn.textContent()) ?? ''
+    assert.match(globalLabel, /^(新建|编辑)全局 AGENTS\.md$/, '全局入口文案必须是 新建/编辑 全局 AGENTS.md')
+    assert.equal(await globalBtn.isDisabled(), false)
+    assert.match((await globalBtn.getAttribute('title')) ?? '', /对所有会话生效/)
+
+    // 只读打开全局文件编辑态（不保存、不改文件），确认"编辑"点击行为可用。
+    if (globalLabel === '编辑全局 AGENTS.md') {
+      await globalBtn.click()
+      await page.waitForTimeout(1200)
+      const editor = page.locator('.dsh-ct-edit-area').first()
+      assert.equal(await editor.isVisible(), true, '已存在时点击应进入编辑态')
+      await page.getByRole('button', { name: /返回列表/ }).first().click()
+      await page.waitForTimeout(800)
+    }
+    await page.locator('.dsh-ct-entry-btn').first().click() // 收起面板
+    console.log(`   panel: 两入口可见；项目级禁用(tooltip=不在项目内)；全局=「${globalLabel}」`)
     await page.close()
   })
 
