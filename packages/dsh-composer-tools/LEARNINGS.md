@@ -144,6 +144,26 @@
 - 用例隔离坑：DSH 会把未发送草稿持久化到会话，换页/刷新会恢复。e2e 用例之间必须显式
   `Meta+A + Backspace` 清空（clearDraft），否则上一个用例的草稿会拼进下一个用例的输入。
 
+### 10. 历史只从"修复上线后"开始积累：用会话已有消息回填（跨源 localStorage 坑）
+（task-9：用户反馈"方向键还是不行"根因之二）
+- 现象：修复本身可用（注入 localStorage 后真实按键正常），但用户实测"没反应"——因为
+  **浏览器标签页（http:// 源）与桌面窗口（dsh-app:// 源）不是同一份 localStorage**，
+  老会话/新标签页里插件历史上限从零开始；而历史是"发送时采集"的，插件上线前的消息永远
+  不会被采集，所以老会话打开后按 ↑ 自然没反应。
+- 修法：首次拿到某会话的非空 user 消息窗口时，如果本地历史为空，就用窗口里已有的真人
+  user 消息（`source.kind === 'user'`，过滤 system-reminder/time-context 等注入上下文）
+  从旧到新回填，并立即持久化；本地历史非空则跳过。刷新/重开不会重复累加（seed 只在空历史
+  生效 + 同文去重 + HISTORY_LIMIT 上限）。
+- 实现分层：纯函数 `seedHistory(state, texts)`（history-core，oldest→newest 前插去重/裁上限）、
+  `userTextsFromEvents(entries)`（1 event feed，按 event.seq 升序）、
+  `userTextsFromNodes(nodes)`（0.1.5–0.2.0 快照 nodes，按 seq 升序）；
+  `HistoryNav.seed()` 判空 + 持久化；ComposerEntry 在 attach 时"首份非空窗口"回填一次。
+- 时序坑：会话事件窗口可能先为空、随后 replace 成已加载历史（session open 是异步的），
+  所以回填要挂在 pump 上判"第一份非空窗口"，不能只在 attach 那一次同步读。
+- e2e 证据（隔离实例，真机按键）：新建会话发两条消息 → 清掉该会话 localStorage 历史 →
+  刷新（不发送任何消息）→ 历史自动回填 [最新, 更旧]，↑/↑ 依次得到两条消息；再刷新历史
+  不重复；随后新发一条 → 置顶且旧条目唯一。
+
 ### 11. 【安全回归】测试绝不写/删真实 home：一次单测删掉了用户的全局 AGENTS.md
 - 事故：`tests/unit/instructions.unit.test.mjs` 的一个用例为了验证"默认 home=~/.dsh"分支，
   直接 `writeFileSync(join(homedir(), '.dsh', 'AGENTS.md'), 'g')` 然后 `finally rmSync(...)`

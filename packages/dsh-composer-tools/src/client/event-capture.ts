@@ -56,6 +56,28 @@ export function userTextFromEvent(event: unknown): string | null {
   return userMessageText(data.content)
 }
 
+/**
+ * 从事件流 entries 提取已存在的人类 user 消息文本（按 `event.seq` 升序，供历史回填）。
+ * 过滤规则与发送采集一致（`user/message` 且 `source.kind === 'user'`），因此宿主
+ * 注入的 system-reminder / time-context 等 user-role 事件不会被回填进历史。
+ * @param entries - 事件流快照 entries。
+ * @returns 从旧到新的用户输入文本。
+ */
+export function userTextsFromEvents(entries: unknown): string[] {
+  if (!Array.isArray(entries)) return []
+  const items: { order: number; seq: number; text: string }[] = []
+  entries.forEach((entry, order) => {
+    const event = eventOfEntry(entry)
+    const text = userTextFromEvent(event)
+    if (text === null) return
+    items.push({ order, seq: seqOfEntry(entry), text })
+  })
+  items.sort((a, b) => (
+    a.seq !== -Infinity && b.seq !== -Infinity ? a.seq - b.seq : a.order - b.order
+  ))
+  return items.map((item) => item.text)
+}
+
 export interface EventFeedCapture {
   /** 喂一帧事件流快照；append 的新人类消息逐条回调 record。 */
   onSnapshot(feed: SessionEventFeedLike | undefined): void

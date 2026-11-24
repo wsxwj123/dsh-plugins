@@ -29,6 +29,7 @@ import {
   recallNewer,
   recordSend,
   resetCursor,
+  seedHistory,
   type HistoryState,
 } from './history-core.ts'
 import { loadHistory, saveHistory, type KeyValueStorage } from './history-storage.ts'
@@ -66,6 +67,13 @@ export interface HistoryNavController {
    * 空白文本自动忽略。
    */
   record(text: string): void
+  /** 当前会话的历史是否为空（回填路径据此判断"只在本地历史为空时回填"）。 */
+  isEmpty(): boolean
+  /**
+   * 用会话里已有消息回填历史（从旧到新的 texts）；仅当当前历史为空时生效，
+   * 否则原样返回。回填结果立即持久化，保证刷新/重开不重复累积。
+   */
+  seed(texts: readonly string[]): void
   /** 发送采集：进入 submitting/adjudicating 时调用（draft 未清；斜杠命令路径）。 */
   capture(text: string): void
   /** 发送被受理：draft 变 '' 时调用。 */
@@ -197,6 +205,16 @@ export function createHistoryNav(deps: NavDeps): HistoryNavController {
       const before = state.entries
       state = recordSend(state, text)
       // entries 未变（空白/未写入）就不落盘，防无用写。
+      if (state.entries !== before) persist(state)
+    },
+    isEmpty(): boolean {
+      return state.entries.length === 0
+    },
+    seed(texts: readonly string[]): void {
+      // 只在持久化历史为空时回填；已有历史（用户发过消息/之前回填过）不动。
+      if (state.entries.length > 0) return
+      const before = state.entries
+      state = seedHistory(state, texts)
       if (state.entries !== before) persist(state)
     },
     capture(text: string): void {

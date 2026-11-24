@@ -18,6 +18,7 @@ import {
   recallOlder,
   recallNewer,
   resetCursor,
+  seedHistory,
 } from '../../lib/history-core.js'
 
 test.describe('history-core.unit', () => {
@@ -188,6 +189,46 @@ test.describe('history-core.unit', () => {
       resetCursor(s)
       assert.equal(JSON.stringify(s), snapshot)
       assert.equal(JSON.stringify(entries), entsBefore, 'createHistory 的入参数组不被改')
+    })
+  })
+
+  test.describe('seedHistory（会话已有消息回填）', () => {
+    test('从旧到新的 texts → entries 最新在前', () => {
+      const s = seedHistory(createHistory(), ['旧1', '旧2', '旧3'])
+      assert.deepEqual(s.entries, ['旧3', '旧2', '旧1'])
+    })
+    test('空白/非字符串条目被忽略', () => {
+      const s = seedHistory(createHistory(), ['', '  ', undefined, 'A'])
+      assert.deepEqual(s.entries, ['A'])
+    })
+    test('同一文本重复出现（后出现=更新）去重并置顶', () => {
+      const s = seedHistory(createHistory(), ['A', 'B', 'A'])
+      assert.deepEqual(s.entries, ['A', 'B'])
+    })
+    test('已存在的 entries 保留在回填条目之后（不回填时不覆盖已有历史）', () => {
+      // seed 本身不判空，判空在 nav.seed；纯函数层面验证拼接语义。
+      const base = createHistory(['已有1'])
+      const s = seedHistory(base, ['旧1'])
+      assert.deepEqual(s.entries, ['旧1', '已有1'])
+    })
+    test('上限 HISTORY_LIMIT：只保留最新 100 条', () => {
+      const texts = Array.from({ length: HISTORY_LIMIT + 20 }, (_, i) => `m${i}`)
+      const s = seedHistory(createHistory(), texts)
+      assert.equal(s.entries.length, HISTORY_LIMIT)
+      assert.equal(s.entries[0], `m${HISTORY_LIMIT + 19}`)
+      assert.equal(s.entries[HISTORY_LIMIT - 1], 'm20')
+    })
+    test('cursor/stash/pending 不动', () => {
+      const base = { ...createHistory(), cursor: 2, stash: 'draft', pending: 'p' }
+      const s = seedHistory(base, ['A'])
+      assert.equal(s.cursor, 2)
+      assert.equal(s.stash, 'draft')
+      assert.equal(s.pending, 'p')
+    })
+    test('空 texts / 全空白 → 原引用（不产生写）', () => {
+      const base = createHistory()
+      assert.equal(seedHistory(base, []), base)
+      assert.equal(seedHistory(base, ['', '  ']), base)
     })
   })
 

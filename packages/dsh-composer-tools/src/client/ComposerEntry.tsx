@@ -26,9 +26,9 @@ import { createPortal } from 'react-dom'
 import type { Context, InputActions, InputPhase, InputSelection } from './context-types.ts'
 import { createHistoryNav, type HistoryNavController } from './HistoryNav.ts'
 import { resolveComposerAdapter, isComposerMenuOpen } from './composer-target.ts'
-import { createEventFeedCapture } from './event-capture.ts'
+import { createEventFeedCapture, userTextsFromEvents } from './event-capture.ts'
 import { Panel } from './Panel.tsx'
-import { createSnapshotCapture } from './session-history.ts'
+import { createSnapshotCapture, userTextsFromNodes } from './session-history.ts'
 import './panel.css'
 
 /** compositionend 后等 Lexical 完成最终文本 reconciliation 的收尾窗口（毫秒）。 */
@@ -192,12 +192,20 @@ export function ComposerEntry(props: EntryProps): ReactNode {
     }
   }, [nav])
 
-  // ---- 发送采集主路径：订阅会话（快照 nodes / 事件流），新落地的 user 消息即历史条目 ----
+  // ---- 发送采集主路径 + 历史回填：订阅会话（快照 nodes / 事件流），新落地的 user 消息即历史条目 ----
   // phase 机对普通消息永远不触发（onEnter 走 default-sink，phase 恒 plain），
   // 且发送按钮点击根本没有 keydown —— 只有会话侧信号能覆盖全部已受理的发送。
+  //
+  // 历史回填（task-9）：老会话与浏览器标签页的 localStorage 是空的（插件上线前的
+  // 消息没有被采集过），此时 ↑ 毫无反应。首次拿到某个会话的非空 user 消息窗口时，
+  // 如果本地历史为空，就用窗口里已有的真人 user 消息（event-capture 同一判据过滤
+  // 宿主注入上下文）从旧到新回填，回填结果立即持久化 → 打开老会话立刻能翻。
+  // 本地历史非空（用户发过消息 / 之前已回填过）时 seed 内部直接跳过，刷新/重开不重复。
   useEffect(() => {
     if (sessionId === undefined) return
     let offSession: (() => void) | null = null
+    /** 已经拿到过一份非空会话消息窗口并尝试回填（避免每次订阅回调重复提取）。 */
+    let backfilled = false
     const attach = (): void => {
       if (offSession !== null) return
       const binding = ctx.sessions.binding?.(sessionId)
@@ -208,20 +216,36 @@ export function ComposerEntry(props: EntryProps): ReactNode {
         // 0.1.5–0.2.0：会话快照 nodes 路径（旧行为原样保留）。
         const capture = createSnapshotCapture((text) => nav.record(text))
         const pump = (): void => {
-          capture.onSnapshot(session.getSnapshot()?.nodes)
+          const nodes = session.getSnapshot()?.nodes
+          if (!backfilled) {
+            const texts = userTextsFromNodes(nodes)
+            if (texts.length > 0) {
+              backfilled = true
+              nav.seed(texts)
+            }
+          }
+          capture.onSnapshot(nodes)
         }
-        pump() // 首帧只初始化水位线（已在窗口里的旧消息不回补）
+        pump() // 首帧只初始化水位线（已在窗口里的旧消息不回补自身）
         offSession = session.subscribe(pump)
         return
       }
       const feed = binding?.eventSource
       if (feed === undefined || feed === null) return
       // 0.2.2+：SessionSnapshot 不再有 nodes，改读事件流 user/message append。
+      // 事件窗口可能先为空、随后 replace 成已加载的历史事件：拿到第一份非空窗口才回填。
       const capture = createEventFeedCapture((text) => nav.record(text))
       const pump = (): void => {
+        if (!backfilled) {
+          const texts = userTextsFromEvents(feed.getSnapshot()?.entries)
+          if (texts.length > 0) {
+            backfilled = true
+            nav.seed(texts)
+          }
+        }
         capture.onSnapshot(feed)
       }
-      pump() // 首帧只初始化 seq 水位线（窗口里已有的事件不回补）
+      pump() // 首帧只初始化 seq 水位线（窗口里已有的事件不回补自身）
       offSession = feed.subscribe(pump)
     }
     attach()

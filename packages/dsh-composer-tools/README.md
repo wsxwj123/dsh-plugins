@@ -17,6 +17,7 @@ DSH web 输入体验增强插件：**方向键输入历史** + **指令查看/�
 - **多行输入**：光标在**第一行**按 ↑ 才翻历史、光标在**最后一行**按 ↓ 才翻——光标在中间行时按键正常移动光标，不会误翻
 - **← → 永不触发**；中文输入法选字时不误触；命令菜单打开时方向键归菜单
 - 历史按会话隔离、刷新后仍在（localStorage），每会话最多 100 条
+- **历史来源**：自动记录本会话发送过的消息；打开老会话或换了浏览器（不同源的 localStorage 是空的）时，如果本地历史为空，会用**本会话已有的用户消息自动回填**（最多 100 条，过滤系统注入内容），打开就能按 ↑，无需等新消息积累
 - **0.2.2 兼容**：DSH 0.2.2 把输入框换成 Lexical 富文本 `contenteditable`，插件通过 composer 适配层（`src/client/composer-target.ts`）同时支持旧 `textarea` 与新编辑器——文本/光标口径、菜单判据、回填后光标复位都在适配层收敛
 
 ### 2. 指令查看 / 编辑面板
@@ -84,7 +85,7 @@ pnpm add "link:/绝对路径/packages/dsh-composer-tools"
 ## 工作原理（给维护者）
 
 - **host 半（node）**：挂 `/ct` 前缀 RPC（loopback 信任围栏 + POST-only）——指令发现（`.git` 找项目根 + 祖先链，`lstat` 拒符号链接）、读写（basename 白名单 × 精确发现成员资格双闸门防逃逸 + mtime 乐观锁 + 截断保护）、提示词库按需下发
-- **client 半（React）**：注册输入框 slot 注入入口按钮；方向键用 document capture keydown 拦截（先于 React 与 Lexical 的 keymap），官方 `inputActions.setDraft` 回填 + rAF 把光标复位到末尾；composer 目标/文本/光标/菜单判定全部走 `composer-target.ts` 适配层（textarea ↔ contenteditable 同口径）；发送采集主路径为「会话快照 nodes（0.1.5–0.2.0）或会话事件流 user/message（0.2.2+）」，斜杠命令仍由 phase 机两段式兜底
+- **client 半（React）**：注册输入框 slot 注入入口按钮；方向键用 document capture keydown 拦截（先于 React 与 Lexical 的 keymap），官方 `inputActions.setDraft` 回填 + rAF 把光标复位到末尾；composer 目标/文本/光标/菜单判定全部走 `composer-target.ts` 适配层（textarea ↔ contenteditable 同口径）；发送采集主路径为「会话快照 nodes（0.1.5–0.2.0）或会话事件流 user/message（0.2.2+）」，首次订阅会话时若本地历史为空，还会用会话已有 user 消息回填（老会话/新标签页立即可用）；斜杠命令仍由 phase 机两段式兜底
 
 ## 边界与已知限制
 
@@ -108,7 +109,8 @@ npx playwright test tests/e2e/       # 旧版 e2e（需先起 composer-e2e profi
 `tests/e2e/composer-0.2.2.e2e.mjs` 默认用本机 desktop 安装（可用 `DSH_APP_BIN` /
 `DSH_ASAR_DIR` / `DSH_PROFILE_SRC` / `DSH_022_PORT` 覆盖），把 profile 复制到
 `mkdtemp` 出来的临时 `DSH_HOME`，不触碰真实 `~/.dsh` 数据；覆盖 ↑↑↓↓ 往返、
-多行行边界、菜单让路、手动编辑重置、会话隔离、真实发送后的事件流采集。
+多行行边界、菜单让路、手动编辑重置（含删除/剪切/IME）、会话隔离、真实发送后的事件流采集、
+以及"清空 localStorage 后打开有消息的会话 → 自动回填可翻、刷新不重复"。
 
 ## 已知问题（本机 dsh 环境）
 

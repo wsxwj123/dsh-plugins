@@ -170,6 +170,25 @@ async function clearDraft(page) {
   assert.equal(await draftText(page), '', 'clearDraft: 草稿应为空')
 }
 
+/** 刷新页面并重新等插件加载（用于模拟"重开 session / 浏览器标签页"）。 */
+async function reloadPage(page) {
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(4200)
+  await dismissDialogs(page)
+  await injectAdapter(page)
+}
+
+/** 发一条真实消息并等它进入本会话历史（事件流采集落盘）。 */
+async function sendAndWaitHistory(page, sessionId, text) {
+  await focusComposer(page)
+  await page.keyboard.type(text)
+  await press(page, 'Enter')
+  await waitFor(async () => {
+    const history = await storedHistory(page, sessionId)
+    return Array.isArray(history) && history[0] === text
+  }, { timeoutMs: 15000, label: `capture ${text}` })
+}
+
 /** 读当前草稿全文（真实 DOM → 与运行时同一个适配层）。 */
 async function draftText(page) {
   return page.evaluate(() => {
@@ -525,6 +544,62 @@ try {
     assert.deepEqual(history, [text, ...historyBefore], '只采真人输入，不采宿主注入的 user-role 上下文')
     assert.equal(await draftText(page), '', '发送后草稿清空')
     console.log(`   captured history: ${JSON.stringify(history)}`)
+    await page.close()
+  })
+
+  // ---- 6b. 历史回填：空 localStorage 的老会话/新标签页打开后立刻能翻（task-9） ----
+  await checkCase('backfill: 空 localStorage 打开有消息的会话 → 立即回填、刷新不重复', async () => {
+    const page = await openPage()
+    // 当前会话已 active（前面用例发过消息）；新建一个干净会话当"老会话"。
+    await clearDraft(page)
+    const previousSession = await currentSessionId(page)
+    await page.locator('button[aria-label="New session"]').first().click()
+    await page.waitForTimeout(2500)
+    await dismissDialogs(page)
+    const sessionId = await waitFor(async () => {
+      const id = await currentSessionId(page)
+      return id !== null && id !== previousSession ? id : null
+    }, { timeoutMs: 15000, label: 'backfill session id' })
+    await clearDraft(page)
+    const msg1 = `回填一-${Date.now()}`
+    const msg2 = `回填二-${Date.now()}`
+    await sendAndWaitHistory(page, sessionId, msg1)
+    await clearDraft(page)
+    await sendAndWaitHistory(page, sessionId, msg2)
+    const before = await storedHistory(page, sessionId)
+    assert.deepEqual(before, [msg2, msg1], '发送后历史为 [最新, 更旧]')
+
+    // 模拟老会话/浏览器标签页（localStorage 与该窗口不是同一份）：清掉本会话历史键再刷新。
+    await page.evaluate((id) => localStorage.removeItem(`dsh-composer-tools:history:${id}`), sessionId)
+    await reloadPage(page)
+    // 不发送任何消息：插件应在挂载后用会话已有 user 消息回填。
+    const backfilled = await waitFor(async () => {
+      const history = await storedHistory(page, sessionId)
+      return Array.isArray(history) && history.length > 0 ? history : null
+    }, { timeoutMs: 10000, label: 'history backfill' })
+    assert.deepEqual(backfilled, [msg2, msg1], '回填内容=会话真实 user 消息（过滤注入上下文，旧→新）')
+    await focusComposer(page)
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), msg2, '不发送任何消息，↑ 立即回填最新一条')
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), msg1, '再 ↑ 更旧一条')
+    await press(page, 'ArrowDown')
+    assert.equal(await draftText(page), msg2, '↓ 回较新')
+
+    // 再刷新：不得重复累加
+    await reloadPage(page)
+    await page.waitForTimeout(800)
+    assert.deepEqual(await storedHistory(page, sessionId), [msg2, msg1], '刷新后历史不重复累加')
+    await focusComposer(page)
+    await press(page, 'ArrowUp')
+    assert.equal(await draftText(page), msg2, '刷新后仍可翻')
+
+    // 发送新消息：置顶且旧条目唯一
+    await clearDraft(page)
+    const msg3 = `回填后新发-${Date.now()}`
+    await sendAndWaitHistory(page, sessionId, msg3)
+    assert.deepEqual(await storedHistory(page, sessionId), [msg3, msg2, msg1], '新消息置顶且不重复旧条目')
+    console.log(`   backfill session ${sessionId}: 清空 localStorage 历史 → 刷新回填 ${JSON.stringify(backfilled)}；↑/${msg2} ↑/${msg1}；再刷新无重复；新发后 ${JSON.stringify(await storedHistory(page, sessionId))}`)
     await page.close()
   })
 

@@ -70,6 +70,26 @@ export function recordSend(state: HistoryState, text: string): HistoryState {
 }
 
 /**
+ * 用会话里已有的历史消息回填（history-core 版 recordSend 批量语义，供"老会话/
+ * 浏览器标签页首次打开时本地历史为空"的回填路径使用）。
+ *
+ * 入参 `texts` 按 **从旧到新** 排列（会话事件 seq 升序）；逐条按 recordSend 语义
+ * 前插去重（同一文本后出现的更新位置），最终 entries 最新在前并裁到 HISTORY_LIMIT。
+ * cursor/stash/pending 不动：回填不是用户操作，不应打断正在进行的翻历史。
+ * 空白/非字符串条目忽略。
+ */
+export function seedHistory(state: HistoryState, texts: readonly string[]): HistoryState {
+  let entries = state.entries
+  for (const text of texts) {
+    const trimmed = typeof text === 'string' ? text.trim() : ''
+    if (!trimmed) continue
+    entries = [trimmed, ...entries.filter((entry) => entry !== trimmed)].slice(0, HISTORY_LIMIT)
+  }
+  if (entries === state.entries) return state
+  return { ...state, entries }
+}
+
+/**
  * entries 为空 → null（放行）。cursor === -1：stash = currentDraft，cursor = 0。
  * cursor 已在最旧（=== entries.length - 1）→ 仍消费：返回最旧条目文本，状态不变。
  * 其余：cursor + 1。返回 entries[cursor]。

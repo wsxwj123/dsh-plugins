@@ -78,6 +78,20 @@ export function newUserTexts(nodes: unknown, sawSeq: number): NewUserTexts | nul
   return { texts: fresh.map((n) => userMessageText(n.content)), sawSeq: max, discontinuity: false }
 }
 
+/**
+ * 从会话快照 nodes 提取已存在的 user 消息文本（按 seq 升序，供历史回填）。
+ * 只认 `kind === 'user'`（与采集路径同一判据）；非数组/畸形节点忽略。
+ * @param nodes - ConversationSnapshot.nodes。
+ * @returns 从旧到新的用户输入文本。
+ */
+export function userTextsFromNodes(nodes: unknown): string[] {
+  if (!Array.isArray(nodes)) return []
+  return nodes
+    .filter((node): node is UserNodeLike => isUserMessageNode(node) && Number.isFinite(node.seq))
+    .sort((a, b) => a.seq - b.seq)
+    .map((node) => userMessageText(node.content))
+}
+
 export interface SnapshotCapture {
   /** 喂一帧快照的 nodes；新增 user 消息文本逐条回调 record。 */
   onSnapshot(nodes: unknown): void
