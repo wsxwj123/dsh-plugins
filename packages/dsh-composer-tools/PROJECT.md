@@ -72,3 +72,13 @@
 - 独立验收：task-6 + task-8 全 PASS（单行往返、多行首/中/末行、菜单让路、IME 合成期/取消/提交、会话隔离、面板回归、Backspace/Delete/全选删/剪切后重置、纯光标不误重置）；真机 bundle rev 已热更新为 b73e1ce75600。
 - 测试基线：acceptance 226 + unit 147 + DOM 21 + 真机 e2e 10 全绿；tsc 双配置通过。
 - main 本地合并到 148a31f（未 push，领先 origin 5 个 commit）。
+
+## DSH 0.2.2 后续修复 @2026-11-24
+
+- 方向键历史（82d007e/148a31f）：0.2.2 composer 从 textarea 变 Lexical contenteditable；新增 composer-target 适配层、改 HistoryNav 注入 ComposerHandle；命令菜单判据改 [data-trigger-menu]、发送采集改 binding.eventSource、删除类编辑用 MutationObserver + IME 收尾窗口检测。
+- 历史回填（ff5e648）：打开会话时若本地历史为空，用会话已有 user 消息回填（过滤宿主注入，最多 100 条，旧→新，刷新不重复），老会话/浏览器标签页打开即可按 ↑。
+- 面板两个入口（2d2d93a）：全局/项目级 AGENTS.md 入口始终显示；文件存在→「编辑…」直接进编辑态，不存在→「新建…」走 create；项目根缺失→项目级禁用+tooltip。纯决策层 instruction-target.ts。
+- 紧急安全（11aafd8）：unit 测试曾直接写/删真实 ~/.dsh/AGENTS.md（用户文件多次丢失的元凶）；改为临时 HOME + 增加 test-isolation-guards（静态扫描 + md5 前后校验 + 夹具根校验）。跑测试前后真实文件 md5 不变。
+- 独立验收：task-12/13 全 PASS（历史回填 e2e、面板真机只读矩阵①②③、构建可复现 18/18 sha256 与仓库 lib 全等、单测 159/159、验收 252/252）。
+- 已知限制：`/ct` handler 的 dshHome 不读 DSH_HOME，隔离实例面板会读写真实 ~/.dsh；隔离测试只能做只读面板验收。
+- main 已推 GitHub：2d2d93a（含本批全部提交）。
